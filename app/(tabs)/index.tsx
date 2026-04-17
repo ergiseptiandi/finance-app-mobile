@@ -353,7 +353,6 @@ export default function DashboardScreen() {
             </View>
 
             <View style={styles.liquidCard}>
-              <View style={styles.liquidGlow} />
               <View style={styles.sectionTitleRow}>
                 <View style={styles.sectionTitleWrap}>
                   <Text style={styles.cardEyebrow}>Liquid cash flow</Text>
@@ -547,7 +546,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     brandAvatar: {
       width: 36,
       height: 36,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.shellCardMuted,
@@ -563,10 +562,12 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     iconButton: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: alpha(colors.shellCard, 0.45),
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
     },
     loadingState: {
       marginTop: 20,
@@ -612,7 +613,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      borderRadius: 999,
+      borderRadius: 16,
       backgroundColor: alpha(colors.secondary, isDark ? 0.28 : 0.12),
       paddingHorizontal: 12,
       paddingVertical: 8,
@@ -630,7 +631,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '500',
     },
     card: {
-      borderRadius: 32,
+      borderRadius: 24,
       backgroundColor: colors.shellCard,
       padding: compact ? 18 : 20,
       gap: 18,
@@ -638,22 +639,13 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       borderColor: colors.shellBorder,
     },
     liquidCard: {
-      borderRadius: 32,
+      borderRadius: 24,
       backgroundColor: colors.shellCardStrong,
       padding: compact ? 18 : 20,
       gap: 18,
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: colors.shellBorder,
-    },
-    liquidGlow: {
-      position: 'absolute',
-      right: -40,
-      top: -20,
-      width: 140,
-      height: 140,
-      borderRadius: 999,
-      backgroundColor: alpha(colors.primaryContainer, isDark ? 0.16 : 0.2),
     },
     sectionTitleRow: {
       flexDirection: 'row',
@@ -733,14 +725,14 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       gap: 8,
       flexShrink: 0,
       backgroundColor: colors.shellCardMuted,
-      borderRadius: 999,
+      borderRadius: 18,
       padding: 4,
     },
     segmentButton: {
       minWidth: compact ? 56 : 64,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 999,
+      borderRadius: 14,
       paddingHorizontal: 12,
       paddingVertical: 8,
     },
@@ -780,8 +772,8 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     trendBar: {
       width: '100%',
       minHeight: 34,
-      borderTopLeftRadius: 16,
-      borderTopRightRadius: 16,
+      borderTopLeftRadius: 10,
+      borderTopRightRadius: 10,
       backgroundColor: colors.shellCardMuted,
     },
     trendBarActive: {
@@ -800,7 +792,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     debtIconWrap: {
       width: 40,
       height: 40,
-      borderRadius: 999,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: alpha(colors.danger, isDark ? 0.16 : 0.1),
@@ -826,7 +818,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     secondaryAction: {
       minHeight: 54,
-      borderRadius: 999,
+      borderRadius: 18,
       backgroundColor: colors.shellTextPrimary,
       flexDirection: 'row',
       alignItems: 'center',
@@ -870,7 +862,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     activityIconWrap: {
       width: 44,
       height: 44,
-      borderRadius: 14,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.shellCardSoft,
@@ -913,7 +905,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '700',
     },
     insightCard: {
-      borderRadius: 34,
+      borderRadius: 24,
       backgroundColor: colors.primary,
       padding: compact ? 22 : 24,
       gap: 16,
@@ -925,7 +917,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     insightBadge: {
       alignSelf: 'flex-start',
-      borderRadius: 10,
+      borderRadius: 8,
       backgroundColor: alpha(colors.onPrimary, 0.16),
       paddingHorizontal: 10,
       paddingVertical: 6,
@@ -951,7 +943,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     primaryAction: {
       alignSelf: 'flex-start',
       minHeight: 56,
-      borderRadius: 999,
+      borderRadius: 18,
       backgroundColor: colors.onPrimary,
       alignItems: 'center',
       justifyContent: 'center',
@@ -975,7 +967,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       bottom: 116,
       width: 44,
       height: 44,
-      borderRadius: 14,
+      borderRadius: 12,
       backgroundColor: colors.shellFab,
       alignItems: 'center',
       justifyContent: 'center',

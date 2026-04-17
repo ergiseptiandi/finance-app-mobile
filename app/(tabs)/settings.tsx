@@ -109,8 +109,6 @@ export default function SettingsScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroGrid}>
           <View style={styles.profileCard}>
-            <View style={styles.profileGlow} />
-
             <View style={styles.avatarShell}>
               <View style={styles.avatarRing}>
                 <View style={styles.avatarCore}>
@@ -136,7 +134,6 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.identityCard}>
-            <View style={styles.identityGradient} />
             <MaterialCommunityIcons name="shield-check-outline" size={34} color={colors.onPrimary} />
             <Text style={styles.identityLabel}>Identity Status</Text>
             <Text style={styles.identityValue}>Verified</Text>
@@ -292,7 +289,7 @@ const settingsRowStyles = (colors: AppColorTheme) =>
     row: {
       flex: 1,
       minHeight: 86,
-      borderRadius: 26,
+      borderRadius: 22,
       backgroundColor: colors.shellCard,
       borderWidth: 1,
       borderColor: colors.shellBorder,
@@ -318,7 +315,7 @@ const settingsRowStyles = (colors: AppColorTheme) =>
     iconWrap: {
       width: 44,
       height: 44,
-      borderRadius: 999,
+      borderRadius: 14,
       backgroundColor: colors.shellCardMuted,
       alignItems: 'center',
       justifyContent: 'center',
@@ -362,75 +359,60 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       gap: 18,
     },
     profileCard: {
-      borderRadius: 36,
+      borderRadius: 28,
       backgroundColor: colors.shellCard,
       borderWidth: 1,
       borderColor: colors.shellBorder,
       paddingHorizontal: 20,
       paddingVertical: 28,
       alignItems: 'center',
-      overflow: 'hidden',
       gap: 20,
-    },
-    profileGlow: {
-      position: 'absolute',
-      top: -44,
-      right: -20,
-      width: 160,
-      height: 160,
-      borderRadius: 999,
-      backgroundColor: alpha(colors.primary, 0.12),
     },
     avatarShell: {
       position: 'relative',
-      width: 120,
-      height: 120,
+      width: 108,
+      height: 108,
       alignItems: 'center',
       justifyContent: 'center',
     },
     avatarRing: {
-      width: 108,
-      height: 108,
-      borderRadius: 999,
-      padding: 4,
-      backgroundColor: alpha(colors.primary, 0.18),
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    avatarCore: {
-      width: '100%',
-      height: '100%',
-      borderRadius: 999,
+      width: 96,
+      height: 96,
+      borderRadius: 28,
       backgroundColor: colors.shellCardStrong,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: alpha(colors.primary, 0.22),
+      borderColor: alpha(colors.primary, 0.18),
+    },
+    avatarCore: {
+      width: 82,
+      height: 82,
+      borderRadius: 22,
+      backgroundColor: alpha(colors.primary, 0.12),
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     avatarText: {
       color: colors.primary,
-      fontSize: 36,
+      fontSize: 32,
       fontWeight: '900',
-      letterSpacing: -1,
+      letterSpacing: -0.8,
     },
     editBadge: {
       position: 'absolute',
-      right: 10,
-      bottom: 10,
+      right: 6,
+      bottom: 6,
       width: 34,
       height: 34,
-      borderRadius: 999,
+      borderRadius: 12,
       backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
-      shadowColor: alpha(colors.primary, 0.32),
-      shadowOpacity: 1,
-      shadowRadius: 12,
-      shadowOffset: { width: 0, height: 4 },
     },
     profileCopy: {
       alignItems: 'center',
-      gap: 4,
+      gap: 6,
       width: '100%',
     },
     profileName: {
@@ -448,10 +430,12 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
     memberChip: {
       marginTop: 10,
-      minHeight: 32,
-      borderRadius: 999,
-      backgroundColor: colors.secondaryAccent,
-      paddingHorizontal: 16,
+      minHeight: 34,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: alpha(colors.secondaryAccent, 0.22),
+      backgroundColor: alpha(colors.secondaryAccent, 0.12),
+      paddingHorizontal: 14,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -461,21 +445,15 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       lineHeight: 14,
       fontWeight: '800',
       textTransform: 'uppercase',
-      letterSpacing: 1,
+      letterSpacing: 0.6,
     },
     identityCard: {
-      borderRadius: 36,
+      borderRadius: 28,
       backgroundColor: colors.primary,
       paddingHorizontal: 22,
       paddingVertical: 24,
       minHeight: 198,
       justifyContent: 'space-between',
-      overflow: 'hidden',
-    },
-    identityGradient: {
-      position: 'absolute',
-      inset: 0,
-      backgroundColor: alpha(colors.primaryContainer, 0.22),
     },
     identityLabel: {
       color: alpha(colors.onPrimary, 0.68),
@@ -516,7 +494,7 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       gap: 12,
     },
     preferenceBlock: {
-      borderRadius: 28,
+      borderRadius: 24,
       backgroundColor: colors.shellCard,
       borderWidth: 1,
       borderColor: colors.shellBorder,
@@ -550,14 +528,14 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       alignItems: 'center',
       gap: 6,
       backgroundColor: colors.shellCardMuted,
-      borderRadius: 999,
+      borderRadius: 18,
       padding: 4,
     },
     appearancePill: {
       minWidth: 50,
       minHeight: 28,
       paddingHorizontal: 12,
-      borderRadius: 999,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -576,7 +554,7 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     switchTrack: {
       width: 44,
       height: 24,
-      borderRadius: 999,
+      borderRadius: 14,
       backgroundColor: colors.shellCardMuted,
       padding: 3,
       justifyContent: 'center',
@@ -590,7 +568,7 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     switchThumb: {
       width: 18,
       height: 18,
-      borderRadius: 999,
+      borderRadius: 10,
       backgroundColor: colors.outlineVariant,
     },
     switchThumbActive: {
@@ -607,7 +585,7 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
     logoutButton: {
       minHeight: 56,
-      borderRadius: 999,
+      borderRadius: 18,
       borderWidth: 1,
       borderColor: alpha(colors.danger, 0.32),
       backgroundColor: alpha(colors.danger, 0.1),
