@@ -16,11 +16,16 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 
+import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, resetPassword } from '@/lib/api/auth';
 
 export default function ResetPasswordScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 960;
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+  const styles = createStyles(colors);
   const params = useLocalSearchParams<{ token?: string }>();
   const [token, setToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -63,7 +68,7 @@ export default function ResetPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       <View style={styles.screen}>
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
@@ -79,7 +84,11 @@ export default function ResetPasswordScreen() {
               <View style={[styles.grid, isWide && styles.gridWide]}>
                 <View style={[styles.heroColumn, isWide && styles.heroColumnWide]}>
                   <View style={styles.heroBadge}>
-                    <MaterialCommunityIcons name="shield-key-outline" size={14} color="#0057bd" />
+                    <MaterialCommunityIcons
+                      name="shield-key-outline"
+                      size={14}
+                      color={colors.primary}
+                    />
                     <Text style={styles.heroBadgeText}>Finalize reset</Text>
                   </View>
 
@@ -89,8 +98,8 @@ export default function ResetPasswordScreen() {
                   </Text>
 
                   <Text style={styles.heroBody}>
-                    Paste the reset token from your inbox or from the development response, then set
-                    a new password to complete recovery.
+                    Paste the reset token from your inbox or from the development response, then
+                    set a new password to complete recovery.
                   </Text>
                 </View>
 
@@ -102,7 +111,11 @@ export default function ResetPasswordScreen() {
                         <Text style={styles.formTitle}>Reset Security</Text>
                       </View>
                       <View style={styles.brandMark}>
-                        <MaterialCommunityIcons name="lock-reset" size={18} color="#f6f6ff" />
+                        <MaterialCommunityIcons
+                          name="lock-reset"
+                          size={18}
+                          color={colors.inverseText}
+                        />
                       </View>
                     </View>
 
@@ -113,13 +126,13 @@ export default function ResetPasswordScreen() {
                     <View style={styles.fieldGroup}>
                       <Text style={styles.fieldLabel}>Reset Token</Text>
                       <View style={styles.inputShell}>
-                        <MaterialCommunityIcons name="key-outline" size={18} color="#6f768e" />
+                        <MaterialCommunityIcons name="key-outline" size={18} color={colors.icon} />
                         <TextInput
                           value={token}
                           onChangeText={setToken}
                           autoCapitalize="none"
                           placeholder="random_token_string..."
-                          placeholderTextColor="#8f96ad"
+                          placeholderTextColor={colors.inputPlaceholder}
                           style={styles.input}
                         />
                       </View>
@@ -128,13 +141,17 @@ export default function ResetPasswordScreen() {
                     <View style={styles.fieldGroup}>
                       <Text style={styles.fieldLabel}>New Password</Text>
                       <View style={styles.inputShell}>
-                        <MaterialCommunityIcons name="lock-outline" size={18} color="#6f768e" />
+                        <MaterialCommunityIcons
+                          name="lock-outline"
+                          size={18}
+                          color={colors.icon}
+                        />
                         <TextInput
                           value={newPassword}
                           onChangeText={setNewPassword}
                           autoComplete="new-password"
-                          placeholder="••••••••"
-                          placeholderTextColor="#8f96ad"
+                          placeholder="********"
+                          placeholderTextColor={colors.inputPlaceholder}
                           secureTextEntry
                           style={styles.input}
                         />
@@ -145,7 +162,11 @@ export default function ResetPasswordScreen() {
 
                     {!!success && (
                       <View style={styles.successBox}>
-                        <MaterialCommunityIcons name="check-circle-outline" size={18} color="#006947" />
+                        <MaterialCommunityIcons
+                          name="check-circle-outline"
+                          size={18}
+                          color={colors.success}
+                        />
                         <Text style={styles.successText}>{success}</Text>
                       </View>
                     )}
@@ -159,11 +180,15 @@ export default function ResetPasswordScreen() {
                         loading && styles.disabledButton,
                       ]}>
                       {loading ? (
-                        <ActivityIndicator color="#f6f6ff" />
+                        <ActivityIndicator color={colors.inverseText} />
                       ) : (
                         <>
                           <Text style={styles.primaryButtonText}>Reset Password</Text>
-                          <MaterialCommunityIcons name="chevron-right" size={20} color="#f6f6ff" />
+                          <MaterialCommunityIcons
+                            name="chevron-right"
+                            size={20}
+                            color={colors.inverseText}
+                          />
                         </>
                       )}
                     </Pressable>
@@ -185,258 +210,251 @@ export default function ResetPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f6f6ff',
-  },
-  screen: {
-    flex: 1,
-    backgroundColor: '#f6f6ff',
-  },
-  keyboardShell: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-  },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 1240,
-  },
-  grid: {
-    gap: 24,
-  },
-  heroColumn: {
-    display: 'none',
-  },
-  heroColumnWide: {
-    display: 'flex',
-    flex: 1,
-  },
-  formColumn: {
-    width: '100%',
-  },
-  formColumnWide: {
-    width: '100%',
-    maxWidth: 520,
-  },
-  glowTop: {
-    position: 'absolute',
-    top: -80,
-    left: -80,
-    width: 260,
-    height: 260,
-    borderRadius: 260,
-    backgroundColor: 'rgba(110, 159, 255, 0.22)',
-  },
-  glowBottom: {
-    position: 'absolute',
-    right: -100,
-    bottom: 50,
-    width: 240,
-    height: 240,
-    borderRadius: 240,
-    backgroundColor: 'rgba(107, 255, 143, 0.16)',
-  },
-  formCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.9)',
-    borderRadius: 28,
-    padding: 24,
-    shadowColor: '#060e20',
-    shadowOpacity: 0.08,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 3,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 16,
-  },
-  brandKicker: {
-    color: '#0057bd',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 2.2,
-  },
-  formTitle: {
-    marginTop: 6,
-    color: '#272e42',
-    fontSize: 30,
-    lineHeight: 34,
-    fontWeight: '800',
-    letterSpacing: -1.1,
-  },
-  brandMark: {
-    width: 42,
-    height: 42,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0057bd',
-    shadowColor: '#0057bd',
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-  },
-  formSubtitle: {
-    marginTop: 12,
-    color: '#535b71',
-    fontSize: 14,
-    lineHeight: 22,
-    fontWeight: '500',
-  },
-  fieldGroup: {
-    marginTop: 18,
-  },
-  fieldLabel: {
-    color: '#535b71',
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  inputShell: {
-    minHeight: 58,
-    borderRadius: 999,
-    backgroundColor: '#eef0ff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.95)',
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  input: {
-    flex: 1,
-    color: '#272e42',
-    fontSize: 15,
-    fontWeight: '600',
-    paddingVertical: 0,
-  },
-  errorText: {
-    marginTop: 14,
-    color: '#b31b25',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  successBox: {
-    marginTop: 14,
-    borderRadius: 18,
-    backgroundColor: 'rgba(107, 255, 143, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 105, 71, 0.16)',
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  successText: {
-    flex: 1,
-    color: '#006947',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  primaryButton: {
-    marginTop: 20,
-    minHeight: 58,
-    borderRadius: 999,
-    backgroundColor: '#0057bd',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    shadowColor: '#0057bd',
-    shadowOpacity: 0.26,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 4,
-  },
-  pressedButton: {
-    transform: [{ scale: 0.99 }],
-    opacity: 0.95,
-  },
-  disabledButton: {
-    opacity: 0.75,
-  },
-  primaryButtonText: {
-    color: '#f6f6ff',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  footerRow: {
-    marginTop: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  footerText: {
-    color: '#535b71',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  footerLink: {
-    color: '#006947',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.78)',
-  },
-  heroBadgeText: {
-    color: '#0057bd',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  heroTitle: {
-    marginTop: 22,
-    color: '#272e42',
-    fontSize: 56,
-    lineHeight: 60,
-    fontWeight: '900',
-    letterSpacing: -2,
-  },
-  heroAccent: {
-    color: '#0057bd',
-    fontStyle: 'italic',
-  },
-  heroBody: {
-    marginTop: 20,
-    maxWidth: 460,
-    color: '#535b71',
-    fontSize: 18,
-    lineHeight: 28,
-    fontWeight: '500',
-  },
-  gridWide: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 32,
-  },
-});
+const createStyles = (colors: AppColorTheme) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.surface,
+    },
+    screen: {
+      flex: 1,
+      backgroundColor: colors.surface,
+    },
+    keyboardShell: {
+      flex: 1,
+    },
+    scrollContent: {
+      flexGrow: 1,
+      paddingHorizontal: 20,
+      paddingVertical: 24,
+    },
+    container: {
+      flex: 1,
+      justifyContent: 'center',
+      alignSelf: 'center',
+      width: '100%',
+      maxWidth: 1240,
+    },
+    grid: {
+      gap: 24,
+    },
+    heroColumn: {
+      display: 'none',
+    },
+    heroColumnWide: {
+      display: 'flex',
+      flex: 1,
+    },
+    formColumn: {
+      width: '100%',
+    },
+    formColumnWide: {
+      width: '100%',
+      maxWidth: 520,
+    },
+    glowTop: {
+      position: 'absolute',
+      top: -80,
+      left: -80,
+      width: 260,
+      height: 260,
+      borderRadius: 260,
+      backgroundColor: colors.primaryGlow,
+    },
+    glowBottom: {
+      position: 'absolute',
+      right: -100,
+      bottom: 50,
+      width: 240,
+      height: 240,
+      borderRadius: 240,
+      backgroundColor: colors.secondaryGlow,
+    },
+    formCard: {
+      backgroundColor: colors.surfaceContainerLowest,
+      borderRadius: 28,
+      padding: 24,
+      shadowColor: colors.ambientShadow,
+      shadowOpacity: 0.12,
+      shadowRadius: 28,
+      shadowOffset: { width: 0, height: 18 },
+      elevation: 3,
+    },
+    brandRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 16,
+    },
+    brandKicker: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 2.2,
+    },
+    formTitle: {
+      marginTop: 6,
+      color: colors.onSurface,
+      fontSize: 30,
+      lineHeight: 34,
+      fontWeight: '800',
+      letterSpacing: -1.1,
+    },
+    brandMark: {
+      width: 42,
+      height: 42,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+      shadowColor: alpha(colors.primary, 0.28),
+      shadowOpacity: 1,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+    },
+    formSubtitle: {
+      marginTop: 12,
+      color: colors.onSurfaceVariant,
+      fontSize: 14,
+      lineHeight: 22,
+      fontWeight: '500',
+    },
+    fieldGroup: {
+      marginTop: 18,
+    },
+    fieldLabel: {
+      color: colors.onSurfaceVariant,
+      fontSize: 12,
+      fontWeight: '700',
+      marginBottom: 8,
+      textTransform: 'uppercase',
+      letterSpacing: 1.2,
+    },
+    inputShell: {
+      minHeight: 58,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceContainerLow,
+      paddingHorizontal: 18,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    input: {
+      flex: 1,
+      color: colors.onSurface,
+      fontSize: 15,
+      fontWeight: '600',
+      paddingVertical: 0,
+    },
+    errorText: {
+      marginTop: 14,
+      color: colors.danger,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    successBox: {
+      marginTop: 14,
+      borderRadius: 18,
+      backgroundColor: colors.successSoft,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    successText: {
+      flex: 1,
+      color: colors.success,
+      fontSize: 13,
+      fontWeight: '700',
+      lineHeight: 18,
+    },
+    primaryButton: {
+      marginTop: 20,
+      minHeight: 58,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      gap: 10,
+      shadowColor: alpha(colors.primary, 0.26),
+      shadowOpacity: 1,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: 4,
+    },
+    pressedButton: {
+      transform: [{ scale: 0.99 }],
+      opacity: 0.95,
+    },
+    disabledButton: {
+      opacity: 0.75,
+    },
+    primaryButtonText: {
+      color: colors.inverseText,
+      fontSize: 16,
+      fontWeight: '800',
+      letterSpacing: 0.3,
+    },
+    footerRow: {
+      marginTop: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      flexWrap: 'wrap',
+    },
+    footerText: {
+      color: colors.onSurfaceVariant,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    footerLink: {
+      color: colors.secondary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    heroBadge: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 999,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      backgroundColor: colors.glassSurface,
+    },
+    heroBadgeText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 0.4,
+    },
+    heroTitle: {
+      marginTop: 22,
+      color: colors.onSurface,
+      fontSize: 56,
+      lineHeight: 60,
+      fontWeight: '900',
+      letterSpacing: -2,
+    },
+    heroAccent: {
+      color: colors.primary,
+      fontStyle: 'italic',
+    },
+    heroBody: {
+      marginTop: 20,
+      maxWidth: 460,
+      color: colors.onSurfaceVariant,
+      fontSize: 18,
+      lineHeight: 28,
+      fontWeight: '500',
+    },
+    gridWide: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 32,
+    },
+  });

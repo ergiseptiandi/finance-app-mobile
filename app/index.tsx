@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Redirect } from 'expo-router';
 
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAuthSession } from '@/lib/auth-session';
 
 export default function Index() {
+  const colors = Colors[useColorScheme() ?? 'light'];
   const [target, setTarget] = useState<'loading' | '/login' | '/(tabs)'>('loading');
 
   useEffect(() => {
@@ -33,9 +36,9 @@ export default function Index() {
           flex: 1,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#f6f6ff',
+          backgroundColor: colors.surface,
         }}>
-        <ActivityIndicator size="large" color="#0057bd" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }

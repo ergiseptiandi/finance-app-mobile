@@ -10,22 +10,21 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import {
-  ApiRequestError,
-  refreshToken,
-} from '@/lib/api/auth';
+import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ApiRequestError, refreshToken } from '@/lib/api/auth';
 import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
 import {
   DashboardComparisonData,
+  DashboardSummaryData,
   DailySpendingItem,
   ExpenseVsSalaryData,
+  MonthlySpendingItem,
   getComparison,
-  getDashboardSummary,
   getDailySpending,
+  getDashboardSummary,
   getExpenseVsSalary,
   getMonthlySpending,
-  MonthlySpendingItem,
-  DashboardSummaryData,
 } from '@/lib/api/dashboard';
 
 const formatCurrency = (value: number) =>
@@ -65,6 +64,8 @@ const extractComparisonValue = (data: DashboardComparisonData | null, keys: stri
 };
 
 export default function DashboardScreen() {
+  const colors = Colors[useColorScheme() ?? 'light'];
+  const styles = createStyles(colors);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -109,7 +110,10 @@ export default function DashboardScreen() {
       let results = await fetchBundle(session.token.access_token);
 
       const hasUnauthorized = results.some(
-        (result) => result.status === 'rejected' && result.reason instanceof ApiRequestError && result.reason.status === 401
+        (result) =>
+          result.status === 'rejected' &&
+          result.reason instanceof ApiRequestError &&
+          result.reason.status === 401
       );
 
       if (hasUnauthorized && session.token.refresh_token) {
@@ -224,7 +228,13 @@ export default function DashboardScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadDashboard(true)} tintColor="#0057bd" />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => loadDashboard(true)}
+          tintColor={colors.primary}
+        />
+      }
       showsVerticalScrollIndicator={false}>
       <View style={styles.hero}>
         <View style={styles.heroText}>
@@ -235,13 +245,13 @@ export default function DashboardScreen() {
           </Text>
         </View>
         <View style={styles.avatar}>
-          <MaterialCommunityIcons name="finance" size={22} color="#f6f6ff" />
+          <MaterialCommunityIcons name="finance" size={22} color={colors.inverseText} />
         </View>
       </View>
 
       {loading ? (
         <View style={styles.loadingCard}>
-          <ActivityIndicator size="large" color="#0057bd" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Memuat summary dan analytics...</Text>
         </View>
       ) : (
@@ -252,7 +262,11 @@ export default function DashboardScreen() {
             {kpis.map((item) => (
               <View key={item.label} style={styles.kpiCard}>
                 <View style={styles.kpiIcon}>
-                  <MaterialCommunityIcons name={item.icon as never} size={18} color="#0057bd" />
+                  <MaterialCommunityIcons
+                    name={item.icon as never}
+                    size={18}
+                    color={colors.primary}
+                  />
                 </View>
                 <Text style={styles.kpiLabel}>{item.label}</Text>
                 <Text style={styles.kpiValue}>{item.value}</Text>
@@ -363,277 +377,268 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#f6f6ff',
-  },
-  content: {
-    padding: 20,
-    gap: 18,
-  },
-  hero: {
-    borderRadius: 28,
-    backgroundColor: '#0057bd',
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 16,
-    shadowColor: '#0057bd',
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 14 },
-  },
-  heroText: {
-    flex: 1,
-  },
-  kicker: {
-    color: 'rgba(246, 246, 255, 0.72)',
-    textTransform: 'uppercase',
-    letterSpacing: 1.8,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  title: {
-    marginTop: 6,
-    color: '#f6f6ff',
-    fontSize: 30,
-    lineHeight: 34,
-    fontWeight: '900',
-    letterSpacing: -1,
-  },
-  subtitle: {
-    marginTop: 8,
-    maxWidth: 320,
-    color: 'rgba(246, 246, 255, 0.82)',
-    fontSize: 13,
-    lineHeight: 20,
-    fontWeight: '500',
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
-  },
-  loadingCard: {
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.9)',
-    paddingVertical: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    color: '#535b71',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  errorText: {
-    color: '#b31b25',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  kpiGrid: {
-    gap: 12,
-  },
-  kpiCard: {
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.9)',
-    padding: 18,
-  },
-  kpiIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eef0ff',
-  },
-  kpiLabel: {
-    marginTop: 12,
-    color: '#535b71',
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  kpiValue: {
-    marginTop: 8,
-    color: '#272e42',
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.7,
-  },
-  section: {
-    gap: 10,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  sectionTitle: {
-    color: '#272e42',
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: -0.6,
-  },
-  sectionHint: {
-    color: '#6f768e',
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
-  },
-  chartCard: {
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.9)',
-    padding: 16,
-    gap: 12,
-  },
-  emptyState: {
-    color: '#6f768e',
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    paddingVertical: 12,
-  },
-  barRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  barLabel: {
-    width: 56,
-    color: '#6f768e',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  barTrack: {
-    flex: 1,
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: '#eef0ff',
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: '#0057bd',
-  },
-  barValue: {
-    width: 92,
-    textAlign: 'right',
-    color: '#272e42',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  monthGrid: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 8,
-    minHeight: 180,
-  },
-  monthItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 8,
-  },
-  monthBar: {
-    width: '100%',
-    borderRadius: 999,
-    backgroundColor: '#0057bd',
-    minHeight: 16,
-  },
-  monthLabel: {
-    color: '#6f768e',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  monthValue: {
-    color: '#272e42',
-    fontSize: 10,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  compareGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  compareCard: {
-    flex: 1,
-    borderRadius: 22,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.9)',
-    padding: 16,
-  },
-  compareLabel: {
-    color: '#6f768e',
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
-  },
-  compareValue: {
-    marginTop: 10,
-    color: '#272e42',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  compareMeta: {
-    marginTop: 8,
-    color: '#535b71',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  ratioCard: {
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.9)',
-    padding: 16,
-    gap: 14,
-  },
-  ratioTrack: {
-    height: 16,
-    borderRadius: 999,
-    backgroundColor: '#eef0ff',
-    overflow: 'hidden',
-  },
-  ratioFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: '#006947',
-  },
-  ratioMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  ratioMetaLabel: {
-    color: '#6f768e',
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
-  },
-  ratioMetaValue: {
-    marginTop: 6,
-    color: '#272e42',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-});
+const createStyles = (colors: AppColorTheme) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.surface,
+    },
+    content: {
+      padding: 20,
+      gap: 18,
+    },
+    hero: {
+      borderRadius: 28,
+      backgroundColor: colors.primary,
+      padding: 20,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 16,
+      shadowColor: alpha(colors.primary, 0.18),
+      shadowOpacity: 1,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 14 },
+    },
+    heroText: {
+      flex: 1,
+    },
+    kicker: {
+      color: colors.inverseTextMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 1.8,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    title: {
+      marginTop: 6,
+      color: colors.inverseText,
+      fontSize: 30,
+      lineHeight: 34,
+      fontWeight: '900',
+      letterSpacing: -1,
+    },
+    subtitle: {
+      marginTop: 8,
+      maxWidth: 320,
+      color: colors.inverseTextSoft,
+      fontSize: 13,
+      lineHeight: 20,
+      fontWeight: '500',
+    },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.heroOverlay,
+    },
+    loadingCard: {
+      borderRadius: 24,
+      backgroundColor: colors.surfaceContainerLowest,
+      paddingVertical: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+    },
+    loadingText: {
+      color: colors.onSurfaceVariant,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    kpiGrid: {
+      gap: 12,
+    },
+    kpiCard: {
+      borderRadius: 24,
+      backgroundColor: colors.surfaceContainerLowest,
+      padding: 18,
+    },
+    kpiIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    kpiLabel: {
+      marginTop: 12,
+      color: colors.onSurfaceVariant,
+      fontSize: 12,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.2,
+    },
+    kpiValue: {
+      marginTop: 8,
+      color: colors.onSurface,
+      fontSize: 22,
+      fontWeight: '900',
+      letterSpacing: -0.7,
+    },
+    section: {
+      gap: 10,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    sectionTitle: {
+      color: colors.onSurface,
+      fontSize: 18,
+      fontWeight: '900',
+      letterSpacing: -0.6,
+    },
+    sectionHint: {
+      color: colors.icon,
+      fontSize: 11,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 1.1,
+    },
+    chartCard: {
+      borderRadius: 24,
+      backgroundColor: colors.surfaceContainerLowest,
+      padding: 16,
+      gap: 12,
+    },
+    emptyState: {
+      color: colors.icon,
+      fontSize: 13,
+      fontWeight: '600',
+      textAlign: 'center',
+      paddingVertical: 12,
+    },
+    barRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    barLabel: {
+      width: 56,
+      color: colors.icon,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    barTrack: {
+      flex: 1,
+      height: 10,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceContainerLow,
+      overflow: 'hidden',
+    },
+    barFill: {
+      height: '100%',
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    barValue: {
+      width: 92,
+      textAlign: 'right',
+      color: colors.onSurface,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    monthGrid: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      gap: 8,
+      minHeight: 180,
+    },
+    monthItem: {
+      flex: 1,
+      alignItems: 'center',
+      gap: 8,
+    },
+    monthBar: {
+      width: '100%',
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      minHeight: 16,
+    },
+    monthLabel: {
+      color: colors.icon,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    monthValue: {
+      color: colors.onSurface,
+      fontSize: 10,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    compareGrid: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    compareCard: {
+      flex: 1,
+      borderRadius: 22,
+      backgroundColor: colors.surfaceContainerLowest,
+      padding: 16,
+    },
+    compareLabel: {
+      color: colors.icon,
+      fontSize: 12,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.1,
+    },
+    compareValue: {
+      marginTop: 10,
+      color: colors.onSurface,
+      fontSize: 18,
+      fontWeight: '900',
+    },
+    compareMeta: {
+      marginTop: 8,
+      color: colors.onSurfaceVariant,
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    ratioCard: {
+      borderRadius: 24,
+      backgroundColor: colors.surfaceContainerLowest,
+      padding: 16,
+      gap: 14,
+    },
+    ratioTrack: {
+      height: 16,
+      borderRadius: 999,
+      backgroundColor: colors.surfaceContainerLow,
+      overflow: 'hidden',
+    },
+    ratioFill: {
+      height: '100%',
+      borderRadius: 999,
+      backgroundColor: colors.secondary,
+    },
+    ratioMetaRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    ratioMetaLabel: {
+      color: colors.icon,
+      fontSize: 11,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.1,
+    },
+    ratioMetaValue: {
+      marginTop: 6,
+      color: colors.onSurface,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+  });
