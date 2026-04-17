@@ -13,47 +13,44 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
-import { ApiRequestError, login } from '@/lib/api/auth';
+import { ApiRequestError, forgotPassword } from '@/lib/api/auth';
 
-const DEVICE_NAME =
-  Platform.select({
-    android: 'Pulse Auth Android',
-    default: 'Pulse Auth Android',
-  }) ?? 'Pulse Auth Android';
-
-export default function LoginScreen() {
+export default function ForgotPasswordScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 960;
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [sentToken, setSentToken] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError('Email dan password wajib diisi.');
+  const handleSubmit = async () => {
+    if (!email.trim()) {
+      setError('Email wajib diisi.');
       return;
     }
 
     setLoading(true);
     setError('');
+    setSuccessMessage('');
+    setSentToken('');
 
     try {
-      await login({
-        email: email.trim(),
-        password,
-        device_name: DEVICE_NAME,
-      });
-      router.replace('/(tabs)');
+      const response = await forgotPassword({ email: email.trim() });
+      const token = response.Data?.reset_token ?? '';
+
+      setSuccessMessage('Instruksi reset password sudah dikirim.');
+      if (token) {
+        setSentToken(token);
+      }
     } catch (err) {
       if (err instanceof ApiRequestError) {
         setError(err.message);
       } else {
-        setError('Gagal login. Coba lagi.');
+        setError('Gagal mengirim reset password. Coba lagi.');
       }
     } finally {
       setLoading(false);
@@ -78,33 +75,30 @@ export default function LoginScreen() {
               <View style={[styles.grid, isWide && styles.gridWide]}>
                 <View style={[styles.heroColumn, isWide && styles.heroColumnWide]}>
                   <View style={styles.heroBadge}>
-                    <MaterialCommunityIcons name="shield-check-outline" size={14} color="#0057bd" />
-                    <Text style={styles.heroBadgeText}>Secure access</Text>
+                    <MaterialCommunityIcons name="lock-reset" size={14} color="#0057bd" />
+                    <Text style={styles.heroBadgeText}>Recovery flow</Text>
                   </View>
 
                   <Text style={styles.heroTitle}>
-                    Master your{'\n'}
-                    <Text style={styles.heroAccent}>financial</Text> flow.
+                    Reset your{'\n'}
+                    <Text style={styles.heroAccent}>security</Text>.
                   </Text>
 
                   <Text style={styles.heroBody}>
-                    The Ledger combines precision data with editorial elegance. Secure your future
-                    with the kinetic pulse of modern fintech.
+                    Enter the email linked to your account and we will send reset instructions.
+                    During development, the backend may return the reset token directly.
                   </Text>
 
                   <View style={styles.previewCard}>
                     <View style={styles.previewRow}>
                       <View style={styles.previewDot} />
-                      <Text style={styles.previewLabel}>Refresh tokens</Text>
-                      <Text style={styles.previewValue}>Rolling</Text>
+                      <Text style={styles.previewLabel}>Backend route</Text>
+                      <Text style={styles.previewValue}>/v1/auth/forgot-password</Text>
                     </View>
                     <View style={styles.previewRow}>
                       <View style={styles.previewDotSecondary} />
-                      <Text style={styles.previewLabel}>Device tracking</Text>
-                      <Text style={styles.previewValue}>Enabled</Text>
-                    </View>
-                    <View style={styles.previewFooter}>
-                      <Text style={styles.previewFooterText}>Built for the `/v1/auth` flow.</Text>
+                      <Text style={styles.previewLabel}>Next step</Text>
+                      <Text style={styles.previewValue}>Reset screen</Text>
                     </View>
                   </View>
                 </View>
@@ -114,15 +108,15 @@ export default function LoginScreen() {
                     <View style={styles.brandRow}>
                       <View>
                         <Text style={styles.brandKicker}>Pulse Auth</Text>
-                        <Text style={styles.formTitle}>Welcome Back</Text>
+                        <Text style={styles.formTitle}>Forgot Password?</Text>
                       </View>
                       <View style={styles.brandMark}>
-                        <MaterialCommunityIcons name="pulse" size={18} color="#f6f6ff" />
+                        <MaterialCommunityIcons name="mail" size={18} color="#f6f6ff" />
                       </View>
                     </View>
 
                     <Text style={styles.formSubtitle}>
-                      Please enter your details to access The Ledger.
+                      Enter your email address and we&apos;ll send instructions to reset your password.
                     </Text>
 
                     <View style={styles.fieldGroup}>
@@ -142,41 +136,30 @@ export default function LoginScreen() {
                       </View>
                     </View>
 
-                    <View style={styles.fieldGroup}>
-                      <View style={styles.labelRow}>
-                        <Text style={styles.fieldLabel}>Password</Text>
-                        <Pressable onPress={() => router.push('/forgot-password')} hitSlop={12}>
-                          <Text style={styles.linkText}>Forgot Password?</Text>
-                        </Pressable>
-                      </View>
-                      <View style={styles.inputShell}>
-                        <MaterialCommunityIcons name="lock-outline" size={18} color="#6f768e" />
-                        <TextInput
-                          value={password}
-                          onChangeText={setPassword}
-                          autoComplete="password"
-                          placeholder="••••••••"
-                          placeholderTextColor="#8f96ad"
-                          secureTextEntry={!showPassword}
-                          style={styles.input}
-                        />
-                        <Pressable
-                          onPress={() => setShowPassword((current) => !current)}
-                          hitSlop={12}
-                          style={styles.iconButton}>
-                          <MaterialCommunityIcons
-                            name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                            size={18}
-                            color="#6f768e"
-                          />
-                        </Pressable>
-                      </View>
-                    </View>
-
                     {!!error && <Text style={styles.errorText}>{error}</Text>}
 
+                    {!!successMessage && (
+                      <View style={styles.successBox}>
+                        <MaterialCommunityIcons name="check-circle-outline" size={18} color="#006947" />
+                        <Text style={styles.successText}>{successMessage}</Text>
+                      </View>
+                    )}
+
+                    {!!sentToken && (
+                      <View style={styles.tokenBox}>
+                        <Text style={styles.tokenLabel}>Dev reset token</Text>
+                        <Text style={styles.tokenValue}>{sentToken}</Text>
+                        <Pressable
+                          onPress={() => router.push({ pathname: '/reset-password', params: { token: sentToken } })}
+                          style={styles.tokenButton}>
+                          <Text style={styles.tokenButtonText}>Continue to Reset</Text>
+                          <MaterialCommunityIcons name="arrow-right" size={18} color="#0057bd" />
+                        </Pressable>
+                      </View>
+                    )}
+
                     <Pressable
-                      onPress={handleLogin}
+                      onPress={handleSubmit}
                       disabled={loading}
                       style={({ pressed }) => [
                         styles.primaryButton,
@@ -187,22 +170,16 @@ export default function LoginScreen() {
                         <ActivityIndicator color="#f6f6ff" />
                       ) : (
                         <>
-                          <Text style={styles.primaryButtonText}>Login</Text>
-                          <MaterialCommunityIcons name="arrow-right" size={20} color="#f6f6ff" />
+                          <Text style={styles.primaryButtonText}>Reset Password</Text>
+                          <MaterialCommunityIcons name="chevron-right" size={20} color="#f6f6ff" />
                         </>
                       )}
                     </Pressable>
 
-                    <View style={styles.inlineDivider}>
-                      <View style={styles.inlineDividerLine} />
-                      <Text style={styles.inlineDividerText}>No social login</Text>
-                      <View style={styles.inlineDividerLine} />
-                    </View>
-
                     <View style={styles.footerRow}>
-                      <Text style={styles.footerText}>Don&apos;t have an account?</Text>
-                      <Pressable onPress={() => router.push('/register')}>
-                        <Text style={styles.footerLink}>Join Now</Text>
+                      <Text style={styles.footerText}>Remember your password?</Text>
+                      <Pressable onPress={() => router.push('/login')}>
+                        <Text style={styles.footerLink}>Back to Login</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -338,17 +315,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-  },
-  linkText: {
-    color: '#0057bd',
-    fontSize: 12,
-    fontWeight: '700',
-  },
   inputShell: {
     minHeight: 58,
     borderRadius: 999,
@@ -367,14 +333,67 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     paddingVertical: 0,
   },
-  iconButton: {
-    padding: 4,
-  },
   errorText: {
     marginTop: 14,
     color: '#b31b25',
     fontSize: 13,
     fontWeight: '600',
+  },
+  successBox: {
+    marginTop: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(107, 255, 143, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 105, 71, 0.16)',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  successText: {
+    flex: 1,
+    color: '#006947',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  tokenBox: {
+    marginTop: 14,
+    borderRadius: 18,
+    backgroundColor: '#f0f2ff',
+    borderWidth: 1,
+    borderColor: 'rgba(209, 220, 255, 0.95)',
+    padding: 14,
+    gap: 8,
+  },
+  tokenLabel: {
+    color: '#535b71',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1.4,
+  },
+  tokenValue: {
+    color: '#272e42',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tokenButton: {
+    marginTop: 4,
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 87, 189, 0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  tokenButtonText: {
+    color: '#0057bd',
+    fontSize: 13,
+    fontWeight: '800',
   },
   primaryButton: {
     marginTop: 20,
@@ -403,24 +422,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.3,
-  },
-  inlineDivider: {
-    marginTop: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  inlineDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#d9e2ff',
-  },
-  inlineDividerText: {
-    color: '#a5adc6',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.8,
-    textTransform: 'uppercase',
   },
   footerRow: {
     marginTop: 20,
@@ -515,18 +516,6 @@ const styles = StyleSheet.create({
     color: '#272e42',
     fontSize: 14,
     fontWeight: '800',
-  },
-  previewFooter: {
-    marginTop: 6,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(209, 220, 255, 0.8)',
-  },
-  previewFooterText: {
-    color: '#535b71',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.2,
   },
   gridWide: {
     flexDirection: 'row',
