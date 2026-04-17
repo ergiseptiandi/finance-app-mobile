@@ -2,6 +2,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
+import { clearAuthSession } from '@/lib/auth-session';
+
 export default function ProfileScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -49,7 +51,12 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <Pressable style={styles.logoutButton} onPress={() => router.replace('/login')}>
+      <Pressable
+        style={styles.logoutButton}
+        onPress={async () => {
+          await clearAuthSession();
+          router.replace('/login');
+        }}>
         <MaterialCommunityIcons name="logout" size={18} color="#f6f6ff" />
         <Text style={styles.logoutText}>Sign Out</Text>
       </Pressable>

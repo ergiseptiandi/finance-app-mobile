@@ -1,73 +1,364 @@
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+
+import {
+  ApiRequestError,
+  refreshToken,
+} from '@/lib/api/auth';
+import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
+import {
+  DashboardComparisonData,
+  DailySpendingItem,
+  ExpenseVsSalaryData,
+  getComparison,
+  getDashboardSummary,
+  getDailySpending,
+  getExpenseVsSalary,
+  getMonthlySpending,
+  MonthlySpendingItem,
+  DashboardSummaryData,
+} from '@/lib/api/dashboard';
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const formatDateLabel = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+};
+
+const asNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
+
+const extractComparisonValue = (data: DashboardComparisonData | null, keys: string[]) => {
+  if (!data) {
+    return 0;
+  }
+
+  for (const key of keys) {
+    const value = (data as Record<string, unknown>)[key];
+    if (typeof value === 'number') {
+      return value;
+    }
+  }
+
+  return 0;
+};
 
 export default function DashboardScreen() {
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [summary, setSummary] = useState<DashboardSummaryData | null>(null);
+  const [dailySpending, setDailySpending] = useState<DailySpendingItem[]>([]);
+  const [monthlySpending, setMonthlySpending] = useState<MonthlySpendingItem[]>([]);
+  const [comparison, setComparison] = useState<DashboardComparisonData | null>(null);
+  const [expenseVsSalary, setExpenseVsSalary] = useState<ExpenseVsSalaryData | null>(null);
+  const [displayName, setDisplayName] = useState('Dashboard');
+  const [hasSession, setHasSession] = useState(true);
+
+  const loadDashboard = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    setError('');
+
+    try {
+      const session = await getAuthSession();
+
+      if (!session) {
+        setHasSession(false);
+        router.replace('/login');
+        return;
+      }
+
+      setHasSession(true);
+      setDisplayName(session.user.name || 'Dashboard');
+
+      const fetchBundle = async (accessToken: string) =>
+        Promise.allSettled([
+          getDashboardSummary(accessToken),
+          getDailySpending(accessToken),
+          getMonthlySpending(accessToken),
+          getComparison(accessToken),
+          getExpenseVsSalary(accessToken),
+        ]);
+
+      let results = await fetchBundle(session.token.access_token);
+
+      const hasUnauthorized = results.some(
+        (result) => result.status === 'rejected' && result.reason instanceof ApiRequestError && result.reason.status === 401
+      );
+
+      if (hasUnauthorized && session.token.refresh_token) {
+        const refreshed = await refreshToken({
+          refresh_token: session.token.refresh_token,
+        });
+        await saveAuthSession(refreshed.Data);
+        results = await fetchBundle(refreshed.Data.token.access_token);
+      }
+
+      const [summaryResult, dailyResult, monthlyResult, comparisonResult, expenseVsSalaryResult] =
+        results;
+
+      if (summaryResult.status === 'fulfilled') {
+        setSummary(summaryResult.value.Data);
+      }
+
+      if (dailyResult.status === 'fulfilled') {
+        setDailySpending(dailyResult.value.Data);
+      }
+
+      if (monthlyResult.status === 'fulfilled') {
+        setMonthlySpending(monthlyResult.value.Data);
+      }
+
+      if (comparisonResult.status === 'fulfilled') {
+        setComparison(comparisonResult.value.Data);
+      }
+
+      if (expenseVsSalaryResult.status === 'fulfilled') {
+        setExpenseVsSalary(expenseVsSalaryResult.value.Data);
+      }
+
+      const hasHardFailure = results.some(
+        (result) =>
+          result.status === 'rejected' &&
+          !(result.reason instanceof ApiRequestError && result.reason.status === 401)
+      );
+
+      if (hasHardFailure) {
+        setError('Sebagian data dashboard gagal dimuat. Coba tarik ulang.');
+      }
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 401) {
+        setError('Sesi sudah habis. Silakan login lagi.');
+        router.replace('/login');
+      } else {
+        setError('Gagal memuat dashboard. Coba lagi.');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  const spendingPeak = useMemo(
+    () => Math.max(...dailySpending.map((entry) => entry.amount), 1),
+    [dailySpending]
+  );
+
+  const monthlyPeak = useMemo(
+    () => Math.max(...monthlySpending.map((entry) => entry.amount), 1),
+    [monthlySpending]
+  );
+
+  const todayExpense = extractComparisonValue(comparison, ['today_expense', 'today', 'todayAmount']);
+  const yesterdayExpense = extractComparisonValue(comparison, [
+    'yesterday_expense',
+    'yesterday',
+    'yesterdayAmount',
+  ]);
+  const thisMonthExpense = extractComparisonValue(comparison, [
+    'this_month_expense',
+    'thisMonth',
+    'this_month',
+  ]);
+  const lastMonthExpense = extractComparisonValue(comparison, [
+    'last_month_expense',
+    'lastMonth',
+    'last_month',
+  ]);
+
+  const salaryAmount = expenseVsSalary?.salary_amount ?? 0;
+  const expenseAmount = expenseVsSalary?.expense_amount ?? summary?.monthly_expense ?? 0;
+  const expenseRatio =
+    expenseVsSalary?.percentage ??
+    (salaryAmount > 0 ? Math.min(100, Math.round((expenseAmount / salaryAmount) * 100)) : 0);
+
+  const kpis = [
+    {
+      label: 'Total Balance',
+      value: summary ? formatCurrency(summary.total_balance) : '-',
+      icon: 'wallet-outline',
+    },
+    {
+      label: 'Monthly Income',
+      value: summary ? formatCurrency(summary.monthly_income) : '-',
+      icon: 'arrow-down-bold-circle-outline',
+    },
+    {
+      label: 'Monthly Expense',
+      value: summary ? formatCurrency(summary.monthly_expense) : '-',
+      icon: 'arrow-up-bold-circle-outline',
+    },
+  ];
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadDashboard(true)} tintColor="#0057bd" />}
+      showsVerticalScrollIndicator={false}>
       <View style={styles.hero}>
-        <View>
+        <View style={styles.heroText}>
           <Text style={styles.kicker}>Finance overview</Text>
           <Text style={styles.title}>Dashboard</Text>
-          <Text style={styles.subtitle}>A quick snapshot of balances, movement, and momentum.</Text>
+          <Text style={styles.subtitle}>
+            {hasSession ? `Welcome back, ${displayName}.` : 'Loading your session.'}
+          </Text>
         </View>
         <View style={styles.avatar}>
           <MaterialCommunityIcons name="finance" size={22} color="#f6f6ff" />
         </View>
       </View>
 
-      <View style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>Total Balance</Text>
-        <Text style={styles.balanceValue}>Rp 24.500.000</Text>
-        <View style={styles.balanceMetaRow}>
-          <View style={styles.balanceMeta}>
-            <Text style={styles.balanceMetaLabel}>Income</Text>
-            <Text style={styles.balanceMetaValue}>Rp 18.250.000</Text>
-          </View>
-          <View style={styles.balanceMeta}>
-            <Text style={styles.balanceMetaLabel}>Expense</Text>
-            <Text style={styles.balanceMetaValue}>Rp 7.650.000</Text>
-          </View>
+      {loading ? (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color="#0057bd" />
+          <Text style={styles.loadingText}>Memuat summary dan analytics...</Text>
         </View>
-      </View>
+      ) : (
+        <>
+          {!!error && <Text style={styles.errorText}>{error}</Text>}
 
-      <View style={styles.actionsRow}>
-        <Pressable style={styles.actionButton}>
-          <MaterialCommunityIcons name="plus-circle-outline" size={18} color="#0057bd" />
-          <Text style={styles.actionText}>Top Up</Text>
-        </Pressable>
-        <Pressable style={styles.actionButton}>
-          <MaterialCommunityIcons name="swap-horizontal" size={18} color="#0057bd" />
-          <Text style={styles.actionText}>Transfer</Text>
-        </Pressable>
-        <Pressable style={styles.actionButton}>
-          <MaterialCommunityIcons name="chart-line" size={18} color="#0057bd" />
-          <Text style={styles.actionText}>Insight</Text>
-        </Pressable>
-      </View>
+          <View style={styles.kpiGrid}>
+            {kpis.map((item) => (
+              <View key={item.label} style={styles.kpiCard}>
+                <View style={styles.kpiIcon}>
+                  <MaterialCommunityIcons name={item.icon as never} size={18} color="#0057bd" />
+                </View>
+                <Text style={styles.kpiLabel}>{item.label}</Text>
+                <Text style={styles.kpiValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
-        <View style={styles.transactionCard}>
-          <View style={styles.transactionIcon}>
-            <MaterialCommunityIcons name="arrow-down-left" size={18} color="#006947" />
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Daily Spending</Text>
+              <Text style={styles.sectionHint}>Current month</Text>
+            </View>
+
+            <View style={styles.chartCard}>
+              {dailySpending.length > 0 ? (
+                dailySpending.slice(0, 10).map((item) => {
+                  const width = Math.max(8, (item.amount / spendingPeak) * 100);
+                  return (
+                    <View key={item.date} style={styles.barRow}>
+                      <Text style={styles.barLabel}>{formatDateLabel(item.date)}</Text>
+                      <View style={styles.barTrack}>
+                        <View style={[styles.barFill, { width: `${width}%` }]} />
+                      </View>
+                      <Text style={styles.barValue}>{formatCurrency(asNumber(item.amount))}</Text>
+                    </View>
+                  );
+                })
+              ) : (
+                <Text style={styles.emptyState}>Belum ada data spending harian.</Text>
+              )}
+            </View>
           </View>
-          <View style={styles.transactionBody}>
-            <Text style={styles.transactionTitle}>Salary Deposit</Text>
-            <Text style={styles.transactionMeta}>Today, 09:30</Text>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Monthly Spending</Text>
+              <Text style={styles.sectionHint}>Last 12 months</Text>
+            </View>
+
+            <View style={styles.chartCard}>
+              <View style={styles.monthGrid}>
+                {monthlySpending.length > 0 ? (
+                  monthlySpending.slice(0, 12).map((item, index) => {
+                    const label = item.label ?? item.month ?? item.date ?? `M${index + 1}`;
+                    const height = Math.max(16, (item.amount / monthlyPeak) * 120);
+                    return (
+                      <View key={`${label}-${index}`} style={styles.monthItem}>
+                        <View style={[styles.monthBar, { height }]} />
+                        <Text style={styles.monthLabel} numberOfLines={1}>
+                          {label}
+                        </Text>
+                        <Text style={styles.monthValue}>{formatCurrency(asNumber(item.amount))}</Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.emptyState}>Belum ada data spending bulanan.</Text>
+                )}
+              </View>
+            </View>
           </View>
-          <Text style={styles.transactionAmountPositive}>+ Rp 12.000.000</Text>
-        </View>
-        <View style={styles.transactionCard}>
-          <View style={[styles.transactionIcon, styles.transactionIconMuted]}>
-            <MaterialCommunityIcons name="arrow-up-right" size={18} color="#b31b25" />
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Comparison</Text>
+              <Text style={styles.sectionHint}>Today vs yesterday, this month vs last month</Text>
+            </View>
+
+            <View style={styles.compareGrid}>
+              <View style={styles.compareCard}>
+                <Text style={styles.compareLabel}>Today</Text>
+                <Text style={styles.compareValue}>{formatCurrency(todayExpense)}</Text>
+                <Text style={styles.compareMeta}>Yesterday: {formatCurrency(yesterdayExpense)}</Text>
+              </View>
+              <View style={styles.compareCard}>
+                <Text style={styles.compareLabel}>This Month</Text>
+                <Text style={styles.compareValue}>{formatCurrency(thisMonthExpense)}</Text>
+                <Text style={styles.compareMeta}>Last month: {formatCurrency(lastMonthExpense)}</Text>
+              </View>
+            </View>
           </View>
-          <View style={styles.transactionBody}>
-            <Text style={styles.transactionTitle}>Budget Allocation</Text>
-            <Text style={styles.transactionMeta}>Today, 08:15</Text>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Expense vs Salary</Text>
+              <Text style={styles.sectionHint}>{expenseRatio}% of latest salary</Text>
+            </View>
+
+            <View style={styles.ratioCard}>
+              <View style={styles.ratioTrack}>
+                <View style={[styles.ratioFill, { width: `${Math.min(expenseRatio, 100)}%` }]} />
+              </View>
+              <View style={styles.ratioMetaRow}>
+                <View>
+                  <Text style={styles.ratioMetaLabel}>Expense</Text>
+                  <Text style={styles.ratioMetaValue}>{formatCurrency(expenseAmount)}</Text>
+                </View>
+                <View>
+                  <Text style={styles.ratioMetaLabel}>Salary</Text>
+                  <Text style={styles.ratioMetaValue}>{formatCurrency(salaryAmount)}</Text>
+                </View>
+              </View>
+            </View>
           </View>
-          <Text style={styles.transactionAmountNegative}>- Rp 1.750.000</Text>
-        </View>
-      </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -94,6 +385,9 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 14 },
   },
+  heroText: {
+    flex: 1,
+  },
   kicker: {
     color: 'rgba(246, 246, 255, 0.72)',
     textTransform: 'uppercase',
@@ -111,7 +405,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: 8,
-    maxWidth: 280,
+    maxWidth: 320,
     color: 'rgba(246, 246, 255, 0.82)',
     fontSize: 13,
     lineHeight: 20,
@@ -125,77 +419,67 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.16)',
   },
-  balanceCard: {
-    borderRadius: 28,
+  loadingCard: {
+    borderRadius: 24,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: 'rgba(209, 220, 255, 0.9)',
-    padding: 20,
-    shadowColor: '#060e20',
-    shadowOpacity: 0.06,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 2,
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
-  balanceLabel: {
+  loadingText: {
+    color: '#535b71',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  errorText: {
+    color: '#b31b25',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  kpiGrid: {
+    gap: 12,
+  },
+  kpiCard: {
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(209, 220, 255, 0.9)',
+    padding: 18,
+  },
+  kpiIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef0ff',
+  },
+  kpiLabel: {
+    marginTop: 12,
     color: '#535b71',
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 1.4,
+    letterSpacing: 1.2,
   },
-  balanceValue: {
-    marginTop: 10,
-    color: '#272e42',
-    fontSize: 34,
-    fontWeight: '900',
-    letterSpacing: -1.2,
-  },
-  balanceMetaRow: {
-    marginTop: 18,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  balanceMeta: {
-    flex: 1,
-    borderRadius: 20,
-    backgroundColor: '#eef0ff',
-    padding: 14,
-  },
-  balanceMetaLabel: {
-    color: '#6f768e',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  balanceMetaValue: {
+  kpiValue: {
     marginTop: 8,
     color: '#272e42',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    minHeight: 56,
-    borderRadius: 999,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(209, 220, 255, 0.9)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  actionText: {
-    color: '#0057bd',
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.7,
   },
   section: {
-    gap: 12,
+    gap: 10,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   sectionTitle: {
     color: '#272e42',
@@ -203,49 +487,153 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.6,
   },
-  transactionCard: {
+  sectionHint: {
+    color: '#6f768e',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+  },
+  chartCard: {
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(209, 220, 255, 0.9)',
+    padding: 16,
+    gap: 12,
+  },
+  emptyState: {
+    color: '#6f768e',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  barRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  barLabel: {
+    width: 56,
+    color: '#6f768e',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  barTrack: {
+    flex: 1,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#eef0ff',
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#0057bd',
+  },
+  barValue: {
+    width: 92,
+    textAlign: 'right',
+    color: '#272e42',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  monthGrid: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 8,
+    minHeight: 180,
+  },
+  monthItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 8,
+  },
+  monthBar: {
+    width: '100%',
+    borderRadius: 999,
+    backgroundColor: '#0057bd',
+    minHeight: 16,
+  },
+  monthLabel: {
+    color: '#6f768e',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  monthValue: {
+    color: '#272e42',
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  compareGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  compareCard: {
+    flex: 1,
     borderRadius: 22,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: 'rgba(209, 220, 255, 0.9)',
     padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
-  transactionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(107, 255, 143, 0.18)',
-  },
-  transactionIconMuted: {
-    backgroundColor: 'rgba(251, 81, 81, 0.12)',
-  },
-  transactionBody: {
-    flex: 1,
-  },
-  transactionTitle: {
-    color: '#272e42',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  transactionMeta: {
-    marginTop: 4,
+  compareLabel: {
     color: '#6f768e',
     fontSize: 12,
-    fontWeight: '500',
-  },
-  transactionAmountPositive: {
-    color: '#006947',
-    fontSize: 12,
     fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
   },
-  transactionAmountNegative: {
-    color: '#b31b25',
+  compareValue: {
+    marginTop: 10,
+    color: '#272e42',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  compareMeta: {
+    marginTop: 8,
+    color: '#535b71',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  ratioCard: {
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(209, 220, 255, 0.9)',
+    padding: 16,
+    gap: 14,
+  },
+  ratioTrack: {
+    height: 16,
+    borderRadius: 999,
+    backgroundColor: '#eef0ff',
+    overflow: 'hidden',
+  },
+  ratioFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#006947',
+  },
+  ratioMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  ratioMetaLabel: {
+    color: '#6f768e',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+  },
+  ratioMetaValue: {
+    marginTop: 6,
+    color: '#272e42',
+    fontSize: 14,
     fontWeight: '800',
   },
 });

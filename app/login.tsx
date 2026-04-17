@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { ApiRequestError, login } from '@/lib/api/auth';
+import { saveAuthSession } from '@/lib/auth-session';
 
 const DEVICE_NAME =
   Platform.select({
@@ -43,11 +44,12 @@ export default function LoginScreen() {
     setError('');
 
     try {
-      await login({
+      const response = await login({
         email: email.trim(),
         password,
         device_name: DEVICE_NAME,
       });
+      await saveAuthSession(response.Data);
       router.replace('/(tabs)');
     } catch (err) {
       if (err instanceof ApiRequestError) {
