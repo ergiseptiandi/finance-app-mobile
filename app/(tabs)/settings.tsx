@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/providers/theme-provider';
 import { clearAuthSession, getAuthSession } from '@/lib/auth-session';
 
 type SettingsRowProps = {
@@ -58,6 +59,7 @@ function SettingsRow({
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
+  const { setColorScheme } = useAppTheme();
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors, insets.top);
@@ -213,16 +215,20 @@ export default function SettingsScreen() {
               subtitle=""
               rightSlot={
                 <View style={styles.appearanceSegment}>
-                  <View style={[styles.appearancePill, colorScheme === 'light' && styles.appearancePillActive]}>
+                  <Pressable
+                    onPress={() => setColorScheme('light')}
+                    style={[styles.appearancePill, colorScheme === 'light' && styles.appearancePillActive]}>
                     <Text style={[styles.appearanceText, colorScheme === 'light' && styles.appearanceTextActive]}>
                       Light
                     </Text>
-                  </View>
-                  <View style={[styles.appearancePill, colorScheme === 'dark' && styles.appearancePillActive]}>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setColorScheme('dark')}
+                    style={[styles.appearancePill, colorScheme === 'dark' && styles.appearancePillActive]}>
                     <Text style={[styles.appearanceText, colorScheme === 'dark' && styles.appearanceTextActive]}>
                       Dark
                     </Text>
-                  </View>
+                  </Pressable>
                 </View>
               }
               style={styles.preferenceRow}

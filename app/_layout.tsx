@@ -5,12 +5,21 @@ import 'react-native-reanimated';
 
 import { NavigationThemes } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AppThemeProvider } from '@/providers/theme-provider';
 
 export const unstable_settings = {
   anchor: 'login',
 };
 
 export default function RootLayout() {
+  return (
+    <AppThemeProvider>
+      <RootNavigator />
+    </AppThemeProvider>
+  );
+}
+
+function RootNavigator() {
   const colorScheme = useColorScheme() ?? 'light';
 
   return (
