@@ -27,6 +27,7 @@ type SettingsRowProps = {
   accent?: boolean;
   rightSlot?: React.ReactNode;
   style?: ViewStyle;
+  onPress?: () => void;
 };
 
 function SettingsRow({
@@ -38,12 +39,16 @@ function SettingsRow({
   accent = false,
   rightSlot,
   style,
+  onPress,
 }: SettingsRowProps) {
   const iconColor =
     iconTone === 'primary' ? colors.primary : iconTone === 'secondary' ? colors.secondary : colors.icon;
 
   return (
-    <View style={[settingsRowStyles(colors).row, accent && settingsRowStyles(colors).rowAccent, style]}>
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={[settingsRowStyles(colors).row, accent && settingsRowStyles(colors).rowAccent, style]}>
       <View style={settingsRowStyles(colors).left}>
         <View style={settingsRowStyles(colors).iconWrap}>
           <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
@@ -54,7 +59,7 @@ function SettingsRow({
         </View>
       </View>
       {rightSlot}
-    </View>
+    </Pressable>
   );
 }
 
@@ -228,6 +233,18 @@ export default function SettingsScreen() {
                   </Pressable>
                 </View>
               }
+              style={styles.preferenceRow}
+            />
+
+            <View style={styles.rowDivider} />
+
+            <SettingsRow
+              colors={colors}
+              icon="shape-outline"
+              title={t('settings.categories')}
+              subtitle={t('settings.categoriesMeta')}
+              onPress={() => router.push('/categories')}
+              rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
               style={styles.preferenceRow}
             />
           </View>

@@ -18,6 +18,7 @@ import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, refreshToken } from '@/lib/api/auth';
 import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
+import { listCategories, type CategoryRecord } from '@/lib/api/categories';
 import {
   createTransaction,
   deleteTransaction,
@@ -70,7 +71,7 @@ const DEFAULT_PAGINATION: PaginationState = {
 
 const getTodayInputValue = () => new Date().toISOString().slice(0, 10);
 
-const createEmptyForm = (): TransactionFormState => ({
+const createEmptyTransactionForm = (): TransactionFormState => ({
   type: 'expense',
   category: '',
   amount: '',
@@ -137,7 +138,7 @@ const toDateHeading = (value: string, locale: string) => {
     .toUpperCase();
 };
 
-const toFormState = (record: TransactionRecord): TransactionFormState => ({
+const toTransactionForm = (record: TransactionRecord): TransactionFormState => ({
   id: record.id,
   type: record.type,
   category: record.category,
@@ -219,7 +220,12 @@ function SummaryStat({
       </Text>
       {showProgress ? (
         <View style={summaryStyles(colors).progressTrack}>
-          <View style={[summaryStyles(colors).progressFill, { width: `${Math.max(8, progress)}%`, backgroundColor: palette.fill }]} />
+          <View
+            style={[
+              summaryStyles(colors).progressFill,
+              { width: `${Math.max(8, progress)}%`, backgroundColor: palette.fill },
+            ]}
+          />
         </View>
       ) : null}
       <Text
@@ -261,11 +267,7 @@ function TransactionRow({
     <Pressable onPress={onPress} style={({ pressed }) => [rowStyles(colors).card, pressed && rowStyles(colors).pressed]}>
       <View style={rowStyles(colors).left}>
         <View style={[rowStyles(colors).iconWrap, { backgroundColor: iconBackground }]}>
-          <MaterialCommunityIcons
-            name={isIncome ? 'cash-fast' : 'cart-outline'}
-            size={20}
-            color={iconColor}
-          />
+          <MaterialCommunityIcons name={isIncome ? 'cash-fast' : 'cart-outline'} size={20} color={iconColor} />
         </View>
 
         <View style={rowStyles(colors).copy}>
@@ -305,6 +307,7 @@ export default function ActivityScreen() {
 
   const [summary, setSummary] = useState<TransactionSummaryData>(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [pagination, setPagination] = useState<PaginationState>(DEFAULT_PAGINATION);
   const [filter, setFilter] = useState<ActivityFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -312,12 +315,12 @@ export default function ActivityScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
+  const [transactionModalVisible, setTransactionModalVisible] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState('');
-  const [form, setForm] = useState<TransactionFormState>(createEmptyForm);
+  const [form, setForm] = useState<TransactionFormState>(createEmptyTransactionForm);
 
   const withAuthorizedRequest = useCallback(
     async <T,>(task: (accessToken: string) => Promise<T>) => {
@@ -360,7 +363,7 @@ export default function ActivityScreen() {
       setError('');
 
       try {
-        const [summaryResponse, transactionResponse] = await withAuthorizedRequest((accessToken) =>
+        const [summaryResponse, transactionResponse, categoryResponse] = await withAuthorizedRequest((accessToken) =>
           Promise.all([
             getTransactionSummary(accessToken),
             listTransactions(accessToken, {
@@ -368,11 +371,13 @@ export default function ActivityScreen() {
               per_page: 10,
               type: filter === 'all' ? undefined : filter,
             }),
+            listCategories(accessToken),
           ])
         );
 
         setSummary(summaryResponse.Data ?? DEFAULT_SUMMARY);
         setTransactions(transactionResponse.Data.data ?? []);
+        setCategories(categoryResponse.Data ?? []);
         setPagination({
           page: transactionResponse.Data.page ?? 1,
           perPage: transactionResponse.Data.per_page ?? 10,
@@ -428,25 +433,25 @@ export default function ActivityScreen() {
     }
   }, [filter, loading, loadingMore, pagination, t, withAuthorizedRequest]);
 
-  const resetForm = useCallback(() => {
-    setForm(createEmptyForm());
+  const resetTransactionForm = useCallback(() => {
+    setForm(createEmptyTransactionForm());
     setFormError('');
   }, []);
 
   const openCreateModal = useCallback(() => {
-    resetForm();
-    setModalVisible(true);
-  }, [resetForm]);
+    resetTransactionForm();
+    setTransactionModalVisible(true);
+  }, [resetTransactionForm]);
 
   const openEditModal = useCallback(
     async (id: number) => {
-      setModalVisible(true);
+      setTransactionModalVisible(true);
       setDetailLoading(true);
       setFormError('');
 
       try {
         const response = await withAuthorizedRequest((accessToken) => getTransactionDetail(accessToken, id));
-        setForm(toFormState(response.Data));
+        setForm(toTransactionForm(response.Data));
       } catch (detailError) {
         if (!(detailError instanceof Error && detailError.message === 'missing_session')) {
           setFormError(t('activity.transactions.detailError'));
@@ -458,16 +463,16 @@ export default function ActivityScreen() {
     [t, withAuthorizedRequest]
   );
 
-  const closeModal = useCallback(() => {
-    setModalVisible(false);
+  const closeTransactionModal = useCallback(() => {
+    setTransactionModalVisible(false);
     setDetailLoading(false);
     setSubmitting(false);
     setDeleting(false);
     setFormError('');
-    setForm(createEmptyForm());
+    setForm(createEmptyTransactionForm());
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSaveTransaction = useCallback(async () => {
     const normalizedCategory = form.category.trim();
     const normalizedAmount = Number.parseFloat(form.amount.replace(',', '.'));
 
@@ -494,7 +499,7 @@ export default function ActivityScreen() {
         await withAuthorizedRequest((accessToken) => createTransaction(accessToken, payload));
       }
 
-      closeModal();
+      closeTransactionModal();
       await loadActivity();
     } catch (saveError) {
       if (saveError instanceof ApiRequestError) {
@@ -505,9 +510,9 @@ export default function ActivityScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [closeModal, form, loadActivity, t, withAuthorizedRequest]);
+  }, [closeTransactionModal, form, loadActivity, t, withAuthorizedRequest]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDeleteTransaction = useCallback(async () => {
     if (!form.id) {
       return;
     }
@@ -517,7 +522,7 @@ export default function ActivityScreen() {
 
     try {
       await withAuthorizedRequest((accessToken) => deleteTransaction(accessToken, form.id!));
-      closeModal();
+      closeTransactionModal();
       await loadActivity();
     } catch (deleteError) {
       if (deleteError instanceof ApiRequestError) {
@@ -528,7 +533,7 @@ export default function ActivityScreen() {
     } finally {
       setDeleting(false);
     }
-  }, [closeModal, form.id, loadActivity, t, withAuthorizedRequest]);
+  }, [closeTransactionModal, form.id, loadActivity, t, withAuthorizedRequest]);
 
   const totalMovement = summary.total_income + summary.total_expense;
   const visibleTransactions = useMemo(() => {
@@ -577,6 +582,14 @@ export default function ActivityScreen() {
   const streamProgress =
     pagination.total > 0 ? (visibleTransactions.length / Math.max(pagination.total, 1)) * 100 : 0;
   const incomeShare = totalMovement > 0 ? (summary.total_income / totalMovement) * 100 : 0;
+
+  const availableCategories = useMemo(
+    () =>
+      categories
+        .filter((category) => category.type === form.type)
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    [categories, form.type]
+  );
 
   return (
     <>
@@ -710,9 +723,9 @@ export default function ActivityScreen() {
         {!!error && <Text style={styles.errorText}>{error}</Text>}
       </ScrollView>
 
-      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={closeModal}>
+      <Modal visible={transactionModalVisible} animationType="slide" transparent onRequestClose={closeTransactionModal}>
         <View style={styles.modalOverlay}>
-          <Pressable style={styles.modalBackdrop} onPress={closeModal} />
+          <Pressable style={styles.modalBackdrop} onPress={closeTransactionModal} />
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View>
@@ -721,7 +734,7 @@ export default function ActivityScreen() {
                 </Text>
                 <Text style={styles.modalSubtitle}>{t('activity.transactions.modalHint')}</Text>
               </View>
-              <Pressable onPress={closeModal} style={styles.closeButton}>
+              <Pressable onPress={closeTransactionModal} style={styles.closeButton}>
                 <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
               </Pressable>
             </View>
@@ -739,7 +752,18 @@ export default function ActivityScreen() {
                     return (
                       <Pressable
                         key={type}
-                        onPress={() => setForm((current) => ({ ...current, type }))}
+                        onPress={() =>
+                          setForm((current) => ({
+                            ...current,
+                            type,
+                            category:
+                              current.type === type
+                                ? current.category
+                                : categories.some((item) => item.type === type && item.name === current.category)
+                                  ? current.category
+                                  : '',
+                          }))
+                        }
                         style={[styles.typePill, active && styles.typePillActive]}>
                         <Text style={[styles.typePillText, active && styles.typePillTextActive]}>
                           {type === 'income' ? t('activity.transactions.income') : t('activity.transactions.expense')}
@@ -751,13 +775,30 @@ export default function ActivityScreen() {
 
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>{t('activity.transactions.category')}</Text>
-                  <TextInput
-                    value={form.category}
-                    onChangeText={(value) => setForm((current) => ({ ...current, category: value }))}
-                    placeholder={t('activity.transactions.categoryPlaceholder')}
-                    placeholderTextColor={colors.inputPlaceholder}
-                    style={styles.input}
-                  />
+                  {availableCategories.length > 0 ? (
+                    <View style={styles.categoryWrap}>
+                      {availableCategories.map((category) => {
+                        const active = form.category === category.name;
+                        return (
+                          <Pressable
+                            key={category.id}
+                            onPress={() => setForm((current) => ({ ...current, category: category.name }))}
+                            style={[styles.categoryChip, active && styles.categoryChipActive]}>
+                            <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
+                              {category.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <View style={styles.emptyCategoryBox}>
+                      <Text style={styles.emptyCategoryText}>{t('activity.transactions.categoryFromSettings')}</Text>
+                      <Pressable onPress={() => router.push('/categories')} style={styles.emptyCategoryButton}>
+                        <Text style={styles.emptyCategoryButtonText}>{t('activity.transactions.openCategories')}</Text>
+                      </Pressable>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.fieldGrid}>
@@ -800,7 +841,7 @@ export default function ActivityScreen() {
 
                 {!!formError && <Text style={styles.errorText}>{formError}</Text>}
 
-                <Pressable onPress={handleSave} disabled={submitting || deleting} style={styles.submitButton}>
+                <Pressable onPress={handleSaveTransaction} disabled={submitting || deleting} style={styles.submitButton}>
                   {submitting ? (
                     <ActivityIndicator color={colors.onPrimary} />
                   ) : (
@@ -811,7 +852,7 @@ export default function ActivityScreen() {
                 </Pressable>
 
                 {form.id ? (
-                  <Pressable onPress={handleDelete} disabled={submitting || deleting} style={styles.deleteButton}>
+                  <Pressable onPress={handleDeleteTransaction} disabled={submitting || deleting} style={styles.deleteButton}>
                     {deleting ? (
                       <ActivityIndicator color={colors.danger} />
                     ) : (
@@ -1252,6 +1293,62 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
     textarea: {
       minHeight: 112,
+    },
+    categoryWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    categoryChip: {
+      minHeight: 38,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    categoryChipActive: {
+      backgroundColor: alpha(colors.primary, 0.12),
+      borderColor: alpha(colors.primary, 0.32),
+    },
+    categoryChipText: {
+      color: colors.shellTextSecondary,
+      fontSize: 13,
+      lineHeight: 16,
+      fontWeight: '700',
+    },
+    categoryChipTextActive: {
+      color: colors.primary,
+    },
+    emptyCategoryBox: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 14,
+      gap: 10,
+    },
+    emptyCategoryText: {
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+    emptyCategoryButton: {
+      alignSelf: 'flex-start',
+      minHeight: 34,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emptyCategoryButtonText: {
+      color: colors.onPrimary,
+      fontSize: 12,
+      fontWeight: '800',
     },
     submitButton: {
       minHeight: 52,
