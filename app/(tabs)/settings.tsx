@@ -1,73 +1,356 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 
-import { Colors, type AppColorTheme } from '@/constants/theme';
+import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { clearAuthSession } from '@/lib/auth-session';
+import { clearAuthSession, getAuthSession } from '@/lib/auth-session';
 
-export default function SettingsScreen() {
-  const colors = Colors[useColorScheme() ?? 'light'];
-  const styles = createStyles(colors);
+type SettingsRowProps = {
+  colors: AppColorTheme;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  title: string;
+  subtitle: string;
+  iconTone?: 'primary' | 'secondary' | 'muted';
+  accent?: boolean;
+  rightSlot?: React.ReactNode;
+  style?: ViewStyle;
+};
+
+function SettingsRow({
+  colors,
+  icon,
+  title,
+  subtitle,
+  iconTone = 'muted',
+  accent = false,
+  rightSlot,
+  style,
+}: SettingsRowProps) {
+  const iconColor =
+    iconTone === 'primary' ? colors.primary : iconTone === 'secondary' ? colors.secondary : colors.icon;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>Settings</Text>
-      <Text style={styles.title}>Profile, security, and session hygiene.</Text>
-      <Text style={styles.subtitle}>
-        Menu items use fixed padding and flexible text columns so the row content stays within the
-        viewport on compact devices.
-      </Text>
-
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Current Session</Text>
-        <Text style={styles.cardValue}>Connected to backend</Text>
-        <Text style={styles.cardText}>
-          Use the auth endpoints at `https://api-finance.paidev.my.id/v1/auth` for login, register,
-          refresh, and profile updates.
-        </Text>
-      </View>
-
-      <View style={styles.menu}>
-        <View style={styles.menuItem}>
-          <MaterialCommunityIcons name="account-outline" size={20} color={colors.primary} />
-          <View style={styles.menuBody}>
-            <Text style={styles.menuTitle}>Profile</Text>
-            <Text style={styles.menuSubtitle}>Update name and email</Text>
-          </View>
+    <View style={[settingsRowStyles(colors).row, accent && settingsRowStyles(colors).rowAccent, style]}>
+      <View style={settingsRowStyles(colors).left}>
+        <View style={settingsRowStyles(colors).iconWrap}>
+          <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
         </View>
-        <View style={styles.menuItem}>
-          <MaterialCommunityIcons name="lock-outline" size={20} color={colors.primary} />
-          <View style={styles.menuBody}>
-            <Text style={styles.menuTitle}>Password</Text>
-            <Text style={styles.menuSubtitle}>Change current password</Text>
-          </View>
-        </View>
-        <View style={styles.menuItem}>
-          <MaterialCommunityIcons
-            name="shield-refresh-outline"
-            size={20}
-            color={colors.primary}
-          />
-          <View style={styles.menuBody}>
-            <Text style={styles.menuTitle}>Refresh token</Text>
-            <Text style={styles.menuSubtitle}>Roll tokens automatically on 401</Text>
-          </View>
+        <View style={settingsRowStyles(colors).copy}>
+          <Text style={settingsRowStyles(colors).title}>{title}</Text>
+          <Text style={settingsRowStyles(colors).subtitle}>{subtitle}</Text>
         </View>
       </View>
-
-      <Pressable
-        style={styles.logoutButton}
-        onPress={async () => {
-          await clearAuthSession();
-          router.replace('/login');
-        }}>
-        <MaterialCommunityIcons name="logout" size={18} color={colors.onPrimary} />
-        <Text style={styles.logoutText}>Sign Out</Text>
-      </Pressable>
-    </ScrollView>
+      {rightSlot}
+    </View>
   );
 }
+
+export default function SettingsScreen() {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+  const styles = createStyles(colors);
+  const [displayName, setDisplayName] = useState('Alex Sterling');
+  const [email, setEmail] = useState('alex.sterling@ledger.io');
+  const [memberSince, setMemberSince] = useState('2022');
+  const [pushEnabled, setPushEnabled] = useState(true);
+  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSession = async () => {
+      const session = await getAuthSession();
+      if (!session || !active) {
+        return;
+      }
+
+      setDisplayName(session.user.name || 'Alex Sterling');
+      setEmail(session.user.email || 'alex.sterling@ledger.io');
+      setMemberSince(
+        session.user.created_at ? new Date(session.user.created_at).getFullYear().toString() : '2022'
+      );
+    };
+
+    loadSession();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const initials = useMemo(() => {
+    return displayName
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('');
+  }, [displayName]);
+
+  return (
+    <View style={styles.screen}>
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+
+      <View style={styles.topBar}>
+        <View style={styles.topLeft}>
+          <Pressable style={styles.topIconButton} onPress={() => router.back()}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color={colors.shellTextPrimary} />
+          </Pressable>
+          <Text style={styles.topTitle}>Settings</Text>
+        </View>
+
+        <View style={styles.topRight}>
+          <Text numberOfLines={1} style={styles.brandMark}>
+            The Ledger
+          </Text>
+          <Pressable style={styles.topIconButton}>
+            <MaterialCommunityIcons name="dots-vertical" size={20} color={colors.shellTextPrimary} />
+          </Pressable>
+        </View>
+      </View>
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.heroGrid}>
+          <View style={styles.profileCard}>
+            <View style={styles.profileGlow} />
+
+            <View style={styles.avatarShell}>
+              <View style={styles.avatarRing}>
+                <View style={styles.avatarCore}>
+                  <Text style={styles.avatarText}>{initials || 'AS'}</Text>
+                </View>
+              </View>
+              <Pressable style={styles.editBadge}>
+                <MaterialCommunityIcons name="pencil" size={14} color={colors.onPrimary} />
+              </Pressable>
+            </View>
+
+            <View style={styles.profileCopy}>
+              <Text numberOfLines={1} style={styles.profileName}>
+                {displayName}
+              </Text>
+              <Text numberOfLines={1} style={styles.profileEmail}>
+                {email}
+              </Text>
+              <View style={styles.memberChip}>
+                <Text style={styles.memberChipText}>Premium Member</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.identityCard}>
+            <View style={styles.identityGradient} />
+            <MaterialCommunityIcons name="shield-check-outline" size={34} color={colors.onPrimary} />
+            <Text style={styles.identityLabel}>Identity Status</Text>
+            <Text style={styles.identityValue}>Verified</Text>
+            <Text style={styles.identityMeta}>Member since {memberSince}</Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Security & Privacy</Text>
+          <View style={styles.gridTwo}>
+            <SettingsRow
+              colors={colors}
+              icon="lock-reset"
+              title="Change Password"
+              subtitle="Last updated 3 months ago"
+              iconTone="primary"
+              rightSlot={<MaterialCommunityIcons name="chevron-right" size={22} color={colors.outlineVariant} />}
+            />
+
+            <SettingsRow
+              colors={colors}
+              icon="fingerprint"
+              title="Biometrics"
+              subtitle="Touch ID & Face ID active"
+              iconTone="secondary"
+              rightSlot={
+                <Pressable
+                  onPress={() => setBiometricEnabled((value) => !value)}
+                  style={[styles.switchTrack, biometricEnabled && styles.switchTrackActive]}>
+                  <View style={[styles.switchThumb, biometricEnabled && styles.switchThumbActive]} />
+                </Pressable>
+              }
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Preferences</Text>
+          <View style={styles.preferenceBlock}>
+            <SettingsRow
+              colors={colors}
+              icon="cash-multiple"
+              title="Primary Currency"
+              subtitle=""
+              rightSlot={
+                <View style={styles.rowValueWrap}>
+                  <Text style={styles.rowValue}>USD ($)</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />
+                </View>
+              }
+              style={styles.preferenceRow}
+            />
+
+            <View style={styles.rowDivider} />
+
+            <SettingsRow
+              colors={colors}
+              icon="translate"
+              title="Language"
+              subtitle=""
+              rightSlot={
+                <View style={styles.rowValueWrap}>
+                  <Text style={styles.rowValue}>English (US)</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />
+                </View>
+              }
+              style={styles.preferenceRow}
+            />
+
+            <View style={styles.rowDivider} />
+
+            <SettingsRow
+              colors={colors}
+              icon="weather-night"
+              title="Appearance"
+              subtitle=""
+              rightSlot={
+                <View style={styles.appearanceSegment}>
+                  <View style={[styles.appearancePill, colorScheme === 'light' && styles.appearancePillActive]}>
+                    <Text style={[styles.appearanceText, colorScheme === 'light' && styles.appearanceTextActive]}>
+                      Light
+                    </Text>
+                  </View>
+                  <View style={[styles.appearancePill, colorScheme === 'dark' && styles.appearancePillActive]}>
+                    <Text style={[styles.appearanceText, colorScheme === 'dark' && styles.appearanceTextActive]}>
+                      Dark
+                    </Text>
+                  </View>
+                </View>
+              }
+              style={styles.preferenceRow}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          <View style={styles.gridTwo}>
+            <SettingsRow
+              colors={colors}
+              icon="bell-ring-outline"
+              title="Push Notifications"
+              subtitle="Alerts on mobile app"
+              iconTone="primary"
+              accent
+              rightSlot={
+                <Pressable
+                  onPress={() => setPushEnabled((value) => !value)}
+                  style={[styles.switchTrack, pushEnabled && styles.switchTrackPrimary]}>
+                  <View style={[styles.switchThumb, pushEnabled && styles.switchThumbPrimary]} />
+                </Pressable>
+              }
+            />
+
+            <SettingsRow
+              colors={colors}
+              icon="email-outline"
+              title="Email Alerts"
+              subtitle="Weekly summaries"
+              rightSlot={
+                <Pressable
+                  onPress={() => setEmailAlertsEnabled((value) => !value)}
+                  style={[styles.switchTrack, emailAlertsEnabled && styles.switchTrackActive]}>
+                  <View style={[styles.switchThumb, emailAlertsEnabled && styles.switchThumbActive]} />
+                </Pressable>
+              }
+            />
+          </View>
+        </View>
+
+        <View style={styles.logoutWrap}>
+          <Pressable
+            style={styles.logoutButton}
+            onPress={async () => {
+              await clearAuthSession();
+              router.replace('/login');
+            }}>
+            <MaterialCommunityIcons name="logout" size={18} color={colors.danger} />
+            <Text style={styles.logoutText}>Logout</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const settingsRowStyles = (colors: AppColorTheme) =>
+  StyleSheet.create({
+    row: {
+      flex: 1,
+      minHeight: 86,
+      borderRadius: 26,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 14,
+    },
+    rowAccent: {
+      borderLeftWidth: 3,
+      borderLeftColor: colors.primary,
+      paddingLeft: 14,
+    },
+    left: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+    },
+    iconWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    copy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    title: {
+      color: colors.shellTextPrimary,
+      fontSize: 17,
+      lineHeight: 22,
+      fontWeight: '800',
+    },
+    subtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+  });
 
 const createStyles = (colors: AppColorTheme) =>
   StyleSheet.create({
@@ -75,100 +358,323 @@ const createStyles = (colors: AppColorTheme) =>
       flex: 1,
       backgroundColor: colors.shellBackground,
     },
-    content: {
-      padding: 18,
-      paddingBottom: 150,
-      gap: 16,
+    topBar: {
+      minHeight: 72,
+      paddingTop: 18,
+      paddingHorizontal: 18,
+      paddingBottom: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      backgroundColor: alpha(colors.shellCard, 0.72),
+      borderBottomWidth: 1,
+      borderBottomColor: colors.shellBorder,
     },
-    kicker: {
-      color: colors.secondary,
-      fontSize: 11,
-      fontWeight: '800',
-      textTransform: 'uppercase',
-      letterSpacing: 3,
-    },
-    title: {
-      color: colors.shellTextPrimary,
-      fontSize: 32,
-      lineHeight: 36,
-      fontWeight: '900',
-      letterSpacing: -1.2,
-    },
-    subtitle: {
-      color: colors.shellTextSecondary,
-      fontSize: 15,
-      lineHeight: 24,
-      fontWeight: '500',
-    },
-    card: {
-      borderRadius: 28,
-      backgroundColor: colors.shellCard,
-      padding: 20,
+    topLeft: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
       gap: 10,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
     },
-    cardLabel: {
-      color: colors.shellTextMuted,
-      fontSize: 11,
-      fontWeight: '800',
-      letterSpacing: 1.3,
-      textTransform: 'uppercase',
+    topRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      maxWidth: '50%',
     },
-    cardValue: {
+    topIconButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    topTitle: {
       color: colors.shellTextPrimary,
-      fontSize: 22,
-      lineHeight: 26,
-      fontWeight: '900',
+      fontSize: 24,
+      fontWeight: '800',
       letterSpacing: -0.8,
     },
-    cardText: {
-      color: colors.shellTextSecondary,
-      fontSize: 14,
+    brandMark: {
+      color: colors.primary,
+      fontSize: 15,
+      fontWeight: '800',
+      letterSpacing: -0.4,
+    },
+    scroll: {
+      flex: 1,
+      backgroundColor: colors.shellBackground,
+    },
+    content: {
+      paddingHorizontal: 18,
+      paddingTop: 20,
+      paddingBottom: 150,
+      gap: 22,
+    },
+    heroGrid: {
+      gap: 18,
+    },
+    profileCard: {
+      borderRadius: 36,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 20,
+      paddingVertical: 28,
+      alignItems: 'center',
+      overflow: 'hidden',
+      gap: 20,
+    },
+    profileGlow: {
+      position: 'absolute',
+      top: -44,
+      right: -20,
+      width: 160,
+      height: 160,
+      borderRadius: 999,
+      backgroundColor: alpha(colors.primary, 0.12),
+    },
+    avatarShell: {
+      position: 'relative',
+      width: 120,
+      height: 120,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarRing: {
+      width: 108,
+      height: 108,
+      borderRadius: 999,
+      padding: 4,
+      backgroundColor: alpha(colors.primary, 0.18),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarCore: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 999,
+      backgroundColor: colors.shellCardStrong,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.22),
+    },
+    avatarText: {
+      color: colors.primary,
+      fontSize: 36,
+      fontWeight: '900',
+      letterSpacing: -1,
+    },
+    editBadge: {
+      position: 'absolute',
+      right: 10,
+      bottom: 10,
+      width: 34,
+      height: 34,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: alpha(colors.primary, 0.32),
+      shadowOpacity: 1,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+    },
+    profileCopy: {
+      alignItems: 'center',
+      gap: 4,
+      width: '100%',
+    },
+    profileName: {
+      color: colors.shellTextPrimary,
+      fontSize: 26,
+      lineHeight: 32,
+      fontWeight: '900',
+      letterSpacing: -1,
+    },
+    profileEmail: {
+      color: colors.shellTextMuted,
+      fontSize: 16,
       lineHeight: 22,
       fontWeight: '500',
     },
-    menu: {
+    memberChip: {
+      marginTop: 10,
+      minHeight: 32,
+      borderRadius: 999,
+      backgroundColor: colors.secondaryAccent,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    memberChipText: {
+      color: colors.onSecondaryContainer,
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    identityCard: {
+      borderRadius: 36,
+      backgroundColor: colors.primary,
+      paddingHorizontal: 22,
+      paddingVertical: 24,
+      minHeight: 198,
+      justifyContent: 'space-between',
+      overflow: 'hidden',
+    },
+    identityGradient: {
+      position: 'absolute',
+      inset: 0,
+      backgroundColor: alpha(colors.primaryContainer, 0.22),
+    },
+    identityLabel: {
+      color: alpha(colors.onPrimary, 0.68),
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.8,
+      marginTop: 22,
+    },
+    identityValue: {
+      color: colors.onPrimary,
+      fontSize: 34,
+      lineHeight: 40,
+      fontWeight: '900',
+      letterSpacing: -1.1,
+      marginTop: 2,
+    },
+    identityMeta: {
+      color: alpha(colors.onPrimary, 0.76),
+      fontSize: 14,
+      lineHeight: 18,
+      fontWeight: '500',
+      marginTop: 24,
+    },
+    section: {
       gap: 12,
     },
-    menuItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
+    sectionTitle: {
+      color: colors.primary,
+      fontSize: 18,
+      lineHeight: 24,
+      fontWeight: '800',
+      letterSpacing: -0.4,
+      paddingHorizontal: 8,
+    },
+    gridTwo: {
       gap: 12,
-      borderRadius: 24,
+    },
+    preferenceBlock: {
+      borderRadius: 28,
       backgroundColor: colors.shellCard,
-      padding: 18,
       borderWidth: 1,
       borderColor: colors.shellBorder,
+      overflow: 'hidden',
     },
-    menuBody: {
-      flex: 1,
-      minWidth: 0,
-      gap: 3,
+    preferenceRow: {
+      minHeight: 76,
+      borderRadius: 0,
+      borderWidth: 0,
+      backgroundColor: 'transparent',
     },
-    menuTitle: {
-      color: colors.shellTextPrimary,
+    rowDivider: {
+      height: 1,
+      backgroundColor: colors.shellBorder,
+      marginHorizontal: 18,
+    },
+    rowValueWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flexShrink: 0,
+    },
+    rowValue: {
+      color: colors.primary,
       fontSize: 15,
+      lineHeight: 20,
       fontWeight: '800',
     },
-    menuSubtitle: {
+    appearanceSegment: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.shellCardMuted,
+      borderRadius: 999,
+      padding: 4,
+    },
+    appearancePill: {
+      minWidth: 50,
+      minHeight: 28,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    appearancePillActive: {
+      backgroundColor: colors.primary,
+    },
+    appearanceText: {
       color: colors.shellTextMuted,
-      fontSize: 13,
-      lineHeight: 20,
-      fontWeight: '500',
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '800',
+    },
+    appearanceTextActive: {
+      color: colors.onPrimary,
+    },
+    switchTrack: {
+      width: 44,
+      height: 24,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardMuted,
+      padding: 3,
+      justifyContent: 'center',
+    },
+    switchTrackActive: {
+      backgroundColor: alpha(colors.secondary, 0.28),
+    },
+    switchTrackPrimary: {
+      backgroundColor: alpha(colors.primary, 0.28),
+    },
+    switchThumb: {
+      width: 18,
+      height: 18,
+      borderRadius: 999,
+      backgroundColor: colors.outlineVariant,
+    },
+    switchThumbActive: {
+      alignSelf: 'flex-end',
+      backgroundColor: colors.secondaryAccent,
+    },
+    switchThumbPrimary: {
+      alignSelf: 'flex-end',
+      backgroundColor: colors.primaryContainer,
+    },
+    logoutWrap: {
+      paddingTop: 8,
+      alignItems: 'center',
     },
     logoutButton: {
       minHeight: 56,
       borderRadius: 999,
-      backgroundColor: colors.danger,
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, 0.32),
+      backgroundColor: alpha(colors.danger, 0.1),
+      paddingHorizontal: 28,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 8,
+      gap: 10,
     },
     logoutText: {
-      color: colors.onPrimary,
-      fontSize: 14,
+      color: colors.danger,
+      fontSize: 15,
       fontWeight: '800',
     },
   });
