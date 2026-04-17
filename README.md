@@ -48,3 +48,23 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Environment
+
+Backend API default:
+
+```env
+EXPO_PUBLIC_API_BASE_URL=https://api-finance.paidev.my.id
+```
+
+Auth endpoints used by the app:
+
+- `https://api-finance.paidev.my.id/v1/auth/register`
+- `https://api-finance.paidev.my.id/v1/auth/login`
+- `https://api-finance.paidev.my.id/v1/auth/refresh`
+- `https://api-finance.paidev.my.id/v1/auth/logout`
+- `https://api-finance.paidev.my.id/v1/auth/me`
+- `https://api-finance.paidev.my.id/v1/auth/profile`
+- `https://api-finance.paidev.my.id/v1/auth/password`
+- `https://api-finance.paidev.my.id/v1/auth/forgot-password`
+- `https://api-finance.paidev.my.id/v1/auth/reset-password`
