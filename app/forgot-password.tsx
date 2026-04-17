@@ -19,12 +19,14 @@ import { router } from 'expo-router';
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, forgotPassword } from '@/lib/api/auth';
+import { useAppLanguage } from '@/providers/language-provider';
 
 export default function ForgotPasswordScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 960;
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { t } = useAppLanguage();
   const styles = createStyles(colors);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,7 +36,7 @@ export default function ForgotPasswordScreen() {
 
   const handleSubmit = async () => {
     if (!email.trim()) {
-      setError('Email wajib diisi.');
+      setError(t('forgot.error.required'));
       return;
     }
 
@@ -47,7 +49,7 @@ export default function ForgotPasswordScreen() {
       const response = await forgotPassword({ email: email.trim() });
       const token = response.Data?.reset_token ?? '';
 
-      setSuccessMessage('Instruksi reset password sudah dikirim.');
+      setSuccessMessage(t('forgot.success'));
       if (token) {
         setSentToken(token);
       }
@@ -55,7 +57,7 @@ export default function ForgotPasswordScreen() {
       if (err instanceof ApiRequestError) {
         setError(err.message);
       } else {
-        setError('Gagal mengirim reset password. Coba lagi.');
+        setError(t('forgot.error.generic'));
       }
     } finally {
       setLoading(false);
@@ -81,29 +83,28 @@ export default function ForgotPasswordScreen() {
                 <View style={[styles.heroColumn, isWide && styles.heroColumnWide]}>
                   <View style={styles.heroBadge}>
                     <MaterialCommunityIcons name="lock-reset" size={14} color={colors.primary} />
-                    <Text style={styles.heroBadgeText}>Recovery flow</Text>
+                    <Text style={styles.heroBadgeText}>{t('forgot.heroBadge')}</Text>
                   </View>
 
                   <Text style={styles.heroTitle}>
-                    Reset your{'\n'}
-                    <Text style={styles.heroAccent}>security</Text>.
+                    {t('forgot.heroTitleLead')}
+                    {'\n'}
+                    <Text style={styles.heroAccent}>{t('forgot.heroTitleAccent')}</Text>
+                    {t('forgot.heroTitleTail')}
                   </Text>
 
-                  <Text style={styles.heroBody}>
-                    Enter the email linked to your account and we will send reset instructions.
-                    During development, the backend may return the reset token directly.
-                  </Text>
+                  <Text style={styles.heroBody}>{t('forgot.heroBody')}</Text>
 
                   <View style={styles.previewCard}>
                     <View style={styles.previewRow}>
                       <View style={styles.previewDot} />
-                      <Text style={styles.previewLabel}>Backend route</Text>
+                      <Text style={styles.previewLabel}>{t('forgot.preview.backendRoute')}</Text>
                       <Text style={styles.previewValue}>/v1/auth/forgot-password</Text>
                     </View>
                     <View style={styles.previewRow}>
                       <View style={styles.previewDotSecondary} />
-                      <Text style={styles.previewLabel}>Next step</Text>
-                      <Text style={styles.previewValue}>Reset screen</Text>
+                      <Text style={styles.previewLabel}>{t('forgot.preview.nextStep')}</Text>
+                      <Text style={styles.previewValue}>{t('forgot.preview.resetScreen')}</Text>
                     </View>
                   </View>
                 </View>
@@ -113,20 +114,17 @@ export default function ForgotPasswordScreen() {
                     <View style={styles.brandRow}>
                       <View>
                         <Text style={styles.brandKicker}>Pulse Auth</Text>
-                        <Text style={styles.formTitle}>Forgot Password?</Text>
+                        <Text style={styles.formTitle}>{t('forgot.title')}</Text>
                       </View>
                       <View style={styles.brandMark}>
                         <MaterialCommunityIcons name="mail" size={18} color={colors.inverseText} />
                       </View>
                     </View>
 
-                    <Text style={styles.formSubtitle}>
-                      Enter your email address and we&apos;ll send instructions to reset your
-                      password.
-                    </Text>
+                    <Text style={styles.formSubtitle}>{t('forgot.subtitle')}</Text>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Email Address</Text>
+                      <Text style={styles.fieldLabel}>{t('login.emailAddress')}</Text>
                       <View style={styles.inputShell}>
                         <MaterialCommunityIcons
                           name="email-outline"
@@ -161,7 +159,7 @@ export default function ForgotPasswordScreen() {
 
                     {!!sentToken && (
                       <View style={styles.tokenBox}>
-                        <Text style={styles.tokenLabel}>Dev reset token</Text>
+                        <Text style={styles.tokenLabel}>{t('forgot.devResetToken')}</Text>
                         <Text style={styles.tokenValue}>{sentToken}</Text>
                         <Pressable
                           onPress={() =>
@@ -171,7 +169,7 @@ export default function ForgotPasswordScreen() {
                             })
                           }
                           style={styles.tokenButton}>
-                          <Text style={styles.tokenButtonText}>Continue to Reset</Text>
+                          <Text style={styles.tokenButtonText}>{t('forgot.continueToReset')}</Text>
                           <MaterialCommunityIcons
                             name="arrow-right"
                             size={18}
@@ -193,7 +191,7 @@ export default function ForgotPasswordScreen() {
                         <ActivityIndicator color={colors.inverseText} />
                       ) : (
                         <>
-                          <Text style={styles.primaryButtonText}>Reset Password</Text>
+                          <Text style={styles.primaryButtonText}>{t('forgot.submit')}</Text>
                           <MaterialCommunityIcons
                             name="chevron-right"
                             size={20}
@@ -204,9 +202,9 @@ export default function ForgotPasswordScreen() {
                     </Pressable>
 
                     <View style={styles.footerRow}>
-                      <Text style={styles.footerText}>Remember your password?</Text>
+                      <Text style={styles.footerText}>{t('forgot.rememberPassword')}</Text>
                       <Pressable onPress={() => router.push('/login')}>
-                        <Text style={styles.footerLink}>Back to Login</Text>
+                        <Text style={styles.footerLink}>{t('forgot.backToLogin')}</Text>
                       </Pressable>
                     </View>
                   </View>

@@ -20,6 +20,7 @@ import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, register } from '@/lib/api/auth';
 import { saveAuthSession } from '@/lib/auth-session';
+import { useAppLanguage } from '@/providers/language-provider';
 
 const DEVICE_NAME =
   Platform.select({
@@ -32,6 +33,7 @@ export default function RegisterScreen() {
   const isWide = width >= 960;
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { t } = useAppLanguage();
   const styles = createStyles(colors);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -47,12 +49,12 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
-      setError('Nama, email, dan password wajib diisi.');
+      setError(t('register.error.required'));
       return;
     }
 
     if (passwordMismatch) {
-      setError('Password dan konfirmasi password tidak sama.');
+      setError(t('register.error.mismatch'));
       return;
     }
 
@@ -72,7 +74,7 @@ export default function RegisterScreen() {
       if (err instanceof ApiRequestError) {
         setError(err.message);
       } else {
-        setError('Gagal register. Coba lagi.');
+        setError(t('register.error.generic'));
       }
     } finally {
       setLoading(false);
@@ -98,18 +100,17 @@ export default function RegisterScreen() {
                 <View style={[styles.heroColumn, isWide && styles.heroColumnWide]}>
                   <View style={styles.heroBadge}>
                     <MaterialCommunityIcons name="sparkles" size={14} color={colors.primary} />
-                    <Text style={styles.heroBadgeText}>Join now</Text>
+                    <Text style={styles.heroBadgeText}>{t('register.heroBadge')}</Text>
                   </View>
 
                   <Text style={styles.heroTitle}>
-                    The future of{'\n'}
-                    <Text style={styles.heroAccent}>digital assets</Text> starts here.
+                    {t('register.heroTitleLead')}
+                    {'\n'}
+                    <Text style={styles.heroAccent}>{t('register.heroTitleAccent')}</Text>{' '}
+                    {t('register.heroTitleTail')}
                   </Text>
 
-                  <Text style={styles.heroBody}>
-                    Join over 2 million users managing their wealth with the precision of a ledger
-                    and the speed of light.
-                  </Text>
+                  <Text style={styles.heroBody}>{t('register.heroBody')}</Text>
 
                   <View style={styles.quoteCard}>
                     <View style={styles.quoteHeader}>
@@ -122,14 +123,11 @@ export default function RegisterScreen() {
                       </View>
                       <View>
                         <Text style={styles.quoteName}>Marcus Chen</Text>
-                        <Text style={styles.quoteRole}>CTO, Vertex Capital</Text>
+                        <Text style={styles.quoteRole}>{t('register.quoteRole')}</Text>
                       </View>
                     </View>
 
-                    <Text style={styles.quoteText}>
-                      &quot;The Ledger transformed our institutional reporting from a weekly chore
-                      into a real-time strategic pulse.&quot;
-                    </Text>
+                    <Text style={styles.quoteText}>{t('register.quoteText')}</Text>
                   </View>
                 </View>
 
@@ -138,7 +136,7 @@ export default function RegisterScreen() {
                     <View style={styles.brandRow}>
                       <View>
                         <Text style={styles.brandKicker}>Pulse Auth</Text>
-                        <Text style={styles.formTitle}>Create Account</Text>
+                        <Text style={styles.formTitle}>{t('register.title')}</Text>
                       </View>
                       <View style={styles.brandMark}>
                         <MaterialCommunityIcons
@@ -149,12 +147,10 @@ export default function RegisterScreen() {
                       </View>
                     </View>
 
-                    <Text style={styles.formSubtitle}>
-                      Welcome to the inner circle of Kinetic Pulse.
-                    </Text>
+                    <Text style={styles.formSubtitle}>{t('register.subtitle')}</Text>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Full Name</Text>
+                      <Text style={styles.fieldLabel}>{t('register.fullName')}</Text>
                       <View style={styles.inputShell}>
                         <MaterialCommunityIcons
                           name="account-outline"
@@ -174,7 +170,7 @@ export default function RegisterScreen() {
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Email Address</Text>
+                      <Text style={styles.fieldLabel}>{t('login.emailAddress')}</Text>
                       <View style={styles.inputShell}>
                         <MaterialCommunityIcons
                           name="email-outline"
@@ -196,7 +192,7 @@ export default function RegisterScreen() {
 
                     <View style={styles.passwordGrid}>
                       <View style={styles.fieldGroup}>
-                        <Text style={styles.fieldLabel}>Password</Text>
+                        <Text style={styles.fieldLabel}>{t('login.password')}</Text>
                         <View style={styles.inputShell}>
                           <MaterialCommunityIcons
                             name="lock-outline"
@@ -226,7 +222,7 @@ export default function RegisterScreen() {
                       </View>
 
                       <View style={styles.fieldGroup}>
-                        <Text style={styles.fieldLabel}>Confirm Password</Text>
+                        <Text style={styles.fieldLabel}>{t('register.confirmPassword')}</Text>
                         <View
                           style={[
                             styles.inputShell,
@@ -251,8 +247,7 @@ export default function RegisterScreen() {
                     </View>
 
                     <Text style={styles.helperText}>
-                      Device tracking is sent automatically as{' '}
-                      <Text style={styles.helperStrong}>{DEVICE_NAME}</Text>.
+                      {t('register.helperDeviceTracking', { device: DEVICE_NAME })}
                     </Text>
 
                     {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -269,7 +264,7 @@ export default function RegisterScreen() {
                         <ActivityIndicator color={colors.inverseText} />
                       ) : (
                         <>
-                          <Text style={styles.primaryButtonText}>Register Account</Text>
+                          <Text style={styles.primaryButtonText}>{t('register.submit')}</Text>
                           <MaterialCommunityIcons
                             name="arrow-right"
                             size={20}
@@ -280,9 +275,9 @@ export default function RegisterScreen() {
                     </Pressable>
 
                     <View style={styles.footerRow}>
-                      <Text style={styles.footerText}>Already a member?</Text>
+                      <Text style={styles.footerText}>{t('register.alreadyMember')}</Text>
                       <Pressable onPress={() => router.push('/login')}>
-                        <Text style={styles.footerLink}>Sign In</Text>
+                        <Text style={styles.footerLink}>{t('register.signIn')}</Text>
                       </Pressable>
                     </View>
                   </View>

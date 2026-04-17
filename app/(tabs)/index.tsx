@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppLanguage } from '@/providers/language-provider';
 import { ApiRequestError, refreshToken } from '@/lib/api/auth';
 import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
 import {
@@ -48,35 +49,35 @@ type ActivityItem = {
   positive?: boolean;
 };
 
-const formatCompactCurrency = (value: number) =>
-  new Intl.NumberFormat('id-ID', {
+const formatCompactCurrency = (value: number, locale: string) =>
+  new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: 'IDR',
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(value);
 
-const formatDetailCurrency = (value: number) =>
-  new Intl.NumberFormat('id-ID', {
+const formatDetailCurrency = (value: number, locale: string) =>
+  new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value);
 
-const formatSignedCurrency = (value: number) => {
-  const formatted = formatDetailCurrency(Math.abs(value));
+const formatSignedCurrency = (value: number, locale: string) => {
+  const formatted = formatDetailCurrency(Math.abs(value), locale);
   return `${value >= 0 ? '+' : '-'}${formatted}`;
 };
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
 
-const toShortMonth = (value: string, fallback: string) => {
+const toShortMonth = (value: string, fallback: string, locale: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return fallback;
   }
 
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(locale, {
     month: 'short',
   })
     .format(date)
@@ -101,6 +102,8 @@ const extractComparisonValue = (data: DashboardComparisonData | null, keys: stri
 export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { language, t } = useAppLanguage();
+  const locale = language === 'id' ? 'id-ID' : 'en-US';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors, width, insets.top);
@@ -115,7 +118,7 @@ export default function DashboardScreen() {
   const [expenseVsSalary, setExpenseVsSalary] = useState<ExpenseVsSalaryData | null>(null);
   const [displayName, setDisplayName] = useState('Kinetic Pulse');
 
-  const loadDashboard = async (isRefresh = false) => {
+  const loadDashboard = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -189,7 +192,7 @@ export default function DashboardScreen() {
       );
 
       if (hasHardFailure) {
-        setError('Sebagian data dashboard gagal dimuat. Tarik ke bawah untuk refresh.');
+        setError(t('dashboard.partialError'));
       }
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 401) {
@@ -197,16 +200,16 @@ export default function DashboardScreen() {
         return;
       }
 
-      setError('Gagal memuat dashboard. Coba lagi.');
+      setError(t('dashboard.loadError'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     loadDashboard();
-  }, []);
+  }, [loadDashboard]);
 
   const currentBalance = summary?.total_balance ?? 1284092.42;
   const liquidCashFlow = (summary?.monthly_income ?? 0) - (summary?.monthly_expense ?? 0);
@@ -238,7 +241,7 @@ export default function DashboardScreen() {
   const trendPoints = useMemo<TrendPoint[]>(() => {
     if (trendMode === 'daily' && dailySpending.length > 0) {
       return dailySpending.slice(-7).map((item, index, items) => ({
-        label: toShortMonth(item.date, `D${index + 1}`),
+        label: toShortMonth(item.date, `D${index + 1}`, locale),
         value: toNumber(item.amount),
         active: index === items.length - 1,
       }));
@@ -261,7 +264,7 @@ export default function DashboardScreen() {
       { label: 'JUN', value: 92, active: true },
       { label: 'JUL', value: 61 },
     ];
-  }, [dailySpending, monthlySpending, trendMode]);
+  }, [dailySpending, locale, monthlySpending, trendMode]);
 
   const trendPeak = Math.max(...trendPoints.map((item) => item.value), 1);
   const liquidProgress = Math.max(12, Math.min(100, debtRatio > 0 ? 100 - debtRatio : 72));
@@ -271,28 +274,34 @@ export default function DashboardScreen() {
     () => [
       {
         icon: 'cart-outline',
-        title: 'Apple Store Berlin',
-        meta: 'Tech & Hardware - Today, 2:14 PM',
-        amount: formatSignedCurrency(-(todayExpense || 2199000)),
-        kind: 'DEBIT - ...4492',
+        title: t('dashboard.activity.appleStoreBerlin'),
+        meta: t('dashboard.activity.appleStoreBerlinMeta'),
+        amount: formatSignedCurrency(-(todayExpense || 2199000), locale),
+        kind: t('dashboard.activity.debit4492'),
       },
       {
         icon: 'cash-fast',
-        title: 'Inbound Dividends',
-        meta: 'Passive Income - Yesterday',
-        amount: formatSignedCurrency(summary?.monthly_income ? summary.monthly_income * 0.12 : 840120),
-        kind: 'CREDIT - ...0012',
+        title: t('dashboard.activity.inboundDividends'),
+        meta: t('dashboard.activity.inboundDividendsMeta'),
+        amount: formatSignedCurrency(
+          summary?.monthly_income ? summary.monthly_income * 0.12 : 840120,
+          locale
+        ),
+        kind: t('dashboard.activity.credit0012'),
         positive: true,
       },
       {
         icon: 'airplane',
-        title: 'Lufthansa Airlines',
-        meta: 'Travel - 3 Days Ago',
-        amount: formatSignedCurrency(-(summary?.monthly_expense ? summary.monthly_expense * 0.22 : 1420000)),
-        kind: 'DEBIT - ...4492',
+        title: t('dashboard.activity.lufthansaAirlines'),
+        meta: t('dashboard.activity.lufthansaAirlinesMeta'),
+        amount: formatSignedCurrency(
+          -(summary?.monthly_expense ? summary.monthly_expense * 0.22 : 1420000),
+          locale
+        ),
+        kind: t('dashboard.activity.debit4492'),
       },
     ],
-    [summary?.monthly_expense, summary?.monthly_income, todayExpense]
+    [locale, summary?.monthly_expense, summary?.monthly_income, t, todayExpense]
   );
 
   return (
@@ -327,27 +336,29 @@ export default function DashboardScreen() {
         {loading ? (
           <View style={styles.loadingState}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading your financial pulse...</Text>
+            <Text style={styles.loadingText}>{t('dashboard.loading')}</Text>
           </View>
         ) : (
           <>
             <View style={styles.heroBlock}>
-              <Text style={styles.kicker}>Current Equilibrium</Text>
+              <Text style={styles.kicker}>{t('dashboard.kicker')}</Text>
               <Text
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.62}
                 style={styles.heroAmount}>
-                {formatCompactCurrency(currentBalance)}
+                {formatCompactCurrency(currentBalance, locale)}
               </Text>
 
               <View style={styles.momentumRow}>
                 <View style={styles.momentumBadge}>
                   <MaterialCommunityIcons name="trending-up" size={12} color={colors.secondaryAccent} />
-                  <Text style={styles.momentumBadgeText}>+{monthlyMomentum.toFixed(1)}% this month</Text>
+                  <Text style={styles.momentumBadgeText}>
+                    +{monthlyMomentum.toFixed(1)}% {t('dashboard.thisMonth')}
+                  </Text>
                 </View>
                 <Text numberOfLines={1} style={styles.momentumHint}>
-                  vs last quarter peak
+                  {t('dashboard.vsLastQuarterPeak')}
                 </Text>
               </View>
             </View>
@@ -355,13 +366,13 @@ export default function DashboardScreen() {
             <View style={styles.liquidCard}>
               <View style={styles.sectionTitleRow}>
                 <View style={styles.sectionTitleWrap}>
-                  <Text style={styles.cardEyebrow}>Liquid cash flow</Text>
+                  <Text style={styles.cardEyebrow}>{t('dashboard.liquidCashFlow')}</Text>
                   <Text
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     minimumFontScale={0.75}
                     style={styles.liquidAmount}>
-                    {formatSignedCurrency(liquidCashFlow || 12400000)}
+                    {formatSignedCurrency(liquidCashFlow || 12400000, locale)}
                   </Text>
                 </View>
                 <View style={styles.cardIconShell}>
@@ -375,30 +386,30 @@ export default function DashboardScreen() {
 
               <View style={styles.liquidMetaRow}>
                 <Text numberOfLines={1} style={styles.cardMeta}>
-                  OP-EX: {formatCompactCurrency(summary?.monthly_expense ?? 4200000)}
+                  {t('dashboard.opEx')}: {formatCompactCurrency(summary?.monthly_expense ?? 4200000, locale)}
                 </Text>
                 <Text numberOfLines={1} style={styles.cardMeta}>
-                  BURN: {debtRatio}%
+                  {t('dashboard.burn')}: {debtRatio}%
                 </Text>
               </View>
             </View>
 
             <View style={styles.card}>
               <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>Spending Trends</Text>
+                <Text style={styles.cardTitle}>{t('dashboard.spendingTrends')}</Text>
                 <View style={styles.segmentedControl}>
                   <Pressable
                     onPress={() => setTrendMode('daily')}
                     style={[styles.segmentButton, trendMode === 'daily' && styles.segmentButtonMuted]}>
                     <Text style={[styles.segmentLabel, trendMode === 'daily' && styles.segmentLabelActive]}>
-                      Daily
+                      {t('dashboard.daily')}
                     </Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setTrendMode('monthly')}
                     style={[styles.segmentButton, trendMode === 'monthly' && styles.segmentButtonActive]}>
                     <Text style={[styles.segmentLabel, trendMode === 'monthly' && styles.segmentLabelSelected]}>
-                      Monthly
+                      {t('dashboard.monthly')}
                     </Text>
                   </Pressable>
                 </View>
@@ -426,27 +437,27 @@ export default function DashboardScreen() {
               <View style={styles.debtIconWrap}>
                 <MaterialCommunityIcons name="lightning-bolt" size={18} color={colors.danger} />
               </View>
-              <Text style={styles.cardTitle}>Debt Health</Text>
+              <Text style={styles.cardTitle}>{t('dashboard.debtHealth')}</Text>
               <Text style={styles.cardDescription}>
-                Systematic reduction of high-interest liabilities by {Math.max(8, debtRatio)}% this period.
+                {t('dashboard.debtHealthBody', { percent: Math.max(8, debtRatio) })}
               </Text>
 
               <View style={styles.metricCard}>
-                <Text style={styles.cardEyebrow}>Leverage ratio</Text>
+                <Text style={styles.cardEyebrow}>{t('dashboard.leverageRatio')}</Text>
                 <Text style={styles.metricValue}>{leverageRatio.toFixed(2)}</Text>
               </View>
 
               <Pressable style={styles.secondaryAction}>
-                <Text style={styles.secondaryActionText}>Consolidate</Text>
+                <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
               </Pressable>
             </View>
 
             <View style={styles.card}>
               <View style={styles.rowBetween}>
-                <Text style={styles.cardTitle}>Kinetic Activity</Text>
+                <Text style={styles.cardTitle}>{t('dashboard.kineticActivity')}</Text>
                 <Pressable hitSlop={10}>
-                  <Text style={styles.linkText}>View Ledger</Text>
+                  <Text style={styles.linkText}>{t('dashboard.viewLedger')}</Text>
                 </Pressable>
               </View>
 
@@ -488,14 +499,15 @@ export default function DashboardScreen() {
             </View>
 
             <View style={styles.insightCard}>
-              <Text style={styles.insightBadge}>Pulse Insight</Text>
-              <Text style={styles.insightTitle}>Your wealth is accelerating.</Text>
+              <Text style={styles.insightBadge}>{t('dashboard.pulseInsight')}</Text>
+              <Text style={styles.insightTitle}>{t('dashboard.wealthAccelerating')}</Text>
               <Text style={styles.insightText}>
-                Based on current spending trends and investment returns, your net worth is projected to
-                reach {formatCompactCurrency(projectedWorth)} soon. Consider adjusting your debt-to-equity ratio.
+                {t('dashboard.insightBody', {
+                  amount: formatCompactCurrency(projectedWorth, locale),
+                })}
               </Text>
               <Pressable style={styles.primaryAction}>
-                <Text style={styles.primaryActionText}>Optimize Strategy</Text>
+                <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>
               </Pressable>
             </View>
 

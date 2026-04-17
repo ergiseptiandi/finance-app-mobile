@@ -4,26 +4,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-const metrics = [
-  { label: 'Utilization', value: '24%', icon: 'percent-outline' },
-  { label: 'Due Soon', value: '3 notes', icon: 'calendar-alert' },
-  { label: 'Priority', value: 'High APR', icon: 'flash-outline' },
-];
+import { useAppLanguage } from '@/providers/language-provider';
 
 export default function DebtScreen() {
   const colors = Colors[useColorScheme() ?? 'light'];
   const insets = useSafeAreaInsets();
+  const { t } = useAppLanguage();
   const styles = createStyles(colors, insets.top);
+  const metrics = [
+    { label: t('debt.metric.utilization'), value: '24%', icon: 'percent-outline' },
+    { label: t('debt.metric.dueSoon'), value: t('debt.metric.notes', { count: 3 }), icon: 'calendar-alert' },
+    { label: t('debt.metric.priority'), value: t('debt.metric.highApr'), icon: 'flash-outline' },
+  ];
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>Debt</Text>
-      <Text style={styles.title}>Consolidate risk before it compounds.</Text>
-      <Text style={styles.subtitle}>
-        The debt workspace uses short, fixed-width metric cards so values remain legible on narrow
-        screens without clipping or horizontal scroll.
-      </Text>
+      <Text style={styles.kicker}>{t('debt.kicker')}</Text>
+      <Text style={styles.title}>{t('debt.title')}</Text>
+      <Text style={styles.subtitle}>{t('debt.subtitle')}</Text>
 
       <View style={styles.grid}>
         {metrics.map((metric) => (

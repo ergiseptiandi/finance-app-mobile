@@ -4,27 +4,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppLanguage } from '@/providers/language-provider';
 
 export default function ReportsScreen() {
   const colors = Colors[useColorScheme() ?? 'light'];
   const insets = useSafeAreaInsets();
+  const { t } = useAppLanguage();
   const styles = createStyles(colors, insets.top);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>Reports</Text>
-      <Text style={styles.title}>Editorial reporting without noisy chrome.</Text>
-      <Text style={styles.subtitle}>
-        This report shell keeps headings, chart captions, and summary copy inside readable columns so
-        nothing spills beyond the screen edge.
-      </Text>
+      <Text style={styles.kicker}>{t('reports.kicker')}</Text>
+      <Text style={styles.title}>{t('reports.title')}</Text>
+      <Text style={styles.subtitle}>{t('reports.subtitle')}</Text>
 
       <View style={styles.heroCard}>
         <MaterialCommunityIcons name="chart-box-outline" size={22} color={colors.primary} />
-        <Text style={styles.heroValue}>7 custom summaries ready</Text>
-        <Text style={styles.heroBody}>
-          Weekly, monthly, and quarter-close exports can land here once the reporting API is wired.
-        </Text>
+        <Text style={styles.heroValue}>{t('reports.heroValue', { count: 7 })}</Text>
+        <Text style={styles.heroBody}>{t('reports.heroBody')}</Text>
       </View>
     </ScrollView>
   );

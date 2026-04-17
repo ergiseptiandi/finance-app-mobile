@@ -19,12 +19,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, resetPassword } from '@/lib/api/auth';
+import { useAppLanguage } from '@/providers/language-provider';
 
 export default function ResetPasswordScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 960;
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { t } = useAppLanguage();
   const styles = createStyles(colors);
   const params = useLocalSearchParams<{ token?: string }>();
   const [token, setToken] = useState('');
@@ -41,7 +43,7 @@ export default function ResetPasswordScreen() {
 
   const handleSubmit = async () => {
     if (!token.trim() || !newPassword.trim()) {
-      setError('Token dan password baru wajib diisi.');
+      setError(t('reset.error.required'));
       return;
     }
 
@@ -54,12 +56,12 @@ export default function ResetPasswordScreen() {
         token: token.trim(),
         new_password: newPassword,
       });
-      setSuccess('Password berhasil direset. Silakan login kembali.');
+      setSuccess(t('reset.success'));
     } catch (err) {
       if (err instanceof ApiRequestError) {
         setError(err.message);
       } else {
-        setError('Gagal reset password. Coba lagi.');
+        setError(t('reset.error.generic'));
       }
     } finally {
       setLoading(false);
@@ -89,18 +91,17 @@ export default function ResetPasswordScreen() {
                       size={14}
                       color={colors.primary}
                     />
-                    <Text style={styles.heroBadgeText}>Finalize reset</Text>
+                    <Text style={styles.heroBadgeText}>{t('reset.heroBadge')}</Text>
                   </View>
 
                   <Text style={styles.heroTitle}>
-                    Set a new{'\n'}
-                    <Text style={styles.heroAccent}>secure password</Text>.
+                    {t('reset.heroTitleLead')}
+                    {'\n'}
+                    <Text style={styles.heroAccent}>{t('reset.heroTitleAccent')}</Text>
+                    {t('reset.heroTitleTail')}
                   </Text>
 
-                  <Text style={styles.heroBody}>
-                    Paste the reset token from your inbox or from the development response, then
-                    set a new password to complete recovery.
-                  </Text>
+                  <Text style={styles.heroBody}>{t('reset.heroBody')}</Text>
                 </View>
 
                 <View style={[styles.formColumn, isWide && styles.formColumnWide]}>
@@ -108,7 +109,7 @@ export default function ResetPasswordScreen() {
                     <View style={styles.brandRow}>
                       <View>
                         <Text style={styles.brandKicker}>Pulse Auth</Text>
-                        <Text style={styles.formTitle}>Reset Security</Text>
+                        <Text style={styles.formTitle}>{t('reset.title')}</Text>
                       </View>
                       <View style={styles.brandMark}>
                         <MaterialCommunityIcons
@@ -119,12 +120,10 @@ export default function ResetPasswordScreen() {
                       </View>
                     </View>
 
-                    <Text style={styles.formSubtitle}>
-                      Enter your reset token and a new password to finish the recovery flow.
-                    </Text>
+                    <Text style={styles.formSubtitle}>{t('reset.subtitle')}</Text>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Reset Token</Text>
+                      <Text style={styles.fieldLabel}>{t('reset.resetToken')}</Text>
                       <View style={styles.inputShell}>
                         <MaterialCommunityIcons name="key-outline" size={18} color={colors.icon} />
                         <TextInput
@@ -139,7 +138,7 @@ export default function ResetPasswordScreen() {
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>New Password</Text>
+                      <Text style={styles.fieldLabel}>{t('reset.newPassword')}</Text>
                       <View style={styles.inputShell}>
                         <MaterialCommunityIcons
                           name="lock-outline"
@@ -183,7 +182,7 @@ export default function ResetPasswordScreen() {
                         <ActivityIndicator color={colors.inverseText} />
                       ) : (
                         <>
-                          <Text style={styles.primaryButtonText}>Reset Password</Text>
+                          <Text style={styles.primaryButtonText}>{t('reset.submit')}</Text>
                           <MaterialCommunityIcons
                             name="chevron-right"
                             size={20}
@@ -194,9 +193,9 @@ export default function ResetPasswordScreen() {
                     </Pressable>
 
                     <View style={styles.footerRow}>
-                      <Text style={styles.footerText}>Back to login?</Text>
+                      <Text style={styles.footerText}>{t('reset.backToLoginQuestion')}</Text>
                       <Pressable onPress={() => router.replace('/login')}>
-                        <Text style={styles.footerLink}>Sign In</Text>
+                        <Text style={styles.footerLink}>{t('reset.signIn')}</Text>
                       </Pressable>
                     </View>
                   </View>

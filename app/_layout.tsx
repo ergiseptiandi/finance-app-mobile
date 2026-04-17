@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
+import { useAppLanguage, AppLanguageProvider } from '@/providers/language-provider';
 import { NavigationThemes } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppThemeProvider } from '@/providers/theme-provider';
@@ -13,14 +14,17 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   return (
-    <AppThemeProvider>
-      <RootNavigator />
-    </AppThemeProvider>
+    <AppLanguageProvider>
+      <AppThemeProvider>
+        <RootNavigator />
+      </AppThemeProvider>
+    </AppLanguageProvider>
   );
 }
 
 function RootNavigator() {
   const colorScheme = useColorScheme() ?? 'light';
+  const { t } = useAppLanguage();
 
   return (
     <ThemeProvider value={NavigationThemes[colorScheme]}>
@@ -33,7 +37,7 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="modal"
-          options={{ presentation: 'modal', headerShown: true, title: 'Modal' }}
+          options={{ presentation: 'modal', headerShown: true, title: t('common.modal') }}
         />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />

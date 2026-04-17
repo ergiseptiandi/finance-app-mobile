@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppLanguage } from '@/providers/language-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { clearAuthSession, getAuthSession } from '@/lib/auth-session';
 
@@ -60,6 +61,7 @@ function SettingsRow({
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { setColorScheme } = useAppTheme();
+  const { language, setLanguage, t } = useAppLanguage();
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors, insets.top);
@@ -128,27 +130,27 @@ export default function SettingsScreen() {
                 {email}
               </Text>
               <View style={styles.memberChip}>
-                <Text style={styles.memberChipText}>Premium Member</Text>
+                <Text style={styles.memberChipText}>{t('settings.premiumMember')}</Text>
               </View>
             </View>
           </View>
 
           <View style={styles.identityCard}>
             <MaterialCommunityIcons name="shield-check-outline" size={34} color={colors.onPrimary} />
-            <Text style={styles.identityLabel}>Identity Status</Text>
-            <Text style={styles.identityValue}>Verified</Text>
-            <Text style={styles.identityMeta}>Member since {memberSince}</Text>
+            <Text style={styles.identityLabel}>{t('settings.identityStatus')}</Text>
+            <Text style={styles.identityValue}>{t('settings.verified')}</Text>
+            <Text style={styles.identityMeta}>{t('settings.memberSince', { year: memberSince })}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Security & Privacy</Text>
+          <Text style={styles.sectionTitle}>{t('settings.securityPrivacy')}</Text>
           <View style={styles.gridTwo}>
             <SettingsRow
               colors={colors}
               icon="lock-reset"
-              title="Change Password"
-              subtitle="Last updated 3 months ago"
+              title={t('settings.changePassword')}
+              subtitle={t('settings.changePasswordMeta')}
               iconTone="primary"
               rightSlot={<MaterialCommunityIcons name="chevron-right" size={22} color={colors.outlineVariant} />}
             />
@@ -156,8 +158,8 @@ export default function SettingsScreen() {
             <SettingsRow
               colors={colors}
               icon="fingerprint"
-              title="Biometrics"
-              subtitle="Touch ID & Face ID active"
+              title={t('settings.biometrics')}
+              subtitle={t('settings.biometricsMeta')}
               iconTone="secondary"
               rightSlot={
                 <Pressable
@@ -171,33 +173,31 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
+          <Text style={styles.sectionTitle}>{t('settings.preferences')}</Text>
           <View style={styles.preferenceBlock}>
             <SettingsRow
               colors={colors}
-              icon="cash-multiple"
-              title="Primary Currency"
-              subtitle=""
-              rightSlot={
-                <View style={styles.rowValueWrap}>
-                  <Text style={styles.rowValue}>USD ($)</Text>
-                  <MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />
-                </View>
-              }
-              style={styles.preferenceRow}
-            />
-
-            <View style={styles.rowDivider} />
-
-            <SettingsRow
-              colors={colors}
               icon="translate"
-              title="Language"
+              title={t('settings.language')}
               subtitle=""
               rightSlot={
-                <View style={styles.rowValueWrap}>
-                  <Text style={styles.rowValue}>English (US)</Text>
-                  <MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />
+                <View style={styles.appearanceSegment}>
+                  <Pressable
+                    onPress={() => setLanguage('id')}
+                    style={[styles.appearancePill, language === 'id' && styles.appearancePillActive]}>
+                    <Text style={[styles.appearanceText, language === 'id' && styles.appearanceTextActive]}>
+                      ID
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setLanguage('en-US')}
+                    style={[styles.appearancePill, language === 'en-US' && styles.appearancePillActive]}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.appearanceText, language === 'en-US' && styles.appearanceTextActive]}>
+                      EN
+                    </Text>
+                  </Pressable>
                 </View>
               }
               style={styles.preferenceRow}
@@ -208,7 +208,7 @@ export default function SettingsScreen() {
             <SettingsRow
               colors={colors}
               icon="weather-night"
-              title="Appearance"
+              title={t('settings.appearance')}
               subtitle=""
               rightSlot={
                 <View style={styles.appearanceSegment}>
@@ -216,14 +216,14 @@ export default function SettingsScreen() {
                     onPress={() => setColorScheme('light')}
                     style={[styles.appearancePill, colorScheme === 'light' && styles.appearancePillActive]}>
                     <Text style={[styles.appearanceText, colorScheme === 'light' && styles.appearanceTextActive]}>
-                      Light
+                      {t('common.light')}
                     </Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setColorScheme('dark')}
                     style={[styles.appearancePill, colorScheme === 'dark' && styles.appearancePillActive]}>
                     <Text style={[styles.appearanceText, colorScheme === 'dark' && styles.appearanceTextActive]}>
-                      Dark
+                      {t('common.dark')}
                     </Text>
                   </Pressable>
                 </View>
@@ -234,13 +234,13 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
+          <Text style={styles.sectionTitle}>{t('settings.notifications')}</Text>
           <View style={styles.gridTwo}>
             <SettingsRow
               colors={colors}
               icon="bell-ring-outline"
-              title="Push Notifications"
-              subtitle="Alerts on mobile app"
+              title={t('settings.pushNotifications')}
+              subtitle={t('settings.pushNotificationsMeta')}
               iconTone="primary"
               accent
               rightSlot={
@@ -255,8 +255,8 @@ export default function SettingsScreen() {
             <SettingsRow
               colors={colors}
               icon="email-outline"
-              title="Email Alerts"
-              subtitle="Weekly summaries"
+              title={t('settings.emailAlerts')}
+              subtitle={t('settings.emailAlertsMeta')}
               rightSlot={
                 <Pressable
                   onPress={() => setEmailAlertsEnabled((value) => !value)}
@@ -276,7 +276,7 @@ export default function SettingsScreen() {
               router.replace('/login');
             }}>
             <MaterialCommunityIcons name="logout" size={18} color={colors.danger} />
-            <Text style={styles.logoutText}>Logout</Text>
+            <Text style={styles.logoutText}>{t('settings.logout')}</Text>
           </Pressable>
         </View>
       </ScrollView>

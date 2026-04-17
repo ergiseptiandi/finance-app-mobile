@@ -20,6 +20,7 @@ import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, login } from '@/lib/api/auth';
 import { saveAuthSession } from '@/lib/auth-session';
+import { useAppLanguage } from '@/providers/language-provider';
 
 const DEVICE_NAME =
   Platform.select({
@@ -32,6 +33,7 @@ export default function LoginScreen() {
   const isWide = width >= 960;
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { t } = useAppLanguage();
   const styles = createStyles(colors);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +43,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      setError('Email dan password wajib diisi.');
+      setError(t('login.error.required'));
       return;
     }
 
@@ -60,7 +62,7 @@ export default function LoginScreen() {
       if (err instanceof ApiRequestError) {
         setError(err.message);
       } else {
-        setError('Gagal login. Coba lagi.');
+        setError(t('login.error.generic'));
       }
     } finally {
       setLoading(false);
@@ -90,32 +92,31 @@ export default function LoginScreen() {
                       size={14}
                       color={colors.primary}
                     />
-                    <Text style={styles.heroBadgeText}>Secure access</Text>
+                    <Text style={styles.heroBadgeText}>{t('login.heroBadge')}</Text>
                   </View>
 
                   <Text style={styles.heroTitle}>
-                    Master your{'\n'}
-                    <Text style={styles.heroAccent}>financial</Text> flow.
+                    {t('login.heroTitleLead')}
+                    {'\n'}
+                    <Text style={styles.heroAccent}>{t('login.heroTitleAccent')}</Text>{' '}
+                    {t('login.heroTitleTail')}
                   </Text>
 
-                  <Text style={styles.heroBody}>
-                    The Ledger combines precision data with editorial elegance. Secure your future
-                    with the kinetic pulse of modern fintech.
-                  </Text>
+                  <Text style={styles.heroBody}>{t('login.heroBody')}</Text>
 
                   <View style={styles.previewCard}>
                     <View style={styles.previewRow}>
                       <View style={styles.previewDot} />
-                      <Text style={styles.previewLabel}>Refresh tokens</Text>
-                      <Text style={styles.previewValue}>Rolling</Text>
+                      <Text style={styles.previewLabel}>{t('login.preview.refreshTokens')}</Text>
+                      <Text style={styles.previewValue}>{t('login.preview.rolling')}</Text>
                     </View>
                     <View style={styles.previewRow}>
                       <View style={styles.previewDotSecondary} />
-                      <Text style={styles.previewLabel}>Device tracking</Text>
-                      <Text style={styles.previewValue}>Enabled</Text>
+                      <Text style={styles.previewLabel}>{t('login.preview.deviceTracking')}</Text>
+                      <Text style={styles.previewValue}>{t('login.preview.enabled')}</Text>
                     </View>
                     <View style={styles.previewFooter}>
-                      <Text style={styles.previewFooterText}>Built for the `/v1/auth` flow.</Text>
+                      <Text style={styles.previewFooterText}>{t('login.preview.builtForAuthFlow')}</Text>
                     </View>
                   </View>
                 </View>
@@ -124,20 +125,18 @@ export default function LoginScreen() {
                   <View style={styles.formCard}>
                     <View style={styles.brandRow}>
                       <View>
-                        <Text style={styles.brandKicker}>Pulse Auth</Text>
-                        <Text style={styles.formTitle}>Welcome Back</Text>
+                        <Text style={styles.brandKicker}>{t('login.brandKicker')}</Text>
+                        <Text style={styles.formTitle}>{t('login.title')}</Text>
                       </View>
                       <View style={styles.brandMark}>
                         <MaterialCommunityIcons name="pulse" size={18} color={colors.inverseText} />
                       </View>
                     </View>
 
-                    <Text style={styles.formSubtitle}>
-                      Please enter your details to access The Ledger.
-                    </Text>
+                    <Text style={styles.formSubtitle}>{t('login.subtitle')}</Text>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Email Address</Text>
+                      <Text style={styles.fieldLabel}>{t('login.emailAddress')}</Text>
                       <View style={styles.inputShell}>
                         <MaterialCommunityIcons
                           name="email-outline"
@@ -159,9 +158,9 @@ export default function LoginScreen() {
 
                     <View style={styles.fieldGroup}>
                       <View style={styles.labelRow}>
-                        <Text style={styles.fieldLabel}>Password</Text>
+                        <Text style={styles.fieldLabel}>{t('login.password')}</Text>
                         <Pressable onPress={() => router.push('/forgot-password')} hitSlop={12}>
-                          <Text style={styles.linkText}>Forgot Password?</Text>
+                          <Text style={styles.linkText}>{t('login.forgotPassword')}</Text>
                         </Pressable>
                       </View>
                       <View style={styles.inputShell}>
@@ -206,7 +205,7 @@ export default function LoginScreen() {
                         <ActivityIndicator color={colors.inverseText} />
                       ) : (
                         <>
-                          <Text style={styles.primaryButtonText}>Login</Text>
+                          <Text style={styles.primaryButtonText}>{t('login.submit')}</Text>
                           <MaterialCommunityIcons
                             name="arrow-right"
                             size={20}
@@ -218,14 +217,14 @@ export default function LoginScreen() {
 
                     <View style={styles.inlineDivider}>
                       <View style={styles.inlineDividerLine} />
-                      <Text style={styles.inlineDividerText}>No social login</Text>
+                      <Text style={styles.inlineDividerText}>{t('login.noSocialLogin')}</Text>
                       <View style={styles.inlineDividerLine} />
                     </View>
 
                     <View style={styles.footerRow}>
-                      <Text style={styles.footerText}>Don&apos;t have an account?</Text>
+                      <Text style={styles.footerText}>{t('login.noAccount')}</Text>
                       <Pressable onPress={() => router.push('/register')}>
-                        <Text style={styles.footerLink}>Join Now</Text>
+                        <Text style={styles.footerLink}>{t('login.joinNow')}</Text>
                       </Pressable>
                     </View>
                   </View>

@@ -4,10 +4,12 @@ import React from 'react';
 import { KineticTabBar } from '@/components/kinetic-tab-bar';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppLanguage } from '@/providers/language-provider';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const { t } = useAppLanguage();
 
   return (
     <Tabs
@@ -21,31 +23,31 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: t('tabs.home'),
         }}
       />
       <Tabs.Screen
         name="activity"
         options={{
-          title: 'Activity',
+          title: t('tabs.activity'),
         }}
       />
       <Tabs.Screen
         name="debt"
         options={{
-          title: 'Debt',
+          title: t('tabs.debt'),
         }}
       />
       <Tabs.Screen
         name="reports"
         options={{
-          title: 'Reports',
+          title: t('tabs.reports'),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          title: t('tabs.settings'),
         }}
       />
     </Tabs>

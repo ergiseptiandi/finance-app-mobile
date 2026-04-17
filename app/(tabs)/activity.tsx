@@ -4,38 +4,36 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-const items = [
-  {
-    icon: 'bank-transfer-out',
-    title: 'Scheduled Transfers',
-    body: 'Track outgoing movement across recurring bills and operating expenses.',
-  },
-  {
-    icon: 'cash-clock',
-    title: 'Pending Settlements',
-    body: 'Review queued transactions before they impact available liquidity.',
-  },
-  {
-    icon: 'history',
-    title: 'Ledger Timeline',
-    body: 'Open a deeper chronological trace of every debit and credit event.',
-  },
-];
+import { useAppLanguage } from '@/providers/language-provider';
 
 export default function ActivityScreen() {
   const colors = Colors[useColorScheme() ?? 'light'];
   const insets = useSafeAreaInsets();
+  const { t } = useAppLanguage();
   const styles = createStyles(colors, insets.top);
+  const items = [
+    {
+      icon: 'bank-transfer-out',
+      title: t('activity.card.scheduledTransfers.title'),
+      body: t('activity.card.scheduledTransfers.body'),
+    },
+    {
+      icon: 'cash-clock',
+      title: t('activity.card.pendingSettlements.title'),
+      body: t('activity.card.pendingSettlements.body'),
+    },
+    {
+      icon: 'history',
+      title: t('activity.card.ledgerTimeline.title'),
+      body: t('activity.card.ledgerTimeline.body'),
+    },
+  ];
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>Activity</Text>
-      <Text style={styles.title}>Flow monitor for every movement.</Text>
-      <Text style={styles.subtitle}>
-        This tab is structured for dense event streams, but the cards stay constrained so copy and
-        action labels never break out of the viewport.
-      </Text>
+      <Text style={styles.kicker}>{t('activity.kicker')}</Text>
+      <Text style={styles.title}>{t('activity.title')}</Text>
+      <Text style={styles.subtitle}>{t('activity.subtitle')}</Text>
 
       {items.map((item) => (
         <View key={item.title} style={styles.card}>
