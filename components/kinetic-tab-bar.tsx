@@ -23,8 +23,8 @@ export function KineticTabBar({ state, descriptors, navigation }: BottomTabBarPr
   const styles = createStyles(colors);
 
   return (
-    <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      <View style={[styles.container, { backgroundColor: colors.shellTabBar }]}>
+    <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+      <View style={styles.container}>
         {state.routes.map((route, index) => {
           const descriptor = descriptors[route.key];
           const isFocused = state.index === index;
@@ -98,22 +98,26 @@ const createStyles = (colors: (typeof Colors)['light']) =>
       left: 0,
       right: 0,
       bottom: 0,
-      paddingHorizontal: 14,
       paddingTop: 8,
+      paddingHorizontal: 10,
+      backgroundColor: colors.shellTabBar,
+      borderTopWidth: 1,
+      borderTopColor: colors.shellBorder,
+      shadowColor: alpha(colors.onSurface, 0.1),
+      shadowOpacity: 1,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: -4 },
+      elevation: 16,
     },
     container: {
       flexDirection: 'row',
       alignItems: 'stretch',
-      borderRadius: 28,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
       paddingHorizontal: 6,
-      paddingVertical: 6,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
-      shadowColor: alpha(colors.onSurface, 0.18),
-      shadowOpacity: 1,
-      shadowRadius: 26,
-      shadowOffset: { width: 0, height: -8 },
-      elevation: 20,
+      paddingTop: 4,
+      paddingBottom: 0,
+      backgroundColor: colors.shellTabBar,
     },
     item: {
       flex: 1,
