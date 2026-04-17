@@ -1,8 +1,7 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { KineticTabBar } from '@/components/kinetic-tab-bar';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -12,28 +11,41 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <KineticTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: colors.tint,
-        tabBarInactiveTintColor: colors.tabIconDefault,
         headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarStyle: {
-          backgroundColor: colors.surfaceContainerLowest,
-          borderTopWidth: 0,
+        sceneStyle: {
+          backgroundColor: colors.shellBackground,
         },
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="chart.bar.fill" color={color} />,
+          title: 'Home',
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="activity"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.crop.circle.fill" color={color} />,
+          title: 'Activity',
+        }}
+      />
+      <Tabs.Screen
+        name="debt"
+        options={{
+          title: 'Debt',
+        }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          title: 'Reports',
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
         }}
       />
     </Tabs>

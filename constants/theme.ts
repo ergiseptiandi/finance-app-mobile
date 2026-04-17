@@ -69,6 +69,21 @@ const light = {
   inverseTextSoft: alpha('#f6f6ff', 0.82),
   ghostBorder: alpha('#6e9fff', 0.3),
   dividerSoft: '#d9e2ff',
+  shellBackground: '#f4f7ff',
+  shellCard: '#ffffff',
+  shellCardStrong: '#dfe8ff',
+  shellCardMuted: '#eef2ff',
+  shellCardSoft: '#f8faff',
+  shellBorder: alpha('#272e42', 0.08),
+  shellTextPrimary: '#272e42',
+  shellTextSecondary: '#535b71',
+  shellTextMuted: alpha('#535b71', 0.72),
+  shellTextSoft: alpha('#535b71', 0.56),
+  shellTabBar: alpha('#ffffff', 0.94),
+  shellTabActive: alpha('#0057bd', 0.12),
+  shellTabIconActive: alpha('#0057bd', 0.14),
+  shellFab: '#2dd881',
+  shellFabIcon: '#ffffff',
 };
 
 const dark = {
@@ -117,6 +132,21 @@ const dark = {
   inverseTextSoft: alpha('#f6f6ff', 0.82),
   ghostBorder: alpha('#6e9fff', 0.24),
   dividerSoft: '#18305e',
+  shellBackground: '#060e20',
+  shellCard: '#10192e',
+  shellCardStrong: '#1a2745',
+  shellCardMuted: '#182136',
+  shellCardSoft: '#1b2540',
+  shellBorder: alpha('#ffffff', 0.05),
+  shellTextPrimary: '#f6f6ff',
+  shellTextSecondary: alpha('#f6f6ff', 0.82),
+  shellTextMuted: alpha('#f6f6ff', 0.56),
+  shellTextSoft: alpha('#f6f6ff', 0.36),
+  shellTabBar: alpha('#0b1630', 0.96),
+  shellTabActive: 'rgba(14, 44, 96, 0.7)',
+  shellTabIconActive: 'rgba(77, 142, 255, 0.18)',
+  shellFab: '#64d98a',
+  shellFabIcon: '#06172f',
 };
 
 export const Colors = {
