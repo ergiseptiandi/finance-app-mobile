@@ -12,6 +12,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -101,7 +102,8 @@ export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { width } = useWindowDimensions();
-  const styles = createStyles(colors, width);
+  const insets = useSafeAreaInsets();
+  const styles = createStyles(colors, width, insets.top);
   const [trendMode, setTrendMode] = useState<TrendMode>('monthly');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -510,7 +512,7 @@ export default function DashboardScreen() {
   );
 }
 
-const createStyles = (colors: AppColorTheme, width: number) => {
+const createStyles = (colors: AppColorTheme, width: number, topInset: number) => {
   const compact = width < 360;
   const isDark = colors.background === Colors.dark.background;
 
@@ -524,7 +526,7 @@ const createStyles = (colors: AppColorTheme, width: number) => {
       backgroundColor: colors.shellBackground,
     },
     content: {
-      paddingTop: 18,
+      paddingTop: Math.max(topInset + 14, 28),
       paddingHorizontal: compact ? 16 : 18,
       paddingBottom: 164,
       gap: 20,

@@ -1,5 +1,6 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -24,7 +25,8 @@ const items = [
 
 export default function ActivityScreen() {
   const colors = Colors[useColorScheme() ?? 'light'];
-  const styles = createStyles(colors);
+  const insets = useSafeAreaInsets();
+  const styles = createStyles(colors, insets.top);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -48,7 +50,7 @@ export default function ActivityScreen() {
   );
 }
 
-const createStyles = (colors: AppColorTheme) =>
+const createStyles = (colors: AppColorTheme, topInset: number) =>
   StyleSheet.create({
     screen: {
       flex: 1,
@@ -56,6 +58,7 @@ const createStyles = (colors: AppColorTheme) =>
     },
     content: {
       padding: 18,
+      paddingTop: Math.max(topInset + 14, 28),
       paddingBottom: 150,
       gap: 16,
     },

@@ -10,6 +10,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -58,7 +59,8 @@ function SettingsRow({
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const styles = createStyles(colors);
+  const insets = useSafeAreaInsets();
+  const styles = createStyles(colors, insets.top);
   const [displayName, setDisplayName] = useState('Alex Sterling');
   const [email, setEmail] = useState('alex.sterling@ledger.io');
   const [memberSince, setMemberSince] = useState('2022');
@@ -101,24 +103,6 @@ export default function SettingsScreen() {
   return (
     <View style={styles.screen}>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-
-      <View style={styles.topBar}>
-        <View style={styles.topLeft}>
-          <Pressable style={styles.topIconButton} onPress={() => router.back()}>
-            <MaterialCommunityIcons name="arrow-left" size={22} color={colors.shellTextPrimary} />
-          </Pressable>
-          <Text style={styles.topTitle}>Settings</Text>
-        </View>
-
-        <View style={styles.topRight}>
-          <Text numberOfLines={1} style={styles.brandMark}>
-            The Ledger
-          </Text>
-          <Pressable style={styles.topIconButton}>
-            <MaterialCommunityIcons name="dots-vertical" size={20} color={colors.shellTextPrimary} />
-          </Pressable>
-        </View>
-      </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroGrid}>
@@ -352,56 +336,11 @@ const settingsRowStyles = (colors: AppColorTheme) =>
     },
   });
 
-const createStyles = (colors: AppColorTheme) =>
+const createStyles = (colors: AppColorTheme, topInset: number) =>
   StyleSheet.create({
     screen: {
       flex: 1,
       backgroundColor: colors.shellBackground,
-    },
-    topBar: {
-      minHeight: 72,
-      paddingTop: 18,
-      paddingHorizontal: 18,
-      paddingBottom: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 12,
-      backgroundColor: alpha(colors.shellCard, 0.72),
-      borderBottomWidth: 1,
-      borderBottomColor: colors.shellBorder,
-    },
-    topLeft: {
-      flex: 1,
-      minWidth: 0,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-    },
-    topRight: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      maxWidth: '50%',
-    },
-    topIconButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 999,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    topTitle: {
-      color: colors.shellTextPrimary,
-      fontSize: 24,
-      fontWeight: '800',
-      letterSpacing: -0.8,
-    },
-    brandMark: {
-      color: colors.primary,
-      fontSize: 15,
-      fontWeight: '800',
-      letterSpacing: -0.4,
     },
     scroll: {
       flex: 1,
@@ -409,7 +348,7 @@ const createStyles = (colors: AppColorTheme) =>
     },
     content: {
       paddingHorizontal: 18,
-      paddingTop: 20,
+      paddingTop: Math.max(topInset + 14, 28),
       paddingBottom: 150,
       gap: 22,
     },
