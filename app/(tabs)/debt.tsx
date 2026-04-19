@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   Modal,
   Pressable,
@@ -26,11 +27,13 @@ import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
 import {
   createDebt,
   createDebtPayment,
+  deleteDebt,
   getDebtDetail,
   getDebtInstallments,
   getDebtPayments,
   listDebts,
   markInstallmentAsPaid,
+  updateDebt,
   type DebtDetail,
   type DebtPaymentRecord,
   type DebtRecord,
@@ -38,7 +41,7 @@ import {
 } from '@/lib/api/debts';
 
 type StatusTone = 'danger' | 'success' | 'warning' | 'neutral';
-type DebtFormMode = 'create' | 'payment';
+type DebtFormMode = 'create' | 'edit' | 'payment';
 
 type DebtFormState = {
   name: string;
@@ -121,6 +124,13 @@ const createEmptyDebtForm = (): DebtFormState => ({
   dueDate: getTodayInputValue(),
 });
 
+const createDebtFormFromRecord = (debt: DebtRecord | DebtDetail): DebtFormState => ({
+  name: debt.name ?? '',
+  totalAmount: formatRupiahInput(String(toNumber(debt.total_amount))),
+  monthlyInstallment: formatRupiahInput(String(toNumber(debt.monthly_installment))),
+  dueDate: parseDate(debt.due_date)?.toISOString().slice(0, 10) ?? getTodayInputValue(),
+});
+
 const createEmptyPaymentForm = (): PaymentFormState => ({
   amount: '',
   paymentDate: getTodayInputValue(),
@@ -164,6 +174,9 @@ const getFileBadgeLabel = (proofName: string, proofType: string) => {
 
   return 'FILE';
 };
+
+const resolveApiMessage = (error: unknown, fallback: string) =>
+  error instanceof ApiRequestError && error.message ? error.message : fallback;
 
 const formatDueLabel = (value: string, t: (key: string, params?: Record<string, string | number>) => string) => {
   const parsed = parseDate(value);
@@ -462,6 +475,17 @@ export default function DebtScreen() {
     setDebtForm(createEmptyDebtForm());
   }, []);
 
+  const openEditDebtForm = useCallback(() => {
+    if (!selectedDebt) {
+      return;
+    }
+
+    setFormMode('edit');
+    setFormVisible(true);
+    setFormError('');
+    setDebtForm(createDebtFormFromRecord(selectedDebt));
+  }, [selectedDebt]);
+
   const openPaymentForm = useCallback(() => {
     setFormMode('payment');
     setFormVisible(true);
@@ -476,7 +500,10 @@ export default function DebtScreen() {
         formatRupiahInput(
           String(
             selectedDebt
-              ? Math.max(toNumber(selectedDebt.monthly_installment), toNumber(selectedDebt.remaining_amount))
+              ? Math.min(
+                  Math.max(0, toNumber(selectedDebt.remaining_amount)),
+                  Math.max(0, toNumber(selectedDebt.monthly_installment))
+                ) || Math.max(0, toNumber(selectedDebt.remaining_amount))
               : 0
           )
         ),
@@ -527,20 +554,31 @@ export default function DebtScreen() {
     setFormSubmitting(true);
 
     try {
-      await withAuthorizedRequest((accessToken) =>
-        createDebt(accessToken, {
-          name: trimmedName,
-          total_amount: totalAmount,
-          monthly_installment: monthlyInstallment,
-          due_date: toApiDate(debtForm.dueDate),
-        })
-      );
+      if (formMode === 'edit' && selectedDebtId) {
+        await withAuthorizedRequest((accessToken) =>
+          updateDebt(accessToken, selectedDebtId, {
+            name: trimmedName,
+            total_amount: totalAmount,
+            monthly_installment: monthlyInstallment,
+            due_date: toApiDate(debtForm.dueDate),
+          })
+        );
+      } else {
+        await withAuthorizedRequest((accessToken) =>
+          createDebt(accessToken, {
+            name: trimmedName,
+            total_amount: totalAmount,
+            monthly_installment: monthlyInstallment,
+            due_date: toApiDate(debtForm.dueDate),
+          })
+        );
+      }
 
       closeForm();
-      await loadDebts(true);
+      await loadDebts(true, formMode === 'edit' ? selectedDebtId : null);
     } catch (err) {
       if (!(err instanceof Error && err.message === 'missing_session')) {
-        setFormError(t('debt.saveError'));
+        setFormError(resolveApiMessage(err, t('debt.saveError')));
       }
     } finally {
       setFormSubmitting(false);
@@ -551,7 +589,9 @@ export default function DebtScreen() {
     debtForm.monthlyInstallment,
     debtForm.name,
     debtForm.totalAmount,
+    formMode,
     loadDebts,
+    selectedDebtId,
     t,
     withAuthorizedRequest,
   ]);
@@ -590,7 +630,7 @@ export default function DebtScreen() {
       await loadDebts(true, targetDebtId);
     } catch (err) {
       if (!(err instanceof Error && err.message === 'missing_session')) {
-        setFormError(t('debt.saveError'));
+        setFormError(resolveApiMessage(err, t('debt.saveError')));
       }
     } finally {
       setFormSubmitting(false);
@@ -609,6 +649,34 @@ export default function DebtScreen() {
     t,
     withAuthorizedRequest,
   ]);
+
+  const handleDeleteDebt = useCallback(() => {
+    if (!selectedDebt) {
+      return;
+    }
+
+    Alert.alert(t('debt.deleteConfirmTitle'), t('debt.deleteConfirmMessage', { name: selectedDebt.name }), [
+      {
+        text: t('common.cancel'),
+        style: 'cancel',
+      },
+      {
+        text: t('debt.deleteDebt'),
+        style: 'destructive',
+        onPress: async () => {
+          setDetailError('');
+          try {
+            await withAuthorizedRequest((accessToken) => deleteDebt(accessToken, selectedDebt.id));
+            await loadDebts(true);
+          } catch (err) {
+            if (!(err instanceof Error && err.message === 'missing_session')) {
+              setDetailError(resolveApiMessage(err, t('debt.deleteError')));
+            }
+          }
+        },
+      },
+    ]);
+  }, [loadDebts, selectedDebt, t, withAuthorizedRequest]);
 
   const overview = useMemo(() => {
     const totalDebt = getTotalAmount(debts, (debt) => toNumber(debt.total_amount));
@@ -641,7 +709,7 @@ export default function DebtScreen() {
       : 0;
   const paymentCount = selected?.payments?.length ?? 0;
   const dueLabel = selected ? formatDueLabel(selected.due_date, t) : '';
-  const modalAccent = formMode === 'create' ? colors.primary : colors.secondary;
+  const modalAccent = formMode === 'payment' ? colors.secondary : colors.primary;
   const paymentTarget = useMemo<DebtRecord | DebtDetail | null>(() => {
     if (selected && (selectedDebtId === null || selected.id === selectedDebtId)) {
       return selected;
@@ -844,6 +912,17 @@ export default function DebtScreen() {
               <StatusChip colors={colors} tone={getStatusTone(selected.status)} label={toStatusLabel(selected.status, t)} />
             </View>
 
+            <View style={styles.detailActions}>
+              <Pressable onPress={openEditDebtForm} style={styles.detailActionButton}>
+                <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.primary} />
+                <Text style={styles.detailActionText}>{t('debt.editDebt')}</Text>
+              </Pressable>
+              <Pressable onPress={handleDeleteDebt} style={[styles.detailActionButton, styles.detailActionDanger]}>
+                <MaterialCommunityIcons name="trash-can-outline" size={16} color={colors.danger} />
+                <Text style={[styles.detailActionText, styles.detailActionDangerText]}>{t('debt.deleteDebt')}</Text>
+              </Pressable>
+            </View>
+
             <View style={styles.detailStatsGrid}>
               <MiniStat
                 colors={colors}
@@ -1006,13 +1085,25 @@ export default function DebtScreen() {
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderCopy}>
                     <Text style={[styles.modalKicker, { color: modalAccent }]}>
-                      {formMode === 'create' ? t('debt.createKicker') : t('debt.paymentKicker')}
+                      {formMode === 'payment'
+                        ? t('debt.paymentKicker')
+                        : formMode === 'edit'
+                          ? t('debt.editKicker')
+                          : t('debt.createKicker')}
                     </Text>
                     <Text style={[styles.modalTitle, keyboardOpen && styles.modalTitleKeyboard]}>
-                      {formMode === 'create' ? t('debt.createTitle') : t('debt.paymentTitle')}
+                      {formMode === 'payment'
+                        ? t('debt.paymentTitle')
+                        : formMode === 'edit'
+                          ? t('debt.editTitle')
+                          : t('debt.createTitle')}
                     </Text>
                     <Text style={[styles.modalSubtitle, keyboardOpen && styles.modalSubtitleKeyboard]}>
-                      {formMode === 'create' ? t('debt.createSubtitle') : t('debt.paymentSubtitle')}
+                      {formMode === 'payment'
+                        ? t('debt.paymentSubtitle')
+                        : formMode === 'edit'
+                          ? t('debt.editSubtitle')
+                          : t('debt.createSubtitle')}
                     </Text>
                   </View>
 
@@ -1041,25 +1132,37 @@ export default function DebtScreen() {
                           { backgroundColor: alpha(modalAccent, isLight ? 0.14 : 0.2) },
                         ]}>
                         <MaterialCommunityIcons
-                          name={formMode === 'create' ? 'bank-plus' : 'file-image-plus-outline'}
+                          name={
+                            formMode === 'payment'
+                              ? 'file-image-plus-outline'
+                              : formMode === 'edit'
+                                ? 'file-document-edit-outline'
+                                : 'bank-plus'
+                          }
                           size={22}
                           color={modalAccent}
                         />
                       </View>
                       <View style={styles.modalHeroCopy}>
                         <Text style={styles.modalHeroTitle}>
-                          {formMode === 'create'
-                            ? t('debt.modal.createPreviewTitle')
-                            : t('debt.modal.paymentPreviewTitle')}
+                          {formMode === 'payment'
+                            ? t('debt.modal.paymentPreviewTitle')
+                            : formMode === 'edit'
+                              ? t('debt.modal.editPreviewTitle')
+                              : t('debt.modal.createPreviewTitle')}
                         </Text>
                         <Text style={styles.modalHeroText}>
-                          {formMode === 'create' ? t('debt.createSubtitle') : t('debt.paymentSubtitle')}
+                          {formMode === 'payment'
+                            ? t('debt.paymentSubtitle')
+                            : formMode === 'edit'
+                              ? t('debt.editSubtitle')
+                              : t('debt.createSubtitle')}
                         </Text>
                       </View>
                     </View>
 
                     <View style={styles.modalHeroMetrics}>
-                      {formMode === 'create' ? (
+                      {formMode === 'create' || formMode === 'edit' ? (
                         <>
                           <View style={styles.modalMetricCard}>
                             <Text style={styles.modalMetricLabel}>{t('debt.modal.totalPreview')}</Text>
@@ -1100,7 +1203,7 @@ export default function DebtScreen() {
                     </View>
                   )}
 
-                  {formMode === 'create' ? (
+                  {formMode === 'create' || formMode === 'edit' ? (
                     <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
                       <View style={styles.modalSectionCard}>
                         <View style={styles.modalSectionHeader}>
@@ -1389,7 +1492,7 @@ export default function DebtScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={formMode === 'create' ? submitDebtForm : submitPaymentForm}
+                  onPress={formMode === 'payment' ? submitPaymentForm : submitDebtForm}
                   disabled={formSubmitting}
                   style={({ pressed }) => [
                     styles.confirmButton,
@@ -1400,7 +1503,11 @@ export default function DebtScreen() {
                     <ActivityIndicator color={colors.onPrimary} />
                   ) : (
                     <Text style={styles.confirmButtonText}>
-                      {formMode === 'create' ? t('debt.form.createSubmit') : t('debt.form.paymentSubmit')}
+                      {formMode === 'payment'
+                        ? t('debt.form.paymentSubmit')
+                        : formMode === 'edit'
+                          ? t('debt.form.updateSubmit')
+                          : t('debt.form.createSubmit')}
                     </Text>
                   )}
                 </Pressable>
@@ -1838,6 +1945,37 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       flex: 1,
       minWidth: 0,
       gap: 4,
+    },
+    detailActions: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    detailActionButton: {
+      flex: 1,
+      minHeight: 44,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      backgroundColor: colors.shellCardSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 14,
+    },
+    detailActionDanger: {
+      borderColor: alpha(colors.danger, 0.2),
+      backgroundColor: alpha(colors.danger, 0.06),
+    },
+    detailActionText: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    detailActionDangerText: {
+      color: colors.danger,
     },
     detailKicker: {
       color: colors.secondary,
