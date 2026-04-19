@@ -1,7 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +14,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DashboardSkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
@@ -32,6 +32,7 @@ import {
   getExpenseVsSalary,
   getMonthlySpending,
 } from '@/lib/api/dashboard';
+import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 
 type TrendMode = 'daily' | 'monthly';
 
@@ -48,6 +49,15 @@ type ActivityItem = {
   amount: string;
   kind: string;
   positive?: boolean;
+};
+
+type DashboardCacheState = {
+  summary: DashboardSummaryData | null;
+  dailySpending: DailySpendingItem[];
+  monthlySpending: MonthlySpendingItem[];
+  comparison: DashboardComparisonData | null;
+  expenseVsSalary: ExpenseVsSalaryData | null;
+  displayName: string;
 };
 
 const formatCompactCurrency = (value: number, locale: string) =>
@@ -163,11 +173,53 @@ export default function DashboardScreen() {
   const [comparison, setComparison] = useState<DashboardComparisonData | null>(null);
   const [expenseVsSalary, setExpenseVsSalary] = useState<ExpenseVsSalaryData | null>(null);
   const [displayName, setDisplayName] = useState('Kinetic Pulse');
+  const hasDashboardSnapshot = Boolean(
+    summary || comparison || expenseVsSalary || dailySpending.length || monthlySpending.length
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const hydrateDashboardCache = async () => {
+      const session = await getAuthSession();
+
+      if (!session || !active) {
+        return;
+      }
+
+      const nextDisplayName = session.user.name || 'Kinetic Pulse';
+      setDisplayName(nextDisplayName);
+
+      const cached = await readScreenCache<DashboardCacheState>(
+        buildScreenCacheKey('dashboard', session.user.id)
+      );
+
+      if (!cached || !active) {
+        return;
+      }
+
+      setSummary(cached.data.summary);
+      setDailySpending(cached.data.dailySpending);
+      setMonthlySpending(cached.data.monthlySpending);
+      setComparison(cached.data.comparison);
+      setExpenseVsSalary(cached.data.expenseVsSalary);
+      setDisplayName(cached.data.displayName || nextDisplayName);
+      setLoading(false);
+    };
+
+    hydrateDashboardCache();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadDashboard = useCallback(async (isRefresh = false) => {
+    const shouldShowSkeleton = !isRefresh && !hasDashboardSnapshot;
+
     if (isRefresh) {
       setRefreshing(true);
-    } else {
+    } else if (shouldShowSkeleton) {
       setLoading(true);
     }
 
@@ -210,26 +262,42 @@ export default function DashboardScreen() {
       }
 
       const [summaryResult, dailyResult, monthlyResult, comparisonResult, ratioResult] = results;
+      const nextSummary = summaryResult.status === 'fulfilled' ? summaryResult.value.Data : summary;
+      const nextDailySpending = dailyResult.status === 'fulfilled' ? dailyResult.value.Data : dailySpending;
+      const nextMonthlySpending =
+        monthlyResult.status === 'fulfilled' ? monthlyResult.value.Data : monthlySpending;
+      const nextComparison = comparisonResult.status === 'fulfilled' ? comparisonResult.value.Data : comparison;
+      const nextExpenseVsSalary =
+        ratioResult.status === 'fulfilled' ? ratioResult.value.Data : expenseVsSalary;
 
       if (summaryResult.status === 'fulfilled') {
-        setSummary(summaryResult.value.Data);
+        setSummary(nextSummary);
       }
 
       if (dailyResult.status === 'fulfilled') {
-        setDailySpending(dailyResult.value.Data);
+        setDailySpending(nextDailySpending);
       }
 
       if (monthlyResult.status === 'fulfilled') {
-        setMonthlySpending(monthlyResult.value.Data);
+        setMonthlySpending(nextMonthlySpending);
       }
 
       if (comparisonResult.status === 'fulfilled') {
-        setComparison(comparisonResult.value.Data);
+        setComparison(nextComparison);
       }
 
       if (ratioResult.status === 'fulfilled') {
-        setExpenseVsSalary(ratioResult.value.Data);
+        setExpenseVsSalary(nextExpenseVsSalary);
       }
+
+      await writeScreenCache(buildScreenCacheKey('dashboard', session.user.id), {
+        summary: nextSummary,
+        dailySpending: nextDailySpending,
+        monthlySpending: nextMonthlySpending,
+        comparison: nextComparison,
+        expenseVsSalary: nextExpenseVsSalary,
+        displayName: session.user.name || displayName,
+      });
 
       const hasHardFailure = results.some(
         (result) =>
@@ -251,7 +319,16 @@ export default function DashboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [t]);
+  }, [
+    comparison,
+    dailySpending,
+    displayName,
+    expenseVsSalary,
+    hasDashboardSnapshot,
+    monthlySpending,
+    summary,
+    t,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -387,10 +464,7 @@ export default function DashboardScreen() {
         </View>
 
         {loading ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>{t('dashboard.loading')}</Text>
-          </View>
+          <DashboardSkeleton colors={colors} />
         ) : (
           <>
             <View style={styles.heroBlock}>

@@ -20,6 +20,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DebtSkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
@@ -40,6 +41,7 @@ import {
   type DebtRecord,
   type InstallmentRecord,
 } from '@/lib/api/debts';
+import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 
 type StatusTone = 'danger' | 'success' | 'warning' | 'neutral';
 type DebtFormMode = 'create' | 'edit' | 'payment';
@@ -57,6 +59,12 @@ type PaymentFormState = {
   proofName: string;
   proofUri: string;
   proofType: string;
+};
+
+type DebtCacheState = {
+  debts: DebtRecord[];
+  selectedDebtId: number | null;
+  selectedDebt: DebtDetail | null;
 };
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
@@ -296,6 +304,36 @@ export default function DebtScreen() {
   const [detailError, setDetailError] = useState('');
   const keyboardOpen = keyboardHeight > 0;
   const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
+  const hasDebtSnapshot = Boolean(debts.length || selectedDebt);
+
+  useEffect(() => {
+    let active = true;
+
+    const hydrateDebtCache = async () => {
+      const session = await getAuthSession();
+
+      if (!session || !active) {
+        return;
+      }
+
+      const cached = await readScreenCache<DebtCacheState>(buildScreenCacheKey('debt', session.user.id));
+
+      if (!cached || !active) {
+        return;
+      }
+
+      setDebts(cached.data.debts);
+      setSelectedDebtId(cached.data.selectedDebtId);
+      setSelectedDebt(cached.data.selectedDebt);
+      setLoading(false);
+    };
+
+    hydrateDebtCache();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const withAuthorizedRequest = useCallback(async <T,>(task: (accessToken: string) => Promise<T>) => {
     const session = await getAuthSession();
@@ -340,12 +378,14 @@ export default function DebtScreen() {
 
         const [detailResponse, installmentResponse, paymentResponse] = detail;
         const baseDetail = detailResponse.Data;
-
-        setSelectedDebt({
+        const nextDetail = {
           ...baseDetail,
           installments: installmentResponse.Data ?? baseDetail.installments ?? [],
           payments: paymentResponse.Data ?? baseDetail.payments ?? [],
-        });
+        };
+
+        setSelectedDebt(nextDetail);
+        return nextDetail;
       } catch (err) {
         if (!(err instanceof Error && err.message === 'missing_session')) {
           setDetailError(t('debt.partialError'));
@@ -353,6 +393,8 @@ export default function DebtScreen() {
             setSelectedDebt(null);
           }
         }
+
+        return null;
       } finally {
         setDetailLoading(false);
       }
@@ -362,15 +404,23 @@ export default function DebtScreen() {
 
   const loadDebts = useCallback(
     async (isRefresh = false, preferredDebtId: number | null = null) => {
+      const shouldShowSkeleton = !isRefresh && !hasDebtSnapshot;
+
       if (isRefresh) {
         setRefreshing(true);
-      } else {
+      } else if (shouldShowSkeleton) {
         setLoading(true);
       }
 
       setError('');
 
       try {
+        const session = await getAuthSession();
+        if (!session) {
+          router.replace('/login');
+          return;
+        }
+
         const response = await withAuthorizedRequest((accessToken) => listDebts(accessToken));
         const nextDebts = response.Data ?? [];
         setDebts(nextDebts);
@@ -382,21 +432,28 @@ export default function DebtScreen() {
 
         setSelectedDebtId(nextSelectedId);
 
+        let nextSelectedDebt: DebtDetail | null = null;
         if (nextSelectedId) {
-          await loadDebtDetail(nextSelectedId, isRefresh);
+          nextSelectedDebt = await loadDebtDetail(nextSelectedId, isRefresh);
         } else {
           setSelectedDebt(null);
         }
+
+        await writeScreenCache(buildScreenCacheKey('debt', session.user.id), {
+          debts: nextDebts,
+          selectedDebtId: nextSelectedId,
+          selectedDebt: nextSelectedDebt,
+        });
       } catch (err) {
         if (!(err instanceof Error && err.message === 'missing_session')) {
           setError(t('debt.loadError'));
         }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  },
-    [loadDebtDetail, t, withAuthorizedRequest]
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [hasDebtSnapshot, loadDebtDetail, t, withAuthorizedRequest]
   );
 
   useEffect(() => {
@@ -741,6 +798,7 @@ export default function DebtScreen() {
   const paymentTargetStatus = paymentTarget ? toStatusLabel(paymentTarget.status, t) : '';
   const proofSelected = Boolean(paymentForm.proofUri);
   const proofBadgeLabel = getFileBadgeLabel(paymentForm.proofName, paymentForm.proofType);
+  const showInitialSkeleton = loading && !debts.length && !selected;
 
   return (
     <View style={styles.root}>
@@ -751,6 +809,10 @@ export default function DebtScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
         showsVerticalScrollIndicator={false}>
+        {showInitialSkeleton ? (
+          <DebtSkeleton colors={colors} />
+        ) : (
+          <>
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroBadge}>
@@ -1067,6 +1129,8 @@ export default function DebtScreen() {
               )}
             </View>
           </View>
+        )}
+          </>
         )}
 
         {!!error && <Text style={styles.errorText}>{error}</Text>}

@@ -1,7 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,6 +13,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ReportsSkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
@@ -31,9 +31,18 @@ import {
   type RemainingBalanceData,
   type SpendingTrendItem,
 } from '@/lib/api/reports';
+import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 
 type TrendMode = 'trend' | 'categories';
 type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger';
+
+type ReportsCacheState = {
+  expenseByCategory: ExpenseByCategoryItem[];
+  spendingTrends: SpendingTrendItem[];
+  highestCategory: HighestSpendingCategoryData | null;
+  averageDaily: AverageDailySpendingData | null;
+  remainingBalance: RemainingBalanceData | null;
+};
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
 
@@ -115,6 +124,42 @@ export default function ReportsScreen() {
   const [highestCategory, setHighestCategory] = useState<HighestSpendingCategoryData | null>(null);
   const [averageDaily, setAverageDaily] = useState<AverageDailySpendingData | null>(null);
   const [remainingBalance, setRemainingBalance] = useState<RemainingBalanceData | null>(null);
+  const hasReportsSnapshot = Boolean(
+    expenseByCategory.length || spendingTrends.length || highestCategory || averageDaily || remainingBalance
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const hydrateReportsCache = async () => {
+      const session = await getAuthSession();
+
+      if (!session || !active) {
+        return;
+      }
+
+      const cached = await readScreenCache<ReportsCacheState>(
+        buildScreenCacheKey('reports', session.user.id)
+      );
+
+      if (!cached || !active) {
+        return;
+      }
+
+      setExpenseByCategory(cached.data.expenseByCategory);
+      setSpendingTrends(cached.data.spendingTrends);
+      setHighestCategory(cached.data.highestCategory);
+      setAverageDaily(cached.data.averageDaily);
+      setRemainingBalance(cached.data.remainingBalance);
+      setLoading(false);
+    };
+
+    hydrateReportsCache();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const withAuthorizedRequest = useCallback(async <T,>(task: (accessToken: string) => Promise<T>) => {
     const session = await getAuthSession();
@@ -145,9 +190,11 @@ export default function ReportsScreen() {
 
   const loadReports = useCallback(
     async (isRefresh = false) => {
+      const shouldShowSkeleton = !isRefresh && !hasReportsSnapshot;
+
       if (isRefresh) {
         setRefreshing(true);
-      } else {
+      } else if (shouldShowSkeleton) {
         setLoading(true);
       }
 
@@ -165,25 +212,46 @@ export default function ReportsScreen() {
         );
 
         const [categoryResult, trendResult, highestResult, averageResult, balanceResult] = results;
+        const nextExpenseByCategory =
+          categoryResult.status === 'fulfilled' ? categoryResult.value.Data ?? [] : expenseByCategory;
+        const nextSpendingTrends =
+          trendResult.status === 'fulfilled' ? trendResult.value.Data ?? [] : spendingTrends;
+        const nextHighestCategory =
+          highestResult.status === 'fulfilled' ? highestResult.value.Data ?? null : highestCategory;
+        const nextAverageDaily =
+          averageResult.status === 'fulfilled' ? averageResult.value.Data ?? null : averageDaily;
+        const nextRemainingBalance =
+          balanceResult.status === 'fulfilled' ? balanceResult.value.Data ?? null : remainingBalance;
 
         if (categoryResult.status === 'fulfilled') {
-          setExpenseByCategory(categoryResult.value.Data ?? []);
+          setExpenseByCategory(nextExpenseByCategory);
         }
 
         if (trendResult.status === 'fulfilled') {
-          setSpendingTrends(trendResult.value.Data ?? []);
+          setSpendingTrends(nextSpendingTrends);
         }
 
         if (highestResult.status === 'fulfilled') {
-          setHighestCategory(highestResult.value.Data ?? null);
+          setHighestCategory(nextHighestCategory);
         }
 
         if (averageResult.status === 'fulfilled') {
-          setAverageDaily(averageResult.value.Data ?? null);
+          setAverageDaily(nextAverageDaily);
         }
 
         if (balanceResult.status === 'fulfilled') {
-          setRemainingBalance(balanceResult.value.Data ?? null);
+          setRemainingBalance(nextRemainingBalance);
+        }
+
+        const session = await getAuthSession();
+        if (session) {
+          await writeScreenCache(buildScreenCacheKey('reports', session.user.id), {
+            expenseByCategory: nextExpenseByCategory,
+            spendingTrends: nextSpendingTrends,
+            highestCategory: nextHighestCategory,
+            averageDaily: nextAverageDaily,
+            remainingBalance: nextRemainingBalance,
+          });
         }
 
         if (results.some((result) => result.status === 'rejected')) {
@@ -198,7 +266,16 @@ export default function ReportsScreen() {
         setRefreshing(false);
       }
     },
-    [t, withAuthorizedRequest]
+    [
+      averageDaily,
+      expenseByCategory,
+      hasReportsSnapshot,
+      highestCategory,
+      remainingBalance,
+      spendingTrends,
+      t,
+      withAuthorizedRequest,
+    ]
   );
 
   useFocusEffect(
@@ -282,10 +359,7 @@ export default function ReportsScreen() {
         </View>
 
         {loading ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>{t('reports.loading')}</Text>
-          </View>
+          <ReportsSkeleton colors={colors} />
         ) : isEmpty ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="chart-box-outline" size={22} color={colors.primary} />

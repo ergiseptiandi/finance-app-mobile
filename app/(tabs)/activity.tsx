@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ActivitySkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, refreshToken } from '@/lib/api/auth';
@@ -38,6 +39,7 @@ import {
   type TransactionType,
 } from '@/lib/api/transactions';
 import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
+import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { useAppLanguage } from '@/providers/language-provider';
 
 type ActivityFilterType = 'all' | TransactionType;
@@ -72,6 +74,13 @@ type ActivityListFilters = {
   month: string;
   startDate: string;
   endDate: string;
+};
+
+type ActivityCacheState = {
+  summary: TransactionSummaryData;
+  transactions: TransactionRecord[];
+  categories: CategoryRecord[];
+  pagination: PaginationState;
 };
 
 const DEFAULT_SUMMARY: TransactionSummaryData = {
@@ -122,6 +131,16 @@ const createTransactionListParams = (filters: ActivityListFilters, page: number,
   start_date: filters.dateMode === 'range' ? filters.startDate : undefined,
   end_date: filters.dateMode === 'range' ? filters.endDate : undefined,
 });
+
+const createActivityCacheSuffix = (filters: ActivityListFilters) =>
+  [
+    filters.dateMode,
+    filters.month,
+    filters.startDate,
+    filters.endDate,
+    filters.type,
+    filters.category.trim().toLowerCase(),
+  ].join('|');
 
 const sanitizeCurrencyInput = (value: string) => value.replace(/[^\d]/g, '');
 
@@ -485,6 +504,46 @@ export default function ActivityScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardOpen = keyboardHeight > 0;
   const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
+  const hasActivitySnapshot = Boolean(
+    transactions.length ||
+      categories.length ||
+      pagination.total ||
+      summary.total_income ||
+      summary.total_expense ||
+      summary.balance
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const hydrateActivityCache = async () => {
+      const session = await getAuthSession();
+
+      if (!session || !active) {
+        return;
+      }
+
+      const cached = await readScreenCache<ActivityCacheState>(
+        buildScreenCacheKey('activity', session.user.id, createActivityCacheSuffix(filters))
+      );
+
+      if (!cached || !active) {
+        return;
+      }
+
+      setSummary(cached.data.summary);
+      setTransactions(cached.data.transactions);
+      setCategories(cached.data.categories);
+      setPagination(cached.data.pagination);
+      setLoading(false);
+    };
+
+    hydrateActivityCache();
+
+    return () => {
+      active = false;
+    };
+  }, [filters]);
 
   const withAuthorizedRequest = useCallback(
     async <T,>(task: (accessToken: string) => Promise<T>) => {
@@ -518,15 +577,23 @@ export default function ActivityScreen() {
 
   const loadActivity = useCallback(
     async (isRefresh = false) => {
+      const shouldShowSkeleton = !isRefresh && !hasActivitySnapshot;
+
       if (isRefresh) {
         setRefreshing(true);
-      } else {
+      } else if (shouldShowSkeleton) {
         setLoading(true);
       }
 
       setError('');
 
       try {
+        const session = await getAuthSession();
+        if (!session) {
+          router.replace('/login');
+          return;
+        }
+
         const [summaryResponse, transactionResponse, categoryResponse] = await withAuthorizedRequest((accessToken) =>
           Promise.all([
             getTransactionSummary(accessToken),
@@ -544,6 +611,21 @@ export default function ActivityScreen() {
           total: transactionResponse.Data.total ?? 0,
           totalPages: transactionResponse.Data.total_pages ?? 1,
         });
+
+        await writeScreenCache(
+          buildScreenCacheKey('activity', session.user.id, createActivityCacheSuffix(filters)),
+          {
+            summary: summaryResponse.Data ?? DEFAULT_SUMMARY,
+            transactions: transactionResponse.Data.data ?? [],
+            categories: categoryResponse.Data ?? [],
+            pagination: {
+              page: transactionResponse.Data.page ?? 1,
+              perPage: transactionResponse.Data.per_page ?? 10,
+              total: transactionResponse.Data.total ?? 0,
+              totalPages: transactionResponse.Data.total_pages ?? 1,
+            },
+          }
+        );
       } catch (loadError) {
         if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
           setError(t('activity.transactions.loadError'));
@@ -553,7 +635,7 @@ export default function ActivityScreen() {
         setRefreshing(false);
       }
     },
-    [filters, t, withAuthorizedRequest]
+    [filters, hasActivitySnapshot, t, withAuthorizedRequest]
   );
 
   useFocusEffect(
@@ -742,6 +824,7 @@ export default function ActivityScreen() {
 
   const resetFilters = useCallback(() => {
     const nextFilters = createDefaultActivityFilters();
+    setLoading(true);
     setDraftFilters(nextFilters);
     setFilters(nextFilters);
     setFilterError('');
@@ -775,6 +858,9 @@ export default function ActivityScreen() {
     }
 
     setFilterError('');
+    setLoading(true);
+    setTransactions([]);
+    setPagination(DEFAULT_PAGINATION);
     setFilters(draftFilters);
     setFilterModalVisible(false);
     setIosFilterDatePickerVisible(false);
@@ -987,92 +1073,93 @@ export default function ActivityScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.filterSummaryCard}>
-          <View style={styles.filterSummaryHeader}>
-            <View style={styles.filterSummaryCopy}>
-              <Text style={styles.filterSummaryKicker}>{t('activity.transactions.filterTitle')}</Text>
-              <Text style={styles.filterSummaryText}>{t('activity.transactions.filterHelper')}</Text>
-            </View>
-            <Pressable onPress={openFilterModal} style={styles.filterSummaryAction}>
-              <Text style={styles.filterSummaryActionText}>{t('activity.transactions.filterAction')}</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.filterChipWrap}>
-            {activeFilterChips.map((label) => (
-              <View key={label} style={styles.filterChip}>
-                <Text style={styles.filterChipText}>{label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.summaryStack}>
-          <SummaryStat
-            colors={colors}
-            title={t('activity.transactions.netVolume')}
-            value={toCurrency(totalMovement, locale)}
-            meta={t('activity.transactions.thisPeriod')}
-            metaTone="positive"
-            accent="primary"
-          />
-          <SummaryStat
-            colors={colors}
-            title={t('activity.transactions.activeStream')}
-            value={String(pagination.total)}
-            meta={t('activity.transactions.recordsTracked', { count: pagination.total })}
-            accent="secondary"
-            showProgress
-            progress={streamProgress}
-          />
-          <SummaryStat
-            colors={colors}
-            title={t('activity.transactions.incomeShare')}
-            value={`${incomeShare.toFixed(1)}%`}
-            meta={t('activity.transactions.ofMovement')}
-            accent="teal"
-          />
-        </View>
-
         {loading ? (
-          <View style={styles.stateCard}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.stateText}>{t('activity.transactions.loading')}</Text>
-          </View>
-        ) : groupedTransactions.length === 0 ? (
-          <View style={styles.stateCard}>
-            <MaterialCommunityIcons name="text-box-search-outline" size={28} color={colors.outlineVariant} />
-            <Text style={styles.emptyTitle}>{t('activity.transactions.emptyTitle')}</Text>
-            <Text style={styles.emptyBody}>{t('activity.transactions.emptyBody')}</Text>
-          </View>
+          <ActivitySkeleton colors={colors} />
         ) : (
-          groupedTransactions.map((section) => (
-            <View key={section.key} style={styles.groupSection}>
-              <View style={styles.groupHeader}>
-                <Text style={styles.groupTitle}>{section.title}</Text>
-                <View style={styles.groupLine} />
+          <>
+            <View style={styles.filterSummaryCard}>
+              <View style={styles.filterSummaryHeader}>
+                <View style={styles.filterSummaryCopy}>
+                  <Text style={styles.filterSummaryKicker}>{t('activity.transactions.filterTitle')}</Text>
+                  <Text style={styles.filterSummaryText}>{t('activity.transactions.filterHelper')}</Text>
+                </View>
+                <Pressable onPress={openFilterModal} style={styles.filterSummaryAction}>
+                  <Text style={styles.filterSummaryActionText}>{t('activity.transactions.filterAction')}</Text>
+                </Pressable>
               </View>
 
-              <View style={styles.groupList}>
-                {section.items.map((record) => (
-                  <TransactionRow
-                    key={record.id}
-                    record={record}
-                    colors={colors}
-                    locale={locale}
-                    statusLabel={
-                      record.type === 'income'
-                        ? t('activity.transactions.settled')
-                        : t('activity.transactions.completed')
-                    }
-                    incomeLabel={t('activity.transactions.income')}
-                    expenseLabel={t('activity.transactions.expense')}
-                    onPress={() => openEditModal(record.id)}
-                  />
+              <View style={styles.filterChipWrap}>
+                {activeFilterChips.map((label) => (
+                  <View key={label} style={styles.filterChip}>
+                    <Text style={styles.filterChipText}>{label}</Text>
+                  </View>
                 ))}
               </View>
             </View>
-          ))
+
+            <View style={styles.summaryStack}>
+              <SummaryStat
+                colors={colors}
+                title={t('activity.transactions.netVolume')}
+                value={toCurrency(totalMovement, locale)}
+                meta={t('activity.transactions.thisPeriod')}
+                metaTone="positive"
+                accent="primary"
+              />
+              <SummaryStat
+                colors={colors}
+                title={t('activity.transactions.activeStream')}
+                value={String(pagination.total)}
+                meta={t('activity.transactions.recordsTracked', { count: pagination.total })}
+                accent="secondary"
+                showProgress
+                progress={streamProgress}
+              />
+              <SummaryStat
+                colors={colors}
+                title={t('activity.transactions.incomeShare')}
+                value={`${incomeShare.toFixed(1)}%`}
+                meta={t('activity.transactions.ofMovement')}
+                accent="teal"
+              />
+            </View>
+
+            {groupedTransactions.length === 0 ? (
+              <View style={styles.stateCard}>
+                <MaterialCommunityIcons name="text-box-search-outline" size={28} color={colors.outlineVariant} />
+                <Text style={styles.emptyTitle}>{t('activity.transactions.emptyTitle')}</Text>
+                <Text style={styles.emptyBody}>{t('activity.transactions.emptyBody')}</Text>
+              </View>
+            ) : (
+              groupedTransactions.map((section) => (
+                <View key={section.key} style={styles.groupSection}>
+                  <View style={styles.groupHeader}>
+                    <Text style={styles.groupTitle}>{section.title}</Text>
+                    <View style={styles.groupLine} />
+                  </View>
+
+                  <View style={styles.groupList}>
+                    {section.items.map((record) => (
+                      <TransactionRow
+                        key={record.id}
+                        record={record}
+                        colors={colors}
+                        locale={locale}
+                        statusLabel={
+                          record.type === 'income'
+                            ? t('activity.transactions.settled')
+                            : t('activity.transactions.completed')
+                        }
+                        incomeLabel={t('activity.transactions.income')}
+                        expenseLabel={t('activity.transactions.expense')}
+                        onPress={() => openEditModal(record.id)}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ))
+            )}
+          </>
         )}
 
         {pagination.page < pagination.totalPages && visibleTransactions.length > 0 && (

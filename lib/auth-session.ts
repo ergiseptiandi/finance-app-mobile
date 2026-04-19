@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import type { AuthSession } from '@/lib/api/auth';
+import { clearAllScreenCache } from '@/lib/screen-cache';
 
 const SESSION_STORAGE_KEY = 'finance-go.auth.session';
 
@@ -24,6 +25,7 @@ export const getAuthSession = async () => {
 
 export const clearAuthSession = async () => {
   await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
+  await clearAllScreenCache();
 };
 
 export const getAccessToken = async () => {
