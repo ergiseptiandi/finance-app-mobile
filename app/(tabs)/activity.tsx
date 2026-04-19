@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,6 +14,10 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -81,6 +86,24 @@ const createEmptyTransactionForm = (): TransactionFormState => ({
   description: '',
 });
 
+const sanitizeCurrencyInput = (value: string) => value.replace(/[^\d]/g, '');
+
+const parseCurrencyInput = (value: string) => {
+  const normalized = sanitizeCurrencyInput(value);
+  return normalized ? Number(normalized) : 0;
+};
+
+const formatCurrencyInput = (value: string) => {
+  const normalized = sanitizeCurrencyInput(value);
+  if (!normalized) {
+    return '';
+  }
+
+  return new Intl.NumberFormat('id-ID', {
+    maximumFractionDigits: 0,
+  }).format(Number(normalized));
+};
+
 const toInputDate = (value: string) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
@@ -140,11 +163,29 @@ const toDateHeading = (value: string, locale: string) => {
     .toUpperCase();
 };
 
+const toPickerDate = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+
+  return parsed;
+};
+
+const toDateInputLabel = (value: string, locale: string) => {
+  const parsed = toPickerDate(value);
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(parsed);
+};
+
 const toTransactionForm = (record: TransactionRecord): TransactionFormState => ({
   id: record.id,
   type: record.type,
   category: record.category,
-  amount: String(record.amount),
+  amount: formatCurrencyInput(String(record.amount)),
   date: toInputDate(record.date),
   description: record.description ?? '',
 });
@@ -332,6 +373,10 @@ export default function ActivityScreen() {
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState<TransactionFormState>(createEmptyTransactionForm);
+  const [iosDatePickerVisible, setIosDatePickerVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardOpen = keyboardHeight > 0;
+  const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
 
   const withAuthorizedRequest = useCallback(
     async <T,>(task: (accessToken: string) => Promise<T>) => {
@@ -411,6 +456,28 @@ export default function ActivityScreen() {
     loadActivity();
   }, [loadActivity]);
 
+  useEffect(() => {
+    if (!transactionModalVisible) {
+      setKeyboardHeight(0);
+      return;
+    }
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [transactionModalVisible]);
+
   const loadMore = useCallback(async () => {
     if (loadingMore || loading || pagination.page >= pagination.totalPages) {
       return;
@@ -446,6 +513,7 @@ export default function ActivityScreen() {
 
   const resetTransactionForm = useCallback(() => {
     setForm(createEmptyTransactionForm());
+    setIosDatePickerVisible(false);
     setFormError('');
   }, []);
 
@@ -458,6 +526,7 @@ export default function ActivityScreen() {
     async (id: number) => {
       setTransactionModalVisible(true);
       setDetailLoading(true);
+      setIosDatePickerVisible(false);
       setFormError('');
 
       try {
@@ -479,13 +548,44 @@ export default function ActivityScreen() {
     setDetailLoading(false);
     setSubmitting(false);
     setDeleting(false);
+    setIosDatePickerVisible(false);
     setFormError('');
     setForm(createEmptyTransactionForm());
   }, []);
 
+  const handleDateChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      if (event.type === 'dismissed') {
+        return;
+      }
+    }
+
+    if (!selectedDate) {
+      return;
+    }
+
+    const nextDate = selectedDate.toISOString().slice(0, 10);
+    setForm((current) => ({ ...current, date: nextDate }));
+  }, []);
+
+  const openDatePicker = useCallback(() => {
+    const currentDate = toPickerDate(form.date);
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: currentDate,
+        mode: 'date',
+        onChange: handleDateChange,
+      });
+      return;
+    }
+
+    setIosDatePickerVisible((current) => !current);
+  }, [form.date, handleDateChange]);
+
   const handleSaveTransaction = useCallback(async () => {
     const normalizedCategory = form.category.trim();
-    const normalizedAmount = Number.parseFloat(form.amount.replace(',', '.'));
+    const normalizedAmount = parseCurrencyInput(form.amount);
 
     if (!normalizedCategory || !Number.isFinite(normalizedAmount) || normalizedAmount <= 0 || !form.date.trim()) {
       setFormError(t('activity.transactions.validation'));
@@ -605,11 +705,12 @@ export default function ActivityScreen() {
   const modalAccent = isIncomeForm ? colors.secondary : colors.primary;
   const modalAccentSoft = alpha(modalAccent, isLight ? 0.1 : 0.18);
   const modalAccentBorder = alpha(modalAccent, isLight ? 0.16 : 0.28);
-  const normalizedPreviewAmount = Number.parseFloat(form.amount.replace(',', '.'));
+  const normalizedPreviewAmount = parseCurrencyInput(form.amount);
   const hasAmountPreview = Number.isFinite(normalizedPreviewAmount) && normalizedPreviewAmount > 0;
   const amountPreview = hasAmountPreview
     ? toCurrency(normalizedPreviewAmount, locale)
     : t('activity.transactions.modalAmountPending');
+  const dateInputLabel = toDateInputLabel(form.date, locale);
   const modalKicker = form.id
     ? t('activity.transactions.modalEditKicker')
     : t('activity.transactions.modalCreateKicker');
@@ -759,34 +860,37 @@ export default function ActivityScreen() {
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}>
-          <Pressable style={styles.modalBackdrop} onPress={closeTransactionModal} />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderCopy}>
-                <Text style={[styles.modalKicker, { color: modalAccent }]}>{modalKicker}</Text>
-                <Text style={styles.modalTitle}>
-                  {form.id ? t('activity.transactions.editTitle') : t('activity.transactions.createTitle')}
-                </Text>
-                <Text style={styles.modalSubtitle}>{t('activity.transactions.modalHint')}</Text>
-              </View>
-              <Pressable onPress={closeTransactionModal} style={styles.closeButton}>
-                <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
-              </Pressable>
-            </View>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeTransactionModal} />
+            <View style={[styles.modalKeyboard, keyboardOpen && { paddingBottom: modalLift }]}>
+              <View style={[styles.modalSheet, keyboardOpen && styles.modalSheetKeyboard]}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalBody}>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderCopy}>
+                    <Text style={[styles.modalKicker, { color: modalAccent }]}>{modalKicker}</Text>
+                    <Text style={styles.modalTitle}>
+                      {form.id ? t('activity.transactions.editTitle') : t('activity.transactions.createTitle')}
+                    </Text>
+                    <Text style={styles.modalSubtitle}>{t('activity.transactions.modalHint')}</Text>
+                  </View>
+                  <Pressable onPress={closeTransactionModal} style={styles.closeButton}>
+                    <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
+                  </Pressable>
+                </View>
 
-            {detailLoading ? (
-              <View style={styles.modalLoadingState}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={styles.stateText}>{t('activity.transactions.detailLoading')}</Text>
-              </View>
-            ) : (
-              <>
-                <ScrollView
-                  style={styles.modalScroll}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                  contentContainerStyle={styles.formContent}>
+                {detailLoading ? (
+                  <View style={styles.modalLoadingState}>
+                    <ActivityIndicator color={colors.primary} />
+                    <Text style={styles.stateText}>{t('activity.transactions.detailLoading')}</Text>
+                  </View>
+                ) : (
+                  <>
+                    <ScrollView
+                      style={styles.modalScroll}
+                      showsVerticalScrollIndicator={false}
+                      keyboardShouldPersistTaps="handled"
+                      contentContainerStyle={styles.formContent}>
                   <View
                     style={[
                       styles.modalHeroCard,
@@ -953,39 +1057,44 @@ export default function ActivityScreen() {
                       </View>
                     </View>
 
-                    <View style={styles.fieldGrid}>
-                      <View style={[styles.fieldGroup, styles.fieldHalf]}>
-                        <Text style={styles.fieldLabel}>{t('activity.transactions.amount')}</Text>
-                        <View style={styles.inputShell}>
-                          <View style={styles.inputPrefix}>
-                            <Text style={styles.inputPrefixText}>IDR</Text>
-                          </View>
-                          <TextInput
-                            value={form.amount}
-                            onChangeText={(value) => setForm((current) => ({ ...current, amount: value }))}
-                            placeholder="1500000"
-                            placeholderTextColor={colors.inputPlaceholder}
-                            keyboardType="decimal-pad"
-                            style={styles.inputControl}
-                          />
-                        </View>
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{t('activity.transactions.amount')}</Text>
+                      <View style={styles.inputShell}>
+                        <TextInput
+                          value={form.amount}
+                          onChangeText={(value) =>
+                            setForm((current) => ({ ...current, amount: formatCurrencyInput(value) }))
+                          }
+                          placeholder="1.500.000"
+                          placeholderTextColor={colors.inputPlaceholder}
+                          keyboardType="number-pad"
+                          style={styles.inputControl}
+                        />
                       </View>
+                    </View>
 
-                      <View style={[styles.fieldGroup, styles.fieldHalf]}>
-                        <Text style={styles.fieldLabel}>{t('activity.transactions.date')}</Text>
-                        <View style={styles.inputShell}>
-                          <View style={styles.inputIconWrap}>
-                            <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
-                          </View>
-                          <TextInput
-                            value={form.date}
-                            onChangeText={(value) => setForm((current) => ({ ...current, date: value }))}
-                            placeholder="2026-04-17"
-                            placeholderTextColor={colors.inputPlaceholder}
-                            style={styles.inputControl}
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{t('activity.transactions.date')}</Text>
+                      <Pressable
+                        onPress={openDatePicker}
+                        style={({ pressed }) => [styles.inputShell, pressed && styles.actionButtonPressed]}>
+                        <View style={styles.inputIconWrap}>
+                          <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
+                        </View>
+                        <Text style={styles.inputDisplayText}>{dateInputLabel}</Text>
+                      </Pressable>
+                      {Platform.OS === 'ios' && iosDatePickerVisible ? (
+                        <View style={styles.datePickerCard}>
+                          <DateTimePicker
+                            value={toPickerDate(form.date)}
+                            mode="date"
+                            display="spinner"
+                            onChange={handleDateChange}
+                            accentColor={modalAccent}
+                            themeVariant={isLight ? 'light' : 'dark'}
                           />
                         </View>
-                      </View>
+                      ) : null}
                     </View>
                   </View>
 
@@ -1011,6 +1120,7 @@ export default function ActivityScreen() {
                         placeholderTextColor={colors.inputPlaceholder}
                         multiline
                         textAlignVertical="top"
+                        scrollEnabled={false}
                         style={[styles.inputControl, styles.textareaInput]}
                       />
                     </View>
@@ -1022,60 +1132,63 @@ export default function ActivityScreen() {
                       <Text style={styles.formErrorText}>{formError}</Text>
                     </View>
                   )}
-                </ScrollView>
+                    </ScrollView>
 
-                <View style={styles.modalFooter}>
-                  <View style={styles.modalActionsRow}>
-                    {form.id ? (
-                      <Pressable
-                        onPress={handleDeleteTransaction}
-                        disabled={submitting || deleting}
-                        style={({ pressed }) => [
-                          styles.deleteButton,
-                          pressed && !(submitting || deleting) && styles.actionButtonPressed,
-                          (submitting || deleting) && styles.actionButtonDisabled,
-                        ]}>
-                        {deleting ? (
-                          <ActivityIndicator color={colors.danger} />
+                    <View style={styles.modalFooter}>
+                      <View style={styles.modalActionsRow}>
+                        {form.id ? (
+                          <Pressable
+                            onPress={handleDeleteTransaction}
+                            disabled={submitting || deleting}
+                            style={({ pressed }) => [
+                              styles.deleteButton,
+                              pressed && !(submitting || deleting) && styles.actionButtonPressed,
+                              (submitting || deleting) && styles.actionButtonDisabled,
+                            ]}>
+                            {deleting ? (
+                              <ActivityIndicator color={colors.danger} />
+                            ) : (
+                              <>
+                                <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+                                <Text style={styles.deleteButtonText}>{t('activity.transactions.delete')}</Text>
+                              </>
+                            )}
+                          </Pressable>
                         ) : (
-                          <>
-                            <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
-                            <Text style={styles.deleteButtonText}>{t('activity.transactions.delete')}</Text>
-                          </>
+                          <Pressable
+                            onPress={closeTransactionModal}
+                            disabled={submitting || deleting}
+                            style={({ pressed }) => [
+                              styles.secondaryActionButton,
+                              pressed && !(submitting || deleting) && styles.actionButtonPressed,
+                            ]}>
+                            <Text style={styles.secondaryActionButtonText}>{t('common.cancel')}</Text>
+                          </Pressable>
                         )}
-                      </Pressable>
-                    ) : (
-                      <Pressable
-                        onPress={closeTransactionModal}
-                        disabled={submitting || deleting}
-                        style={({ pressed }) => [
-                          styles.secondaryActionButton,
-                          pressed && !(submitting || deleting) && styles.actionButtonPressed,
-                        ]}>
-                        <Text style={styles.secondaryActionButtonText}>{t('common.cancel')}</Text>
-                      </Pressable>
-                    )}
 
-                    <Pressable
-                      onPress={handleSaveTransaction}
-                      disabled={submitting || deleting}
-                      style={({ pressed }) => [
-                        styles.submitButton,
-                        pressed && !(submitting || deleting) && styles.actionButtonPressed,
-                        (submitting || deleting) && styles.actionButtonDisabled,
-                      ]}>
-                      {submitting ? (
-                        <ActivityIndicator color={colors.onPrimary} />
-                      ) : (
-                        <Text style={styles.submitButtonText}>
-                          {form.id ? t('activity.transactions.update') : t('activity.transactions.create')}
-                        </Text>
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-              </>
-            )}
+                        <Pressable
+                          onPress={handleSaveTransaction}
+                          disabled={submitting || deleting}
+                          style={({ pressed }) => [
+                            styles.submitButton,
+                            pressed && !(submitting || deleting) && styles.actionButtonPressed,
+                            (submitting || deleting) && styles.actionButtonDisabled,
+                          ]}>
+                          {submitting ? (
+                            <ActivityIndicator color={colors.onPrimary} />
+                          ) : (
+                            <Text style={styles.submitButtonText}>
+                              {form.id ? t('activity.transactions.update') : t('activity.transactions.create')}
+                            </Text>
+                          )}
+                        </Pressable>
+                      </View>
+                    </View>
+                  </>
+                )}
+              </View>
+            </View>
+          </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1387,14 +1500,18 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     },
     modalOverlay: {
       flex: 1,
-      justifyContent: 'flex-end',
-      backgroundColor: alpha(colors.inverseSurface, 0.36),
     },
     modalBackdrop: {
       flex: 1,
+      backgroundColor: alpha(colors.inverseSurface, 0.36),
+      justifyContent: 'flex-end',
+    },
+    modalKeyboard: {
+      flex: 1,
+      justifyContent: 'flex-end',
     },
     modalSheet: {
-      maxHeight: '90%',
+      maxHeight: '92%',
       borderTopLeftRadius: 32,
       borderTopRightRadius: 32,
       backgroundColor: colors.shellBackground,
@@ -1404,6 +1521,9 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       gap: 16,
       borderTopWidth: 1,
       borderColor: colors.shellBorder,
+    },
+    modalSheetKeyboard: {
+      paddingBottom: Math.max(bottomInset + 8, 10),
     },
     modalHandle: {
       alignSelf: 'center',
@@ -1423,6 +1543,11 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       flex: 1,
       minWidth: 0,
       gap: 4,
+    },
+    modalBody: {
+      gap: 16,
+      flexShrink: 1,
+      minHeight: 0,
     },
     modalKicker: {
       fontSize: 11,
@@ -1655,22 +1780,6 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       marginLeft: 2,
       marginTop: 2,
     },
-    inputPrefix: {
-      minWidth: 46,
-      height: 34,
-      borderRadius: 12,
-      backgroundColor: colors.shellCardMuted,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 10,
-    },
-    inputPrefixText: {
-      color: colors.shellTextSecondary,
-      fontSize: 12,
-      lineHeight: 14,
-      fontWeight: '800',
-      letterSpacing: 0.8,
-    },
     inputControl: {
       flex: 1,
       minWidth: 0,
@@ -1680,6 +1789,25 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       fontWeight: '600',
       paddingVertical: 16,
       paddingRight: 14,
+    },
+    inputDisplayText: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '600',
+      paddingVertical: 16,
+      paddingRight: 14,
+    },
+    datePickerCard: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 6,
+      paddingVertical: 4,
+      overflow: 'hidden',
     },
     textareaShell: {
       minHeight: 132,
