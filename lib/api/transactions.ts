@@ -46,6 +46,7 @@ export type CreateTransactionPayload = {
 export type UpdateTransactionPayload = Partial<CreateTransactionPayload>;
 
 export type ListTransactionsParams = {
+  month?: string;
   start_date?: string;
   end_date?: string;
   category?: string;

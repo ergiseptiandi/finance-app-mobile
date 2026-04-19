@@ -39,7 +39,8 @@ import {
 import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { useAppLanguage } from '@/providers/language-provider';
 
-type ActivityFilter = 'all' | TransactionType;
+type ActivityFilterType = 'all' | TransactionType;
+type ActivityDateFilterMode = 'month' | 'range';
 
 type PaginationState = {
   page: number;
@@ -63,6 +64,15 @@ type TransactionSection = {
   items: TransactionRecord[];
 };
 
+type ActivityListFilters = {
+  type: ActivityFilterType;
+  category: string;
+  dateMode: ActivityDateFilterMode;
+  month: string;
+  startDate: string;
+  endDate: string;
+};
+
 const DEFAULT_SUMMARY: TransactionSummaryData = {
   total_income: 0,
   total_expense: 0,
@@ -76,7 +86,23 @@ const DEFAULT_PAGINATION: PaginationState = {
   totalPages: 1,
 };
 
+const LIGHT_INCOME_ACCENT = '#0f7a52';
+const LIGHT_EXPENSE_ACCENT = '#c5651a';
+
+const MONTH_INPUT_PATTERN = /^\d{4}-\d{2}$/;
+const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
 const getTodayInputValue = () => new Date().toISOString().slice(0, 10);
+
+const createDefaultActivityFilters = (): ActivityListFilters => ({
+  type: 'all',
+  category: '',
+  dateMode: 'month',
+  month: getCurrentMonthInputValue(),
+  startDate: '',
+  endDate: '',
+});
 
 const createEmptyTransactionForm = (): TransactionFormState => ({
   type: 'expense',
@@ -84,6 +110,16 @@ const createEmptyTransactionForm = (): TransactionFormState => ({
   amount: '',
   date: getTodayInputValue(),
   description: '',
+});
+
+const createTransactionListParams = (filters: ActivityListFilters, page: number, perPage: number) => ({
+  page,
+  per_page: perPage,
+  type: filters.type === 'all' ? undefined : filters.type,
+  category: filters.category || undefined,
+  month: filters.dateMode === 'month' ? filters.month : undefined,
+  start_date: filters.dateMode === 'range' ? filters.startDate : undefined,
+  end_date: filters.dateMode === 'range' ? filters.endDate : undefined,
 });
 
 const sanitizeCurrencyInput = (value: string) => value.replace(/[^\d]/g, '');
@@ -181,6 +217,52 @@ const toDateInputLabel = (value: string, locale: string) => {
   }).format(parsed);
 };
 
+const toMonthInputLabel = (value: string, locale: string) => {
+  if (!MONTH_INPUT_PATTERN.test(value)) {
+    return value;
+  }
+
+  const parsed = new Date(`${value}-01T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    month: 'long',
+    year: 'numeric',
+  }).format(parsed);
+};
+
+const getMonthValueParts = (value: string) => {
+  if (!MONTH_INPUT_PATTERN.test(value)) {
+    const now = new Date();
+    return {
+      year: now.getFullYear(),
+      monthIndex: now.getMonth(),
+    };
+  }
+
+  const [year, month] = value.split('-').map(Number);
+  return {
+    year,
+    monthIndex: Math.max(0, Math.min(11, month - 1)),
+  };
+};
+
+const toMonthValue = (year: number, monthIndex: number) =>
+  `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+
+const getFilterRangeDays = (startDate: string, endDate: string) => {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+};
+
 const toTransactionForm = (record: TransactionRecord): TransactionFormState => ({
   id: record.id,
   type: record.type,
@@ -241,7 +323,7 @@ function SummaryStat({
       background: alpha(colors.primary, isLight ? 0.08 : 0.14),
       fill: colors.primary,
       borderColor: alpha(colors.primary, isLight ? 0.14 : 0.24),
-      metaColor: isLight ? colors.secondary : colors.secondaryAccent,
+      metaColor: isLight ? LIGHT_EXPENSE_ACCENT : colors.secondaryAccent,
     },
     secondary: {
       background: isLight ? colors.shellCardSoft : alpha(colors.surfaceContainerHigh, 0.16),
@@ -250,10 +332,10 @@ function SummaryStat({
       metaColor: colors.shellTextSecondary,
     },
     teal: {
-      background: alpha(colors.secondary, isLight ? 0.08 : 0.12),
-      fill: isLight ? colors.secondary : colors.secondaryAccent,
-      borderColor: alpha(colors.secondary, isLight ? 0.14 : 0.22),
-      metaColor: colors.secondary,
+      background: alpha(isLight ? LIGHT_INCOME_ACCENT : colors.secondary, isLight ? 0.08 : 0.12),
+      fill: isLight ? LIGHT_INCOME_ACCENT : colors.secondaryAccent,
+      borderColor: alpha(isLight ? LIGHT_INCOME_ACCENT : colors.secondary, isLight ? 0.14 : 0.22),
+      metaColor: isLight ? LIGHT_INCOME_ACCENT : colors.secondary,
     },
   } as const;
 
@@ -308,8 +390,16 @@ function TransactionRow({
   onPress: () => void;
 }) {
   const isIncome = record.type === 'income';
-  const iconColor = isIncome ? colors.secondaryAccent : colors.primaryContainer;
-  const iconBackground = alpha(isIncome ? colors.secondaryAccent : colors.primaryContainer, 0.14);
+  const isLight = colors === Colors.light;
+  const rowAccent = isIncome
+    ? isLight
+      ? LIGHT_INCOME_ACCENT
+      : colors.secondaryAccent
+    : isLight
+      ? LIGHT_EXPENSE_ACCENT
+      : colors.primaryContainer;
+  const iconColor = rowAccent;
+  const iconBackground = alpha(rowAccent, isLight ? 0.14 : 0.18);
   const amount = toSignedCurrency(isIncome ? record.amount : -record.amount, locale);
   const subtitleBase = record.description?.trim() || (isIncome ? incomeLabel : expenseLabel);
   const subtitle = `${subtitleBase} • ${toTimeLabel(record.date, locale)}`;
@@ -336,11 +426,23 @@ function TransactionRow({
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.74}
-          style={[rowStyles(colors).amount, isIncome && rowStyles(colors).amountPositive]}>
+          style={[rowStyles(colors).amount, isIncome && { color: rowAccent }]}>
           {amount}
         </Text>
-        <View style={[rowStyles(colors).statusChip, isIncome && rowStyles(colors).statusChipIncome]}>
-          <Text style={[rowStyles(colors).statusText, isIncome && rowStyles(colors).statusTextIncome]}>
+        <View
+          style={[
+            rowStyles(colors).statusChip,
+            {
+              backgroundColor: alpha(rowAccent, isLight ? 0.12 : 0.18),
+            },
+          ]}>
+          <Text
+            style={[
+              rowStyles(colors).statusText,
+              {
+                color: rowAccent,
+              },
+            ]}>
             {statusLabel}
           </Text>
         </View>
@@ -361,8 +463,11 @@ export default function ActivityScreen() {
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [pagination, setPagination] = useState<PaginationState>(DEFAULT_PAGINATION);
-  const [filter, setFilter] = useState<ActivityFilter>('all');
+  const [filters, setFilters] = useState<ActivityListFilters>(createDefaultActivityFilters);
+  const [draftFilters, setDraftFilters] = useState<ActivityListFilters>(createDefaultActivityFilters);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [filterError, setFilterError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -374,6 +479,8 @@ export default function ActivityScreen() {
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState<TransactionFormState>(createEmptyTransactionForm);
   const [iosDatePickerVisible, setIosDatePickerVisible] = useState(false);
+  const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
+  const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardOpen = keyboardHeight > 0;
   const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
@@ -422,11 +529,7 @@ export default function ActivityScreen() {
         const [summaryResponse, transactionResponse, categoryResponse] = await withAuthorizedRequest((accessToken) =>
           Promise.all([
             getTransactionSummary(accessToken),
-            listTransactions(accessToken, {
-              page: 1,
-              per_page: 10,
-              type: filter === 'all' ? undefined : filter,
-            }),
+            listTransactions(accessToken, createTransactionListParams(filters, 1, 10)),
             listCategories(accessToken),
           ])
         );
@@ -449,7 +552,7 @@ export default function ActivityScreen() {
         setRefreshing(false);
       }
     },
-    [filter, t, withAuthorizedRequest]
+    [filters, t, withAuthorizedRequest]
   );
 
   useEffect(() => {
@@ -488,11 +591,10 @@ export default function ActivityScreen() {
 
     try {
       const response = await withAuthorizedRequest((accessToken) =>
-        listTransactions(accessToken, {
-          page: pagination.page + 1,
-          per_page: pagination.perPage,
-          type: filter === 'all' ? undefined : filter,
-        })
+        listTransactions(
+          accessToken,
+          createTransactionListParams(filters, pagination.page + 1, pagination.perPage)
+        )
       );
 
       setTransactions((current) => [...current, ...(response.Data.data ?? [])]);
@@ -509,7 +611,7 @@ export default function ActivityScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [filter, loading, loadingMore, pagination, t, withAuthorizedRequest]);
+  }, [filters, loading, loadingMore, pagination, t, withAuthorizedRequest]);
 
   const resetTransactionForm = useCallback(() => {
     setForm(createEmptyTransactionForm());
@@ -582,6 +684,99 @@ export default function ActivityScreen() {
 
     setIosDatePickerVisible((current) => !current);
   }, [form.date, handleDateChange]);
+
+  const openFilterModal = useCallback(() => {
+    setDraftFilters(filters);
+    setFilterError('');
+    setFilterDateTarget(null);
+    setIosFilterDatePickerVisible(false);
+    setFilterModalVisible(true);
+  }, [filters]);
+
+  const closeFilterModal = useCallback(() => {
+    setFilterModalVisible(false);
+    setFilterError('');
+    setFilterDateTarget(null);
+    setIosFilterDatePickerVisible(false);
+  }, []);
+
+  const handleFilterDateChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === 'android' && event.type === 'dismissed') {
+        return;
+      }
+
+      if (!selectedDate || !filterDateTarget) {
+        return;
+      }
+
+      const nextDate = selectedDate.toISOString().slice(0, 10);
+      setDraftFilters((current) => ({ ...current, [filterDateTarget]: nextDate }));
+    },
+    [filterDateTarget]
+  );
+
+  const openFilterDatePicker = useCallback(
+    (target: 'startDate' | 'endDate') => {
+      const currentValue = draftFilters[target] || getTodayInputValue();
+      const currentDate = toPickerDate(currentValue);
+
+      setFilterDateTarget(target);
+
+      if (Platform.OS === 'android') {
+        DateTimePickerAndroid.open({
+          value: currentDate,
+          mode: 'date',
+          onChange: handleFilterDateChange,
+        });
+        return;
+      }
+
+      setIosFilterDatePickerVisible(true);
+    },
+    [draftFilters, handleFilterDateChange]
+  );
+
+  const resetFilters = useCallback(() => {
+    const nextFilters = createDefaultActivityFilters();
+    setDraftFilters(nextFilters);
+    setFilters(nextFilters);
+    setFilterError('');
+    setFilterModalVisible(false);
+  }, []);
+
+  const applyFilters = useCallback(() => {
+    if (draftFilters.dateMode === 'month') {
+      if (!MONTH_INPUT_PATTERN.test(draftFilters.month)) {
+        setFilterError(t('activity.transactions.filterMonthInvalid'));
+        return;
+      }
+    }
+
+    if (draftFilters.dateMode === 'range') {
+      if (!DATE_INPUT_PATTERN.test(draftFilters.startDate) || !DATE_INPUT_PATTERN.test(draftFilters.endDate)) {
+        setFilterError(t('activity.transactions.filterRangeRequired'));
+        return;
+      }
+
+      const rangeDays = getFilterRangeDays(draftFilters.startDate, draftFilters.endDate);
+      if (rangeDays < 0) {
+        setFilterError(t('activity.transactions.filterRangeInvalid'));
+        return;
+      }
+
+      if (rangeDays > 62) {
+        setFilterError(t('activity.transactions.filterRangeTooLong'));
+        return;
+      }
+    }
+
+    setFilterError('');
+    setFilters(draftFilters);
+    setFilterModalVisible(false);
+    setIosFilterDatePickerVisible(false);
+    setFilterDateTarget(null);
+  }, [draftFilters, t]);
 
   const handleSaveTransaction = useCallback(async () => {
     const normalizedCategory = form.category.trim();
@@ -701,6 +896,13 @@ export default function ActivityScreen() {
         .sort((left, right) => left.name.localeCompare(right.name)),
     [categories, form.type]
   );
+  const filterCategories = useMemo(
+    () =>
+      [...new Set(categories.map((category) => category.name.trim()).filter(Boolean))].sort((left, right) =>
+        left.localeCompare(right)
+      ),
+    [categories]
+  );
   const isIncomeForm = form.type === 'income';
   const modalAccent = isIncomeForm ? colors.secondary : colors.primary;
   const modalAccentSoft = alpha(modalAccent, isLight ? 0.1 : 0.18);
@@ -717,6 +919,29 @@ export default function ActivityScreen() {
   const modalToneCopy = isIncomeForm
     ? t('activity.transactions.modalIncomeHint')
     : t('activity.transactions.modalExpenseHint');
+  const activeFilterCount =
+    (filters.type !== 'all' ? 1 : 0) +
+    (filters.category ? 1 : 0) +
+    (filters.dateMode === 'range' || filters.month !== getCurrentMonthInputValue() ? 1 : 0);
+  const activeFilterChips = [
+    filters.dateMode === 'month'
+      ? toMonthInputLabel(filters.month, locale)
+      : `${toDateInputLabel(filters.startDate, locale)} - ${toDateInputLabel(filters.endDate, locale)}`,
+    filters.type !== 'all'
+      ? filters.type === 'income'
+        ? t('activity.transactions.income')
+        : t('activity.transactions.expense')
+      : '',
+    filters.category,
+  ].filter(Boolean);
+  const selectedMonthParts = getMonthValueParts(draftFilters.month);
+  const monthOptionLabels = Array.from({ length: 12 }, (_, monthIndex) =>
+    new Intl.DateTimeFormat(locale, { month: 'short' })
+      .format(new Date(2026, monthIndex, 1))
+      .replace('.', '')
+      .toUpperCase()
+  );
+  const yearOptions = Array.from({ length: 7 }, (_, index) => selectedMonthParts.year - 3 + index);
 
   return (
     <>
@@ -737,36 +962,46 @@ export default function ActivityScreen() {
           </View>
         </View>
 
-        <View style={styles.searchShell}>
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder={t('activity.transactions.searchPlaceholder')}
-            placeholderTextColor={colors.shellTextMuted}
-            style={styles.searchInput}
-          />
+        <View style={styles.toolbarRow}>
+          <View style={styles.searchShell}>
+            <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={t('activity.transactions.searchPlaceholder')}
+              placeholderTextColor={colors.shellTextMuted}
+              style={styles.searchInput}
+            />
+          </View>
+
+          <Pressable onPress={openFilterModal} style={styles.filterLauncher}>
+            <MaterialCommunityIcons name="tune-variant" size={18} color={colors.onPrimary} />
+            {activeFilterCount > 0 ? (
+              <View style={styles.filterLauncherBadge}>
+                <Text style={styles.filterLauncherBadgeText}>{activeFilterCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
 
-        <View style={styles.filterBar}>
-          {(['all', 'income', 'expense'] as ActivityFilter[]).map((option) => {
-            const active = option === filter;
-            const label =
-              option === 'all'
-                ? t('activity.transactions.all')
-                : option === 'income'
-                  ? t('activity.transactions.income')
-                  : t('activity.transactions.expense');
+        <View style={styles.filterSummaryCard}>
+          <View style={styles.filterSummaryHeader}>
+            <View style={styles.filterSummaryCopy}>
+              <Text style={styles.filterSummaryKicker}>{t('activity.transactions.filterTitle')}</Text>
+              <Text style={styles.filterSummaryText}>{t('activity.transactions.filterHelper')}</Text>
+            </View>
+            <Pressable onPress={openFilterModal} style={styles.filterSummaryAction}>
+              <Text style={styles.filterSummaryActionText}>{t('activity.transactions.filterAction')}</Text>
+            </Pressable>
+          </View>
 
-            return (
-              <Pressable
-                key={option}
-                onPress={() => setFilter(option)}
-                style={[styles.filterPill, active && styles.filterPillActive]}>
-                <Text style={[styles.filterLabel, active && styles.filterLabelActive]}>{label}</Text>
-              </Pressable>
-            );
-          })}
+          <View style={styles.filterChipWrap}>
+            {activeFilterChips.map((label) => (
+              <View key={label} style={styles.filterChip}>
+                <Text style={styles.filterChipText}>{label}</Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         <View style={styles.summaryStack}>
@@ -849,6 +1084,301 @@ export default function ActivityScreen() {
 
         {!!error && <Text style={styles.errorText}>{error}</Text>}
       </ScrollView>
+
+      <Modal
+        visible={filterModalVisible}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={closeFilterModal}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeFilterModal} />
+            <View style={styles.modalKeyboard}>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <View style={styles.modalBody}>
+                  <View style={styles.modalHeader}>
+                    <View style={styles.modalHeaderCopy}>
+                      <Text style={[styles.modalKicker, { color: colors.primary }]}>
+                        {t('activity.transactions.filterKicker')}
+                      </Text>
+                      <Text style={styles.modalTitle}>{t('activity.transactions.filterTitle')}</Text>
+                      <Text style={styles.modalSubtitle}>{t('activity.transactions.filterHelper')}</Text>
+                    </View>
+                    <Pressable onPress={closeFilterModal} style={styles.closeButton}>
+                      <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
+                    </Pressable>
+                  </View>
+
+                  <ScrollView
+                    style={styles.modalScroll}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={styles.formContent}>
+                    <View style={styles.modalSectionCard}>
+                      <View style={styles.modalSectionHeader}>
+                        <View style={[styles.modalSectionIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                          <MaterialCommunityIcons name="calendar-range" size={18} color={colors.primary} />
+                        </View>
+                        <View style={styles.modalSectionCopy}>
+                          <Text style={styles.modalSectionTitle}>{t('activity.transactions.filterDateTitle')}</Text>
+                          <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.filterDateHelper')}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.typeSegment}>
+                        {(['month', 'range'] as ActivityDateFilterMode[]).map((mode) => {
+                          const active = draftFilters.dateMode === mode;
+                          return (
+                            <Pressable
+                              key={mode}
+                              onPress={() =>
+                                setDraftFilters((current) => ({
+                                  ...current,
+                                  dateMode: mode,
+                                  month: mode === 'month' ? current.month || getCurrentMonthInputValue() : current.month,
+                                  startDate: mode === 'range' ? current.startDate : '',
+                                  endDate: mode === 'range' ? current.endDate : '',
+                                }))
+                              }
+                              style={[
+                                styles.typePill,
+                                active && {
+                                  backgroundColor: alpha(colors.primary, isLight ? 0.12 : 0.18),
+                                  borderColor: alpha(colors.primary, isLight ? 0.3 : 0.36),
+                                },
+                              ]}>
+                              <View
+                                style={[
+                                  styles.typePillIcon,
+                                  { backgroundColor: active ? alpha(colors.primary, 0.16) : colors.shellCardMuted },
+                                ]}>
+                                <MaterialCommunityIcons
+                                  name={mode === 'month' ? 'calendar-month-outline' : 'calendar-range-outline'}
+                                  size={16}
+                                  color={active ? colors.primary : colors.shellTextMuted}
+                                />
+                              </View>
+                              <Text style={[styles.typePillText, active && { color: colors.primary }]}>
+                                {mode === 'month'
+                                  ? t('activity.transactions.filterMonthMode')
+                                  : t('activity.transactions.filterRangeMode')}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+
+                      {draftFilters.dateMode === 'month' ? (
+                        <View style={styles.fieldGroup}>
+                          <Text style={styles.fieldLabel}>{t('activity.transactions.filterMonthLabel')}</Text>
+                          <View style={styles.monthSummaryCard}>
+                            <View style={styles.monthSummaryIcon}>
+                              <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.primary} />
+                            </View>
+                            <View style={styles.monthSummaryCopy}>
+                              <Text style={styles.monthSummaryTitle}>
+                                {toMonthInputLabel(draftFilters.month, locale)}
+                              </Text>
+                              <Text style={styles.monthSummaryMeta}>
+                                {t('activity.transactions.filterMonthHelper')}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <Text style={styles.fieldLabel}>{t('activity.transactions.filterPickMonth')}</Text>
+                          <View style={styles.monthGrid}>
+                            {monthOptionLabels.map((label, monthIndex) => {
+                              const active = selectedMonthParts.monthIndex === monthIndex;
+                              return (
+                                <Pressable
+                                  key={label}
+                                  onPress={() =>
+                                    setDraftFilters((current) => ({
+                                      ...current,
+                                      month: toMonthValue(selectedMonthParts.year, monthIndex),
+                                    }))
+                                  }
+                                  style={[styles.filterChip, active && styles.filterChipActive, styles.monthChip]}>
+                                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                    {label}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+
+                          <Text style={styles.fieldLabel}>{t('activity.transactions.filterPickYear')}</Text>
+                          <View style={styles.filterChipWrap}>
+                            {yearOptions.map((year) => {
+                              const active = selectedMonthParts.year === year;
+                              return (
+                                <Pressable
+                                  key={year}
+                                  onPress={() =>
+                                    setDraftFilters((current) => ({
+                                      ...current,
+                                      month: toMonthValue(year, selectedMonthParts.monthIndex),
+                                    }))
+                                  }
+                                  style={[styles.filterChip, active && styles.filterChipActive]}>
+                                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                    {year}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      ) : (
+                        <>
+                          <View style={styles.fieldGroup}>
+                            <Text style={styles.fieldLabel}>{t('activity.transactions.filterStartDate')}</Text>
+                            <Pressable
+                              onPress={() => openFilterDatePicker('startDate')}
+                              style={({ pressed }) => [styles.inputShell, pressed && styles.actionButtonPressed]}>
+                              <View style={styles.inputIconWrap}>
+                                <MaterialCommunityIcons name="calendar-start" size={18} color={colors.primary} />
+                              </View>
+                              <Text style={styles.inputDisplayText}>
+                                {draftFilters.startDate
+                                  ? toDateInputLabel(draftFilters.startDate, locale)
+                                  : t('activity.transactions.filterChooseDate')}
+                              </Text>
+                            </Pressable>
+                          </View>
+
+                          <View style={styles.fieldGroup}>
+                            <Text style={styles.fieldLabel}>{t('activity.transactions.filterEndDate')}</Text>
+                            <Pressable
+                              onPress={() => openFilterDatePicker('endDate')}
+                              style={({ pressed }) => [styles.inputShell, pressed && styles.actionButtonPressed]}>
+                              <View style={styles.inputIconWrap}>
+                                <MaterialCommunityIcons name="calendar-end" size={18} color={colors.primary} />
+                              </View>
+                              <Text style={styles.inputDisplayText}>
+                                {draftFilters.endDate
+                                  ? toDateInputLabel(draftFilters.endDate, locale)
+                                  : t('activity.transactions.filterChooseDate')}
+                              </Text>
+                            </Pressable>
+                          </View>
+
+                          {Platform.OS === 'ios' && iosFilterDatePickerVisible && filterDateTarget ? (
+                            <View style={styles.datePickerCard}>
+                              <DateTimePicker
+                                value={toPickerDate(draftFilters[filterDateTarget] || getTodayInputValue())}
+                                mode="date"
+                                display="spinner"
+                                onChange={handleFilterDateChange}
+                                accentColor={colors.primary}
+                                themeVariant={isLight ? 'light' : 'dark'}
+                              />
+                            </View>
+                          ) : null}
+                        </>
+                      )}
+                    </View>
+
+                    <View style={styles.modalSectionCard}>
+                      <View style={styles.modalSectionHeader}>
+                        <View style={[styles.modalSectionIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                          <MaterialCommunityIcons name="swap-horizontal" size={18} color={colors.primary} />
+                        </View>
+                        <View style={styles.modalSectionCopy}>
+                          <Text style={styles.modalSectionTitle}>{t('activity.transactions.filterTypeTitle')}</Text>
+                          <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.filterTypeHelper')}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.filterChipWrap}>
+                        {(['all', 'income', 'expense'] as ActivityFilterType[]).map((option) => {
+                          const active = draftFilters.type === option;
+                          const label =
+                            option === 'all'
+                              ? t('activity.transactions.all')
+                              : option === 'income'
+                                ? t('activity.transactions.income')
+                                : t('activity.transactions.expense');
+
+                          return (
+                            <Pressable
+                              key={option}
+                              onPress={() => setDraftFilters((current) => ({ ...current, type: option }))}
+                              style={[styles.filterChip, active && styles.filterChipActive]}>
+                              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    <View style={styles.modalSectionCard}>
+                      <View style={styles.modalSectionHeader}>
+                        <View style={[styles.modalSectionIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                          <MaterialCommunityIcons name="shape-outline" size={18} color={colors.primary} />
+                        </View>
+                        <View style={styles.modalSectionCopy}>
+                          <Text style={styles.modalSectionTitle}>{t('activity.transactions.filterCategoryTitle')}</Text>
+                          <Text style={styles.modalSectionSubtitle}>
+                            {t('activity.transactions.filterCategoryHelper')}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.filterChipWrap}>
+                        <Pressable
+                          onPress={() => setDraftFilters((current) => ({ ...current, category: '' }))}
+                          style={[styles.filterChip, !draftFilters.category && styles.filterChipActive]}>
+                          <Text style={[styles.filterChipText, !draftFilters.category && styles.filterChipTextActive]}>
+                            {t('activity.transactions.all')}
+                          </Text>
+                        </Pressable>
+
+                        {filterCategories.map((category) => {
+                          const active = draftFilters.category === category;
+                          return (
+                            <Pressable
+                              key={category}
+                              onPress={() => setDraftFilters((current) => ({ ...current, category }))}
+                              style={[styles.filterChip, active && styles.filterChipActive]}>
+                              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                {category}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    {!!filterError ? (
+                      <View style={styles.formErrorCard}>
+                        <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.danger} />
+                        <Text style={styles.formErrorText}>{filterError}</Text>
+                      </View>
+                    ) : null}
+                  </ScrollView>
+
+                  <View style={styles.modalFooter}>
+                    <View style={styles.modalActionsRow}>
+                      <Pressable onPress={resetFilters} style={styles.secondaryActionButton}>
+                        <Text style={styles.secondaryActionButtonText}>{t('activity.transactions.filterReset')}</Text>
+                      </Pressable>
+                      <Pressable onPress={applyFilters} style={styles.submitButton}>
+                        <Text style={styles.submitButtonText}>{t('activity.transactions.filterApply')}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal
         visible={transactionModalVisible}
@@ -1298,30 +1828,19 @@ const rowStyles = (colors: AppColorTheme) =>
       fontWeight: '900',
       letterSpacing: -0.5,
     },
-    amountPositive: {
-      color: colors.secondaryAccent,
-    },
     statusChip: {
       minHeight: 26,
       borderRadius: 999,
       paddingHorizontal: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: alpha(colors.secondary, 0.18),
-    },
-    statusChipIncome: {
-      backgroundColor: alpha(colors.primary, 0.18),
     },
     statusText: {
-      color: colors.secondary,
       fontSize: 10,
       lineHeight: 12,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1,
-    },
-    statusTextIncome: {
-      color: colors.primary,
     },
   });
 
@@ -1372,7 +1891,14 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       alignItems: 'center',
       justifyContent: 'center',
     },
+    toolbarRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
     searchShell: {
+      flex: 1,
+      minWidth: 0,
       minHeight: 56,
       borderRadius: 28,
       backgroundColor: alpha(colors.surfaceContainerHighest, 0.2),
@@ -1390,31 +1916,151 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       fontWeight: '500',
       paddingVertical: 0,
     },
-    filterBar: {
-      flexDirection: 'row',
-      gap: 8,
+    filterLauncher: {
+      width: 56,
+      height: 56,
+      borderRadius: 18,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
     },
-    filterPill: {
-      minHeight: 34,
-      borderRadius: 14,
-      paddingHorizontal: 12,
-      backgroundColor: colors.shellCardMuted,
+    filterLauncherBadge: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      minWidth: 18,
+      height: 18,
+      borderRadius: 999,
+      backgroundColor: colors.onPrimary,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    filterPillActive: {
-      backgroundColor: colors.primary,
+    filterLauncherBadgeText: {
+      color: colors.primary,
+      fontSize: 10,
+      lineHeight: 12,
+      fontWeight: '900',
     },
-    filterLabel: {
+    filterSummaryCard: {
+      borderRadius: 24,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 16,
+      gap: 14,
+    },
+    filterSummaryHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    filterSummaryCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    filterSummaryKicker: {
+      color: colors.primary,
+      fontSize: 10,
+      lineHeight: 13,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.6,
+    },
+    filterSummaryText: {
       color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    filterSummaryAction: {
+      minHeight: 34,
+      borderRadius: 12,
+      backgroundColor: colors.shellCardMuted,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    filterSummaryActionText: {
+      color: colors.primary,
       fontSize: 11,
       lineHeight: 14,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 0.8,
     },
-    filterLabelActive: {
-      color: colors.onPrimary,
+    filterChipWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    monthGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    filterChip: {
+      minHeight: 36,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    filterChipActive: {
+      backgroundColor: alpha(colors.primary, 0.12),
+      borderColor: alpha(colors.primary, 0.28),
+    },
+    filterChipText: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '800',
+    },
+    filterChipTextActive: {
+      color: colors.primary,
+    },
+    monthChip: {
+      minWidth: '22%',
+    },
+    monthSummaryCard: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    monthSummaryIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 14,
+      backgroundColor: alpha(colors.primary, 0.12),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    monthSummaryCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    monthSummaryTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '800',
+    },
+    monthSummaryMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 17,
+      fontWeight: '600',
     },
     summaryStack: {
       gap: 14,
