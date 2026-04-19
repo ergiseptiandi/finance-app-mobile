@@ -50,23 +50,54 @@ export type ExpenseVsSalaryData = {
   salary?: NumericLike;
 };
 
-export const getDashboardSummary = (accessToken: string) =>
-  request<ApiEnvelope<DashboardSummaryData>>(buildApiUrl('dashboard/summary'), {
+export type DashboardPeriodParams = {
+  month?: string;
+  start_date?: string;
+  end_date?: string;
+};
+
+const withQueryParams = (url: string, params?: DashboardPeriodParams) => {
+  if (!params) {
+    return url;
+  }
+
+  const searchParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+
+    searchParams.set(key, String(value));
+  });
+
+  const query = searchParams.toString();
+  return query ? `${url}?${query}` : url;
+};
+
+export const getDashboardSummary = (accessToken: string, params?: DashboardPeriodParams) =>
+  request<ApiEnvelope<DashboardSummaryData>>(withQueryParams(buildApiUrl('dashboard/summary'), params), {
     method: 'GET',
     token: accessToken,
   });
 
-export const getDailySpending = (accessToken: string) =>
-  request<ApiEnvelope<DailySpendingItem[]>>(buildApiUrl('dashboard/daily-spending'), {
-    method: 'GET',
-    token: accessToken,
-  });
+export const getDailySpending = (accessToken: string, params?: DashboardPeriodParams) =>
+  request<ApiEnvelope<DailySpendingItem[]>>(
+    withQueryParams(buildApiUrl('dashboard/daily-spending'), params),
+    {
+      method: 'GET',
+      token: accessToken,
+    }
+  );
 
-export const getMonthlySpending = (accessToken: string) =>
-  request<ApiEnvelope<MonthlySpendingItem[]>>(buildApiUrl('dashboard/monthly-spending'), {
-    method: 'GET',
-    token: accessToken,
-  });
+export const getMonthlySpending = (accessToken: string, params?: DashboardPeriodParams) =>
+  request<ApiEnvelope<MonthlySpendingItem[]>>(
+    withQueryParams(buildApiUrl('dashboard/monthly-spending'), params),
+    {
+      method: 'GET',
+      token: accessToken,
+    }
+  );
 
 export const getComparison = (accessToken: string) =>
   request<ApiEnvelope<DashboardComparisonData>>(buildApiUrl('dashboard/comparison'), {

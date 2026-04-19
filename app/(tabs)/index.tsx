@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -26,6 +30,7 @@ import {
   DailySpendingItem,
   ExpenseVsSalaryData,
   MonthlySpendingItem,
+  type DashboardPeriodParams,
   getComparison,
   getDailySpending,
   getDashboardSummary,
@@ -35,6 +40,7 @@ import {
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 
 type TrendMode = 'daily' | 'monthly';
+type DashboardDateFilterMode = 'month' | 'range';
 
 type TrendPoint = {
   label: string;
@@ -51,6 +57,13 @@ type ActivityItem = {
   positive?: boolean;
 };
 
+type DashboardFilters = {
+  dateMode: DashboardDateFilterMode;
+  month: string;
+  startDate: string;
+  endDate: string;
+};
+
 type DashboardCacheState = {
   summary: DashboardSummaryData | null;
   dailySpending: DailySpendingItem[];
@@ -59,6 +72,39 @@ type DashboardCacheState = {
   expenseVsSalary: ExpenseVsSalaryData | null;
   displayName: string;
 };
+
+const MONTH_INPUT_PATTERN = /^\d{4}-\d{2}$/;
+const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
+
+const createDefaultDashboardFilters = (): DashboardFilters => ({
+  dateMode: 'month',
+  month: getCurrentMonthInputValue(),
+  startDate: '',
+  endDate: '',
+});
+
+const buildDashboardQueryParams = (filters: DashboardFilters): DashboardPeriodParams => {
+  if (filters.dateMode === 'month') {
+    return {
+      month: filters.month,
+    };
+  }
+
+  return {
+    start_date: filters.startDate,
+    end_date: filters.endDate,
+  };
+};
+
+const createDashboardCacheSuffix = (filters: DashboardFilters) =>
+  [
+    filters.dateMode,
+    filters.month,
+    filters.startDate,
+    filters.endDate,
+  ].join('|');
 
 const formatCompactCurrency = (value: number, locale: string) =>
   new Intl.NumberFormat(locale, {
@@ -99,6 +145,76 @@ const parseDateValue = (value: string) => {
   }
 
   return date;
+};
+
+const toPickerDate = (value: string) => {
+  const parsed = parseDateValue(value);
+
+  if (!parsed) {
+    return new Date();
+  }
+
+  return parsed;
+};
+
+const toDateInputLabel = (value: string, locale: string) => {
+  const parsed = toPickerDate(value);
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(parsed);
+};
+
+const toMonthInputLabel = (value: string, locale: string) => {
+  if (!MONTH_INPUT_PATTERN.test(value)) {
+    return value;
+  }
+
+  const parsed = new Date(`${value}-01T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    month: 'long',
+    year: 'numeric',
+  }).format(parsed);
+};
+
+const getFilterRangeMonths = (startDate: string, endDate: string) => {
+  const start = parseDateValue(startDate);
+  const end = parseDateValue(endDate);
+
+  if (!start || !end) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+};
+
+const getDashboardFilterLabel = (filters: DashboardFilters, locale: string) => {
+  if (filters.dateMode === 'month') {
+    return toMonthInputLabel(filters.month, locale);
+  }
+
+  if (!DATE_INPUT_PATTERN.test(filters.startDate) || !DATE_INPUT_PATTERN.test(filters.endDate)) {
+    return '';
+  }
+
+  return `${toDateInputLabel(filters.startDate, locale)} - ${toDateInputLabel(filters.endDate, locale)}`;
+};
+
+const toDashboardFilterPickerValue = (filters: DashboardFilters, target: 'month' | 'startDate' | 'endDate') => {
+  if (target === 'month') {
+    return toPickerDate(`${filters.month}-01`);
+  }
+
+  if (target === 'startDate') {
+    return toPickerDate(filters.startDate);
+  }
+
+  return toPickerDate(filters.endDate);
 };
 
 const toDayLabel = (value: string, fallback: string, locale: string) => {
@@ -157,6 +273,7 @@ const formatExpenseCurrency = (value: number, locale: string) => {
 
 export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
+  const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme];
   const { language, t } = useAppLanguage();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
@@ -173,9 +290,20 @@ export default function DashboardScreen() {
   const [comparison, setComparison] = useState<DashboardComparisonData | null>(null);
   const [expenseVsSalary, setExpenseVsSalary] = useState<ExpenseVsSalaryData | null>(null);
   const [displayName, setDisplayName] = useState('Kinetic Pulse');
+  const [filters, setFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
+  const [draftFilters, setDraftFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [filterError, setFilterError] = useState('');
+  const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
+  const [filterDateTarget, setFilterDateTarget] = useState<'month' | 'startDate' | 'endDate' | null>(null);
+  const filtersRef = useRef<DashboardFilters>(createDefaultDashboardFilters());
   const hasDashboardSnapshot = Boolean(
     summary || comparison || expenseVsSalary || dailySpending.length || monthlySpending.length
   );
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   useEffect(() => {
     let active = true;
@@ -191,7 +319,7 @@ export default function DashboardScreen() {
       setDisplayName(nextDisplayName);
 
       const cached = await readScreenCache<DashboardCacheState>(
-        buildScreenCacheKey('dashboard', session.user.id)
+        buildScreenCacheKey('dashboard', session.user.id, createDashboardCacheSuffix(filtersRef.current))
       );
 
       if (!cached || !active) {
@@ -214,127 +342,244 @@ export default function DashboardScreen() {
     };
   }, []);
 
-  const loadDashboard = useCallback(async (isRefresh = false) => {
-    const shouldShowSkeleton = !isRefresh && !hasDashboardSnapshot;
+  const loadDashboard = useCallback(
+    async (
+      isRefresh = false,
+      appliedFilters: DashboardFilters = filtersRef.current,
+      forceLoading = false
+    ) => {
+      const shouldShowSkeleton = forceLoading || (!isRefresh && !hasDashboardSnapshot);
 
-    if (isRefresh) {
-      setRefreshing(true);
-    } else if (shouldShowSkeleton) {
-      setLoading(true);
-    }
-
-    setError('');
-
-    try {
-      const session = await getAuthSession();
-
-      if (!session) {
-        router.replace('/login');
-        return;
+      if (isRefresh) {
+        setRefreshing(true);
+      } else if (shouldShowSkeleton) {
+        setLoading(true);
       }
 
-      setDisplayName(session.user.name || 'Kinetic Pulse');
+      setError('');
 
-      const fetchBundle = async (accessToken: string) =>
-        Promise.allSettled([
-          getDashboardSummary(accessToken),
-          getDailySpending(accessToken),
-          getMonthlySpending(accessToken),
-          getComparison(accessToken),
-          getExpenseVsSalary(accessToken),
-        ]);
+      try {
+        const session = await getAuthSession();
 
-      let results = await fetchBundle(session.token.access_token);
+        if (!session) {
+          router.replace('/login');
+          return;
+        }
 
-      const hasUnauthorized = results.some(
-        (result) =>
-          result.status === 'rejected' &&
-          result.reason instanceof ApiRequestError &&
-          result.reason.status === 401
-      );
+        const nextDisplayName = session.user.name || 'Kinetic Pulse';
+        setDisplayName(nextDisplayName);
+        const dashboardParams = buildDashboardQueryParams(appliedFilters);
+        const cacheSuffix = createDashboardCacheSuffix(appliedFilters);
 
-      if (hasUnauthorized && session.token.refresh_token) {
-        const refreshed = await refreshToken({
-          refresh_token: session.token.refresh_token,
+        const fetchBundle = async (accessToken: string) =>
+          Promise.allSettled([
+            getDashboardSummary(accessToken, dashboardParams),
+            getDailySpending(accessToken, dashboardParams),
+            getMonthlySpending(accessToken, dashboardParams),
+            getComparison(accessToken),
+            getExpenseVsSalary(accessToken),
+          ]);
+
+        let results = await fetchBundle(session.token.access_token);
+
+        const hasUnauthorized = results.some(
+          (result) =>
+            result.status === 'rejected' &&
+            result.reason instanceof ApiRequestError &&
+            result.reason.status === 401
+        );
+
+        if (hasUnauthorized && session.token.refresh_token) {
+          const refreshed = await refreshToken({
+            refresh_token: session.token.refresh_token,
+          });
+          await saveAuthSession(refreshed.Data);
+          results = await fetchBundle(refreshed.Data.token.access_token);
+        }
+
+        const [summaryResult, dailyResult, monthlyResult, comparisonResult, ratioResult] = results;
+        const nextSummary = summaryResult.status === 'fulfilled' ? summaryResult.value.Data : summary;
+        const nextDailySpending =
+          dailyResult.status === 'fulfilled' ? dailyResult.value.Data : dailySpending;
+        const nextMonthlySpending =
+          monthlyResult.status === 'fulfilled' ? monthlyResult.value.Data : monthlySpending;
+        const nextComparison =
+          comparisonResult.status === 'fulfilled' ? comparisonResult.value.Data : comparison;
+        const nextExpenseVsSalary =
+          ratioResult.status === 'fulfilled' ? ratioResult.value.Data : expenseVsSalary;
+
+        if (summaryResult.status === 'fulfilled') {
+          setSummary(nextSummary);
+        }
+
+        if (dailyResult.status === 'fulfilled') {
+          setDailySpending(nextDailySpending);
+        }
+
+        if (monthlyResult.status === 'fulfilled') {
+          setMonthlySpending(nextMonthlySpending);
+        }
+
+        if (comparisonResult.status === 'fulfilled') {
+          setComparison(nextComparison);
+        }
+
+        if (ratioResult.status === 'fulfilled') {
+          setExpenseVsSalary(nextExpenseVsSalary);
+        }
+
+        await writeScreenCache(buildScreenCacheKey('dashboard', session.user.id, cacheSuffix), {
+          summary: nextSummary,
+          dailySpending: nextDailySpending,
+          monthlySpending: nextMonthlySpending,
+          comparison: nextComparison,
+          expenseVsSalary: nextExpenseVsSalary,
+          displayName: nextDisplayName,
         });
-        await saveAuthSession(refreshed.Data);
-        results = await fetchBundle(refreshed.Data.token.access_token);
+
+        const hasHardFailure = results.some(
+          (result) =>
+            result.status === 'rejected' &&
+            !(result.reason instanceof ApiRequestError && result.reason.status === 401)
+        );
+
+        if (hasHardFailure) {
+          setError(t('dashboard.partialError'));
+        }
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.status === 401) {
+          router.replace('/login');
+          return;
+        }
+
+        setError(t('dashboard.loadError'));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-
-      const [summaryResult, dailyResult, monthlyResult, comparisonResult, ratioResult] = results;
-      const nextSummary = summaryResult.status === 'fulfilled' ? summaryResult.value.Data : summary;
-      const nextDailySpending = dailyResult.status === 'fulfilled' ? dailyResult.value.Data : dailySpending;
-      const nextMonthlySpending =
-        monthlyResult.status === 'fulfilled' ? monthlyResult.value.Data : monthlySpending;
-      const nextComparison = comparisonResult.status === 'fulfilled' ? comparisonResult.value.Data : comparison;
-      const nextExpenseVsSalary =
-        ratioResult.status === 'fulfilled' ? ratioResult.value.Data : expenseVsSalary;
-
-      if (summaryResult.status === 'fulfilled') {
-        setSummary(nextSummary);
-      }
-
-      if (dailyResult.status === 'fulfilled') {
-        setDailySpending(nextDailySpending);
-      }
-
-      if (monthlyResult.status === 'fulfilled') {
-        setMonthlySpending(nextMonthlySpending);
-      }
-
-      if (comparisonResult.status === 'fulfilled') {
-        setComparison(nextComparison);
-      }
-
-      if (ratioResult.status === 'fulfilled') {
-        setExpenseVsSalary(nextExpenseVsSalary);
-      }
-
-      await writeScreenCache(buildScreenCacheKey('dashboard', session.user.id), {
-        summary: nextSummary,
-        dailySpending: nextDailySpending,
-        monthlySpending: nextMonthlySpending,
-        comparison: nextComparison,
-        expenseVsSalary: nextExpenseVsSalary,
-        displayName: session.user.name || displayName,
-      });
-
-      const hasHardFailure = results.some(
-        (result) =>
-          result.status === 'rejected' &&
-          !(result.reason instanceof ApiRequestError && result.reason.status === 401)
-      );
-
-      if (hasHardFailure) {
-        setError(t('dashboard.partialError'));
-      }
-    } catch (err) {
-      if (err instanceof ApiRequestError && err.status === 401) {
-        router.replace('/login');
-        return;
-      }
-
-      setError(t('dashboard.loadError'));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [
-    comparison,
-    dailySpending,
-    displayName,
-    expenseVsSalary,
-    hasDashboardSnapshot,
-    monthlySpending,
-    summary,
-    t,
-  ]);
+    },
+    [comparison, dailySpending, expenseVsSalary, hasDashboardSnapshot, monthlySpending, summary, t]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      loadDashboard();
+      void loadDashboard(false, filtersRef.current);
     }, [loadDashboard])
   );
+
+  const openFilterModal = useCallback(() => {
+    setDraftFilters(filters);
+    setFilterError('');
+    setFilterDateTarget(null);
+    setIosFilterDatePickerVisible(false);
+    setFilterModalVisible(true);
+  }, [filters]);
+
+  const closeFilterModal = useCallback(() => {
+    setFilterModalVisible(false);
+    setFilterError('');
+    setFilterDateTarget(null);
+    setIosFilterDatePickerVisible(false);
+  }, []);
+
+  const handleFilterDateChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === 'android' && event.type === 'dismissed') {
+        return;
+      }
+
+      if (!selectedDate || !filterDateTarget) {
+        return;
+      }
+
+      if (filterDateTarget === 'month') {
+        setDraftFilters((current) => ({
+          ...current,
+          month: selectedDate.toISOString().slice(0, 7),
+        }));
+        return;
+      }
+
+      setDraftFilters((current) => ({
+        ...current,
+        [filterDateTarget]: selectedDate.toISOString().slice(0, 10),
+      }));
+    },
+    [filterDateTarget]
+  );
+
+  const openFilterDatePicker = useCallback(
+    (target: 'month' | 'startDate' | 'endDate') => {
+      const currentDate = toDashboardFilterPickerValue(draftFilters, target);
+      setFilterDateTarget(target);
+
+      if (Platform.OS === 'android') {
+        DateTimePickerAndroid.open({
+          value: currentDate,
+          mode: 'date',
+          onChange: handleFilterDateChange,
+        });
+        return;
+      }
+
+      setIosFilterDatePickerVisible(true);
+    },
+    [draftFilters, handleFilterDateChange]
+  );
+
+  const resetFilters = useCallback(() => {
+    const nextFilters = createDefaultDashboardFilters();
+    setDraftFilters(nextFilters);
+    setFilters(nextFilters);
+    filtersRef.current = nextFilters;
+    setFilterError('');
+    setFilterDateTarget(null);
+    setIosFilterDatePickerVisible(false);
+    setFilterModalVisible(false);
+    void loadDashboard(false, nextFilters, true);
+  }, [loadDashboard]);
+
+  const applyFilters = useCallback(() => {
+    if (draftFilters.dateMode === 'month') {
+      if (!MONTH_INPUT_PATTERN.test(draftFilters.month)) {
+        setFilterError(t('dashboard.filter.monthInvalid'));
+        return;
+      }
+    } else {
+      if (!DATE_INPUT_PATTERN.test(draftFilters.startDate) || !DATE_INPUT_PATTERN.test(draftFilters.endDate)) {
+        setFilterError(t('dashboard.filter.rangeRequired'));
+        return;
+      }
+
+      const start = parseDateValue(draftFilters.startDate);
+      const end = parseDateValue(draftFilters.endDate);
+
+      if (!start || !end || start.getTime() > end.getTime()) {
+        setFilterError(t('dashboard.filter.rangeInvalid'));
+        return;
+      }
+
+      if (getFilterRangeMonths(draftFilters.startDate, draftFilters.endDate) > 2) {
+        setFilterError(t('dashboard.filter.rangeTooLong'));
+        return;
+      }
+    }
+
+    const nextFilters = {
+      ...draftFilters,
+      month: draftFilters.dateMode === 'month' ? draftFilters.month : '',
+      startDate: draftFilters.dateMode === 'range' ? draftFilters.startDate : '',
+      endDate: draftFilters.dateMode === 'range' ? draftFilters.endDate : '',
+    };
+
+    setFilters(nextFilters);
+    filtersRef.current = nextFilters;
+    setFilterError('');
+    setFilterDateTarget(null);
+    setIosFilterDatePickerVisible(false);
+    setFilterModalVisible(false);
+    void loadDashboard(false, nextFilters, true);
+  }, [draftFilters, loadDashboard, t]);
 
   const currentBalance = toNumber(summary?.total_balance);
   const monthlyIncome = toNumber(summary?.monthly_income);
@@ -373,7 +618,9 @@ export default function DashboardScreen() {
         : 0;
   const momentumPrefix = monthlyMomentum > 0 ? '+' : '';
   const momentumIcon = monthlyMomentum >= 0 ? 'trending-up' : 'trending-down';
-  const activeMonthLabel = new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date());
+  const activePeriodLabel = getDashboardFilterLabel(filters, locale) || t('dashboard.filter.currentPeriod');
+  const filterModeLabel =
+    filters.dateMode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode');
 
   const trendPoints = useMemo<TrendPoint[]>(() => {
     if (trendMode === 'daily' && dailySpending.length > 0) {
@@ -425,13 +672,13 @@ export default function DashboardScreen() {
       },
       {
         icon: 'calendar-month-outline',
-        title: t('dashboard.activity.monthExpense', { month: activeMonthLabel }),
-        meta: t('dashboard.activity.monthExpenseMeta'),
-        amount: formatExpenseCurrency(thisMonthExpense || monthlyExpense, locale),
+        title: t('dashboard.activity.periodExpense', { period: activePeriodLabel }),
+        meta: t('dashboard.activity.periodExpenseMeta'),
+        amount: formatExpenseCurrency(monthlyExpense, locale),
         kind: t('dashboard.activity.expense'),
       },
     ],
-    [activeMonthLabel, locale, monthlyExpense, t, thisMonthExpense, todayExpense, yesterdayExpense]
+    [activePeriodLabel, locale, monthlyExpense, t, todayExpense, yesterdayExpense]
   );
 
   return (
@@ -443,7 +690,9 @@ export default function DashboardScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => loadDashboard(true)}
+            onRefresh={() => {
+              void loadDashboard(true, filtersRef.current);
+            }}
             tintColor={colors.primary}
           />
         }
@@ -482,12 +731,30 @@ export default function DashboardScreen() {
                   <MaterialCommunityIcons name={momentumIcon} size={12} color={colors.secondaryAccent} />
                   <Text style={styles.momentumBadgeText}>
                     {momentumPrefix}
-                    {monthlyMomentum.toFixed(1)}% {t('dashboard.thisMonth')}
+                    {monthlyMomentum.toFixed(1)}%{' '}
+                    {filters.dateMode === 'month' ? t('dashboard.thisMonth') : t('dashboard.filter.currentPeriod')}
                   </Text>
                 </View>
                 <Text numberOfLines={1} style={styles.momentumHint}>
                   {t('dashboard.vsLastQuarterPeak')}
                 </Text>
+              </View>
+            </View>
+
+            <View style={styles.filterCard}>
+              <View style={styles.filterCardHeader}>
+                <View style={styles.filterCardCopy}>
+                  <Text style={styles.filterCardKicker}>{t('dashboard.filter.kicker')}</Text>
+                  <Text numberOfLines={1} style={styles.filterCardTitle}>
+                    {activePeriodLabel}
+                  </Text>
+                  <Text style={styles.filterCardMeta}>{filterModeLabel}</Text>
+                </View>
+
+                <Pressable onPress={openFilterModal} style={styles.filterCardAction}>
+                  <MaterialCommunityIcons name="tune-variant" size={16} color={colors.onPrimary} />
+                  <Text style={styles.filterCardActionText}>{t('dashboard.filter.action')}</Text>
+                </Pressable>
               </View>
             </View>
 
@@ -644,6 +911,189 @@ export default function DashboardScreen() {
         )}
       </ScrollView>
 
+      <Modal
+        visible={filterModalVisible}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={closeFilterModal}>
+        <KeyboardAvoidingView
+          style={styles.filterModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}>
+          <View style={styles.filterModalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeFilterModal} />
+            <View style={styles.filterModalSheet}>
+              <View style={styles.filterModalHandle} />
+              <View style={styles.filterModalBody}>
+                <View style={styles.filterModalHeader}>
+                  <View style={styles.filterModalHeaderCopy}>
+                    <Text style={styles.filterModalKicker}>{t('dashboard.filter.kicker')}</Text>
+                    <Text style={styles.filterModalTitle}>{t('dashboard.filter.title')}</Text>
+                    <Text style={styles.filterModalSubtitle}>{t('dashboard.filter.helper')}</Text>
+                  </View>
+                  <Pressable onPress={closeFilterModal} style={styles.filterModalClose}>
+                    <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
+                  </Pressable>
+                </View>
+
+                <ScrollView
+                  style={styles.filterModalScroll}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.filterModalContent}>
+                  <View style={styles.filterSectionCard}>
+                    <View style={styles.filterSectionHeader}>
+                      <View style={styles.filterSectionIcon}>
+                        <MaterialCommunityIcons name="calendar-range" size={18} color={colors.primary} />
+                      </View>
+                      <View style={styles.filterSectionCopy}>
+                        <Text style={styles.filterSectionTitle}>{t('dashboard.filter.dateTitle')}</Text>
+                        <Text style={styles.filterSectionSubtitle}>{t('dashboard.filter.dateHelper')}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.filterModeRow}>
+                      {(['month', 'range'] as DashboardDateFilterMode[]).map((mode) => {
+                        const active = draftFilters.dateMode === mode;
+
+                        return (
+                          <Pressable
+                            key={mode}
+                            onPress={() =>
+                              setDraftFilters((current) => ({
+                                ...current,
+                                dateMode: mode,
+                                month: mode === 'month' ? current.month || getCurrentMonthInputValue() : current.month,
+                                startDate: mode === 'range' ? current.startDate : '',
+                                endDate: mode === 'range' ? current.endDate : '',
+                              }))
+                            }
+                            style={[
+                              styles.filterModeButton,
+                              active && {
+                                backgroundColor: alpha(colors.primary, isDark ? 0.18 : 0.1),
+                                borderColor: alpha(colors.primary, isDark ? 0.38 : 0.28),
+                              },
+                            ]}>
+                            <View
+                              style={[
+                                styles.filterModeIcon,
+                                { backgroundColor: active ? alpha(colors.primary, 0.16) : colors.shellCardMuted },
+                              ]}>
+                              <MaterialCommunityIcons
+                                name={mode === 'month' ? 'calendar-month-outline' : 'calendar-range-outline'}
+                                size={16}
+                                color={active ? colors.primary : colors.shellTextMuted}
+                              />
+                            </View>
+                            <Text style={[styles.filterModeLabel, active && { color: colors.primary }]}>
+                              {mode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode')}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    {draftFilters.dateMode === 'month' ? (
+                      <View style={styles.filterFieldGroup}>
+                        <Text style={styles.filterFieldLabel}>{t('dashboard.filter.monthLabel')}</Text>
+                        <Pressable
+                          onPress={() => openFilterDatePicker('month')}
+                          style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
+                          <View style={styles.filterPickerIcon}>
+                            <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.primary} />
+                          </View>
+                          <View style={styles.filterPickerCopy}>
+                            <Text style={styles.filterPickerValue}>{toMonthInputLabel(draftFilters.month, locale)}</Text>
+                            <Text style={styles.filterPickerMeta}>{t('dashboard.filter.monthHelper')}</Text>
+                          </View>
+                          <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                        </Pressable>
+                        <Text style={styles.filterFieldHelper}>{t('dashboard.filter.monthHelper')}</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <View style={styles.filterFieldGroup}>
+                          <Text style={styles.filterFieldLabel}>{t('dashboard.filter.startDate')}</Text>
+                          <Pressable
+                            onPress={() => openFilterDatePicker('startDate')}
+                            style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
+                            <View style={styles.filterPickerIcon}>
+                              <MaterialCommunityIcons name="calendar-start" size={18} color={colors.primary} />
+                            </View>
+                            <View style={styles.filterPickerCopy}>
+                              <Text style={styles.filterPickerValue}>
+                                {draftFilters.startDate
+                                  ? toDateInputLabel(draftFilters.startDate, locale)
+                                  : t('dashboard.filter.startDatePlaceholder')}
+                              </Text>
+                              <Text style={styles.filterPickerMeta}>{t('dashboard.filter.dateHelper')}</Text>
+                            </View>
+                            <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                          </Pressable>
+                        </View>
+
+                        <View style={styles.filterFieldGroup}>
+                          <Text style={styles.filterFieldLabel}>{t('dashboard.filter.endDate')}</Text>
+                          <Pressable
+                            onPress={() => openFilterDatePicker('endDate')}
+                            style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
+                            <View style={styles.filterPickerIcon}>
+                              <MaterialCommunityIcons name="calendar-end" size={18} color={colors.primary} />
+                            </View>
+                            <View style={styles.filterPickerCopy}>
+                              <Text style={styles.filterPickerValue}>
+                                {draftFilters.endDate
+                                  ? toDateInputLabel(draftFilters.endDate, locale)
+                                  : t('dashboard.filter.endDatePlaceholder')}
+                              </Text>
+                              <Text style={styles.filterPickerMeta}>{t('dashboard.filter.dateHelper')}</Text>
+                            </View>
+                            <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                          </Pressable>
+                        </View>
+
+                        {Platform.OS === 'ios' && iosFilterDatePickerVisible && filterDateTarget ? (
+                          <View style={styles.filterDatePickerCard}>
+                            <DateTimePicker
+                              value={toDashboardFilterPickerValue(draftFilters, filterDateTarget)}
+                              mode="date"
+                              display="spinner"
+                              onChange={handleFilterDateChange}
+                              accentColor={colors.primary}
+                              themeVariant={isDark ? 'dark' : 'light'}
+                            />
+                          </View>
+                        ) : null}
+                      </>
+                    )}
+                  </View>
+
+                  {!!filterError ? (
+                    <View style={styles.filterErrorCard}>
+                      <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.danger} />
+                      <Text style={styles.filterErrorText}>{filterError}</Text>
+                    </View>
+                  ) : null}
+                </ScrollView>
+
+                <View style={styles.filterModalFooter}>
+                  <View style={styles.filterModalActions}>
+                    <Pressable onPress={resetFilters} style={styles.filterSecondaryButton}>
+                      <Text style={styles.filterSecondaryButtonText}>{t('dashboard.filter.reset')}</Text>
+                    </Pressable>
+                    <Pressable onPress={applyFilters} style={styles.filterPrimaryButton}>
+                      <Text style={styles.filterPrimaryButtonText}>{t('dashboard.filter.apply')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <Pressable style={styles.fab}>
         <MaterialCommunityIcons name="plus" size={28} color={colors.shellFabIcon} />
       </Pressable>
@@ -728,6 +1178,60 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     heroBlock: {
       gap: 10,
+    },
+    filterCard: {
+      borderRadius: 22,
+      backgroundColor: colors.shellCard,
+      padding: compact ? 16 : 18,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    filterCardCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    filterCardKicker: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 2,
+      textTransform: 'uppercase',
+    },
+    filterCardTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 18 : 20,
+      lineHeight: compact ? 24 : 26,
+      fontWeight: '800',
+      letterSpacing: -0.7,
+    },
+    filterCardMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    filterCardAction: {
+      flexShrink: 0,
+      minHeight: 40,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: colors.primary,
+    },
+    filterCardActionText: {
+      color: colors.onPrimary,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 0.2,
     },
     kicker: {
       color: colors.secondary,
@@ -1100,6 +1604,281 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontSize: 13,
       lineHeight: 20,
       fontWeight: '700',
+    },
+    filterModalOverlay: {
+      flex: 1,
+    },
+    filterModalBackdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    filterModalSheet: {
+      maxHeight: '90%',
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      backgroundColor: colors.shellBackground,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      overflow: 'hidden',
+    },
+    filterModalHandle: {
+      alignSelf: 'center',
+      width: 42,
+      height: 4,
+      borderRadius: 999,
+      marginTop: 10,
+      marginBottom: 12,
+      backgroundColor: colors.shellCardMuted,
+    },
+    filterModalBody: {
+      gap: 16,
+      paddingHorizontal: compact ? 16 : 18,
+      paddingBottom: 16,
+    },
+    filterModalHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    filterModalHeaderCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    filterModalKicker: {
+      color: colors.secondary,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 2,
+      textTransform: 'uppercase',
+    },
+    filterModalTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 22 : 24,
+      lineHeight: compact ? 28 : 30,
+      fontWeight: '900',
+      letterSpacing: -0.9,
+    },
+    filterModalSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 20,
+      fontWeight: '500',
+    },
+    filterModalClose: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterModalScroll: {
+      maxHeight: compact ? 360 : 420,
+    },
+    filterModalContent: {
+      gap: 14,
+      paddingBottom: 4,
+    },
+    filterSectionCard: {
+      borderRadius: 22,
+      backgroundColor: colors.shellCard,
+      padding: compact ? 16 : 18,
+      gap: 16,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    filterSectionIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.12),
+    },
+    filterSectionCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    filterSectionTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '800',
+    },
+    filterSectionSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+    filterModeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    filterModeButton: {
+      flexGrow: 1,
+      flexBasis: '48%',
+      minHeight: 52,
+      borderRadius: 16,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterModeIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    filterModeLabel: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    filterFieldGroup: {
+      gap: 8,
+    },
+    filterFieldLabel: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    filterFieldHelper: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    filterPickerShell: {
+      minHeight: 56,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    filterPickerPressed: {
+      opacity: 0.88,
+      transform: [{ scale: 0.995 }],
+    },
+    filterPickerIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.12),
+      flexShrink: 0,
+    },
+    filterPickerCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    filterPickerValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '800',
+      letterSpacing: -0.2,
+    },
+    filterPickerMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    filterDatePickerCard: {
+      borderRadius: 18,
+      overflow: 'hidden',
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      marginTop: 4,
+    },
+    filterErrorCard: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      borderRadius: 16,
+      backgroundColor: alpha(colors.danger, isDark ? 0.16 : 0.08),
+      padding: 14,
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, isDark ? 0.32 : 0.2),
+    },
+    filterErrorText: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    filterModalFooter: {
+      borderTopWidth: 1,
+      borderTopColor: colors.shellBorder,
+      paddingHorizontal: compact ? 16 : 18,
+      paddingTop: 14,
+      paddingBottom: 16,
+      backgroundColor: colors.shellBackground,
+    },
+    filterModalActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    filterSecondaryButton: {
+      flex: 1,
+      minHeight: 48,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterSecondaryButtonText: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    filterPrimaryButton: {
+      flex: 1,
+      minHeight: 48,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+    },
+    filterPrimaryButtonText: {
+      color: colors.onPrimary,
+      fontSize: 13,
+      fontWeight: '800',
     },
     fab: {
       position: 'absolute',

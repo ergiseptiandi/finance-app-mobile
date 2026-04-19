@@ -503,7 +503,7 @@ export default function ActivityScreen() {
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardOpen = keyboardHeight > 0;
-  const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
+  const modalLift = keyboardOpen ? Math.max(36, keyboardHeight - insets.bottom + 28) : 0;
   const hasActivitySnapshot = Boolean(
     transactions.length ||
       categories.length ||
@@ -2258,7 +2258,7 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       borderColor: colors.shellBorder,
     },
     modalSheetKeyboard: {
-      paddingBottom: Math.max(bottomInset + 8, 10),
+      paddingBottom: Math.max(bottomInset + 20, 24),
     },
     modalHandle: {
       alignSelf: 'center',
