@@ -72,7 +72,6 @@ export default function SettingsScreen() {
   const styles = createStyles(colors, insets.top);
   const [displayName, setDisplayName] = useState('Alex Sterling');
   const [email, setEmail] = useState('alex.sterling@ledger.io');
-  const [memberSince, setMemberSince] = useState('2022');
   const [pushEnabled, setPushEnabled] = useState(true);
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(true);
@@ -88,9 +87,6 @@ export default function SettingsScreen() {
 
       setDisplayName(session.user.name || 'Alex Sterling');
       setEmail(session.user.email || 'alex.sterling@ledger.io');
-      setMemberSince(
-        session.user.created_at ? new Date(session.user.created_at).getFullYear().toString() : '2022'
-      );
     };
 
     loadSession();
@@ -134,18 +130,9 @@ export default function SettingsScreen() {
               <Text numberOfLines={1} style={styles.profileEmail}>
                 {email}
               </Text>
-              <View style={styles.memberChip}>
-                <Text style={styles.memberChipText}>{t('settings.premiumMember')}</Text>
-              </View>
             </View>
           </View>
 
-          <View style={styles.identityCard}>
-            <MaterialCommunityIcons name="shield-check-outline" size={34} color={colors.onPrimary} />
-            <Text style={styles.identityLabel}>{t('settings.identityStatus')}</Text>
-            <Text style={styles.identityValue}>{t('settings.verified')}</Text>
-            <Text style={styles.identityMeta}>{t('settings.memberSince', { year: memberSince })}</Text>
-          </View>
         </View>
 
         <View style={styles.section}>
@@ -444,57 +431,6 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontSize: 16,
       lineHeight: 22,
       fontWeight: '500',
-    },
-    memberChip: {
-      marginTop: 10,
-      minHeight: 34,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: alpha(colors.secondaryAccent, 0.22),
-      backgroundColor: alpha(colors.secondaryAccent, 0.12),
-      paddingHorizontal: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    memberChipText: {
-      color: colors.onSecondaryContainer,
-      fontSize: 11,
-      lineHeight: 14,
-      fontWeight: '800',
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
-    },
-    identityCard: {
-      borderRadius: 28,
-      backgroundColor: colors.primary,
-      paddingHorizontal: 22,
-      paddingVertical: 24,
-      minHeight: 198,
-      justifyContent: 'space-between',
-    },
-    identityLabel: {
-      color: alpha(colors.onPrimary, 0.68),
-      fontSize: 12,
-      lineHeight: 16,
-      fontWeight: '800',
-      textTransform: 'uppercase',
-      letterSpacing: 1.8,
-      marginTop: 22,
-    },
-    identityValue: {
-      color: colors.onPrimary,
-      fontSize: 34,
-      lineHeight: 40,
-      fontWeight: '900',
-      letterSpacing: -1.1,
-      marginTop: 2,
-    },
-    identityMeta: {
-      color: alpha(colors.onPrimary, 0.76),
-      fontSize: 14,
-      lineHeight: 18,
-      fontWeight: '500',
-      marginTop: 24,
     },
     section: {
       gap: 12,
