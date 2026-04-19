@@ -129,6 +129,42 @@ const createEmptyPaymentForm = (): PaymentFormState => ({
   proofType: '',
 });
 
+const sanitizeCurrencyInput = (value: string) => value.replace(/[^\d]/g, '');
+
+const parseCurrencyInput = (value: string) => {
+  const normalized = sanitizeCurrencyInput(value);
+  return normalized ? Number(normalized) : 0;
+};
+
+const toPlainAmountString = (value: string) => {
+  const normalized = sanitizeCurrencyInput(value);
+  return normalized ? String(Number(normalized)) : '0';
+};
+
+const formatRupiahInput = (value: string) => {
+  const normalized = sanitizeCurrencyInput(value);
+  if (!normalized) {
+    return '';
+  }
+
+  return new Intl.NumberFormat('id-ID', {
+    maximumFractionDigits: 0,
+  }).format(Number(normalized));
+};
+
+const getFileBadgeLabel = (proofName: string, proofType: string) => {
+  const extension = proofName.split('.').pop()?.trim();
+  if (extension) {
+    return extension.slice(0, 4).toUpperCase();
+  }
+
+  if (proofType.startsWith('image/')) {
+    return proofType.replace('image/', '').slice(0, 4).toUpperCase();
+  }
+
+  return 'FILE';
+};
+
 const formatDueLabel = (value: string, t: (key: string, params?: Record<string, string | number>) => string) => {
   const parsed = parseDate(value);
   if (!parsed) {
@@ -219,6 +255,7 @@ const selectNextPendingInstallment = (installments: InstallmentRecord[]) =>
 export default function DebtScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const isLight = colorScheme === 'light';
   const { language, t } = useAppLanguage();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const { width } = useWindowDimensions();
@@ -436,11 +473,13 @@ export default function DebtScreen() {
       ...createEmptyPaymentForm(),
       amount:
         current.amount ||
-        String(
-          selectedDebt
-            ? Math.max(toNumber(selectedDebt.monthly_installment), toNumber(selectedDebt.remaining_amount))
-            : 0
-      ),
+        formatRupiahInput(
+          String(
+            selectedDebt
+              ? Math.max(toNumber(selectedDebt.monthly_installment), toNumber(selectedDebt.remaining_amount))
+              : 0
+          )
+        ),
     }));
   }, [debts, selectedDebt, selectedDebtId]);
 
@@ -464,12 +503,21 @@ export default function DebtScreen() {
     }));
   }, []);
 
+  const clearProofSelection = useCallback(() => {
+    setPaymentForm((current) => ({
+      ...current,
+      proofName: '',
+      proofUri: '',
+      proofType: '',
+    }));
+  }, []);
+
   const submitDebtForm = useCallback(async () => {
     setFormError('');
 
     const trimmedName = debtForm.name.trim();
-    const totalAmount = Number(debtForm.totalAmount);
-    const monthlyInstallment = Number(debtForm.monthlyInstallment);
+    const totalAmount = parseCurrencyInput(debtForm.totalAmount);
+    const monthlyInstallment = parseCurrencyInput(debtForm.monthlyInstallment);
 
     if (!trimmedName || !Number.isFinite(totalAmount) || !Number.isFinite(monthlyInstallment) || totalAmount <= 0 || monthlyInstallment <= 0) {
       setFormError(t('debt.form.invalidDebt'));
@@ -512,7 +560,7 @@ export default function DebtScreen() {
     setFormError('');
 
     const targetDebtId = selectedDebtId ?? debts[0]?.id ?? null;
-    const amount = Number(paymentForm.amount);
+    const amount = parseCurrencyInput(paymentForm.amount);
 
     if (!targetDebtId || !Number.isFinite(amount) || amount <= 0 || !paymentForm.proofUri) {
       setFormError(t('debt.form.invalidPayment'));
@@ -523,7 +571,7 @@ export default function DebtScreen() {
 
     try {
       const formData = new FormData();
-      formData.append('amount', String(amount));
+      formData.append('amount', toPlainAmountString(paymentForm.amount));
       formData.append('payment_date', toApiDate(paymentForm.paymentDate));
       formData.append(
         'proof_image',
@@ -593,6 +641,30 @@ export default function DebtScreen() {
       : 0;
   const paymentCount = selected?.payments?.length ?? 0;
   const dueLabel = selected ? formatDueLabel(selected.due_date, t) : '';
+  const modalAccent = formMode === 'create' ? colors.primary : colors.secondary;
+  const paymentTarget = useMemo<DebtRecord | DebtDetail | null>(() => {
+    if (selected && (selectedDebtId === null || selected.id === selectedDebtId)) {
+      return selected;
+    }
+
+    return debts.find((debt) => debt.id === (selectedDebtId ?? debts[0]?.id)) ?? selected ?? debts[0] ?? null;
+  }, [debts, selected, selectedDebtId]);
+  const createTotalValue = parseCurrencyInput(debtForm.totalAmount);
+  const createInstallmentValue = parseCurrencyInput(debtForm.monthlyInstallment);
+  const paymentAmountValue = parseCurrencyInput(paymentForm.amount);
+  const createTotalPreview =
+    Number.isFinite(createTotalValue) && createTotalValue > 0 ? formatCurrency(createTotalValue, locale) : 'IDR 0';
+  const createInstallmentPreview =
+    Number.isFinite(createInstallmentValue) && createInstallmentValue > 0
+      ? formatCurrency(createInstallmentValue, locale)
+      : 'IDR 0';
+  const paymentAmountPreview =
+    Number.isFinite(paymentAmountValue) && paymentAmountValue > 0 ? formatCurrency(paymentAmountValue, locale) : 'IDR 0';
+  const paymentTargetRemaining = toNumber(paymentTarget?.remaining_amount);
+  const paymentTargetInstallment = toNumber(paymentTarget?.monthly_installment);
+  const paymentTargetStatus = paymentTarget ? toStatusLabel(paymentTarget.status, t) : '';
+  const proofSelected = Boolean(paymentForm.proofUri);
+  const proofBadgeLabel = getFileBadgeLabel(paymentForm.proofName, paymentForm.proofType);
 
   return (
     <View style={styles.root}>
@@ -933,7 +1005,7 @@ export default function DebtScreen() {
               <View style={[styles.modalBody, keyboardOpen && styles.modalBodyKeyboard]}>
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderCopy}>
-                    <Text style={styles.modalKicker}>
+                    <Text style={[styles.modalKicker, { color: modalAccent }]}>
                       {formMode === 'create' ? t('debt.createKicker') : t('debt.paymentKicker')}
                     </Text>
                     <Text style={[styles.modalTitle, keyboardOpen && styles.modalTitleKeyboard]}>
@@ -949,126 +1021,366 @@ export default function DebtScreen() {
                   </Pressable>
                 </View>
 
-                {!!formError && <Text style={styles.formError}>{formError}</Text>}
-
-                {formMode === 'create' ? (
-                  <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
-                    <View style={styles.fieldStack}>
-                      <Text style={styles.fieldLabel}>{t('debt.form.name')}</Text>
-                      <TextInput
-                        value={debtForm.name}
-                        onChangeText={(text) => setDebtForm((current) => ({ ...current, name: text }))}
-                        placeholder={t('debt.form.namePlaceholder')}
-                        placeholderTextColor={colors.shellTextSoft}
-                        style={styles.textField}
-                      />
-                    </View>
-
-                    <View style={styles.fieldRow}>
-                      <View style={styles.fieldStackHalf}>
-                        <Text style={styles.fieldLabel}>{t('debt.form.totalAmount')}</Text>
-                        <TextInput
-                          value={debtForm.totalAmount}
-                          onChangeText={(text) =>
-                            setDebtForm((current) => ({ ...current, totalAmount: text.replace(/[^\d]/g, '') }))
-                          }
-                          keyboardType="number-pad"
-                          placeholder="12000000"
-                          placeholderTextColor={colors.shellTextSoft}
-                          style={styles.textField}
+                <ScrollView
+                  style={styles.modalScroll}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={[styles.modalContent, keyboardOpen && styles.modalContentKeyboard]}>
+                  <View
+                    style={[
+                      styles.modalHeroCard,
+                      {
+                        backgroundColor: alpha(modalAccent, isLight ? 0.1 : 0.18),
+                        borderColor: alpha(modalAccent, isLight ? 0.16 : 0.28),
+                      },
+                    ]}>
+                    <View style={styles.modalHeroTop}>
+                      <View
+                        style={[
+                          styles.modalHeroIcon,
+                          { backgroundColor: alpha(modalAccent, isLight ? 0.14 : 0.2) },
+                        ]}>
+                        <MaterialCommunityIcons
+                          name={formMode === 'create' ? 'bank-plus' : 'file-image-plus-outline'}
+                          size={22}
+                          color={modalAccent}
                         />
                       </View>
-                      <View style={styles.fieldStackHalf}>
-                        <Text style={styles.fieldLabel}>{t('debt.form.monthlyInstallment')}</Text>
-                        <TextInput
-                          value={debtForm.monthlyInstallment}
-                          onChangeText={(text) =>
-                            setDebtForm((current) => ({
-                              ...current,
-                              monthlyInstallment: text.replace(/[^\d]/g, ''),
-                            }))
-                          }
-                          keyboardType="number-pad"
-                          placeholder="1000000"
-                          placeholderTextColor={colors.shellTextSoft}
-                          style={styles.textField}
-                        />
-                      </View>
-                    </View>
-
-                    <View style={styles.fieldStack}>
-                      <Text style={styles.fieldLabel}>{t('debt.form.dueDate')}</Text>
-                      <TextInput
-                        value={debtForm.dueDate}
-                        onChangeText={(text) => setDebtForm((current) => ({ ...current, dueDate: text }))}
-                        placeholder="2026-04-16"
-                        placeholderTextColor={colors.shellTextSoft}
-                        style={styles.textField}
-                      />
-                    </View>
-                  </View>
-                ) : (
-                  <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
-                    <View style={styles.fieldStack}>
-                      <Text style={styles.fieldLabel}>{t('debt.form.targetDebt')}</Text>
-                      <View style={styles.debtChipGrid}>
-                        {debts.map((debt) => {
-                          const isSelectedDebt = debt.id === (selectedDebtId ?? debts[0]?.id);
-
-                          return (
-                            <Pressable
-                              key={debt.id}
-                              onPress={() => setSelectedDebtId(debt.id)}
-                              style={[styles.debtChip, isSelectedDebt && styles.debtChipSelected]}>
-                              <Text style={[styles.debtChipText, isSelectedDebt && styles.debtChipTextSelected]}>
-                                {debt.name}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    </View>
-
-                    <View style={styles.fieldRow}>
-                      <View style={styles.fieldStackHalf}>
-                        <Text style={styles.fieldLabel}>{t('debt.form.amount')}</Text>
-                        <TextInput
-                          value={paymentForm.amount}
-                          onChangeText={(text) =>
-                            setPaymentForm((current) => ({ ...current, amount: text.replace(/[^\d]/g, '') }))
-                          }
-                          keyboardType="number-pad"
-                          placeholder="1000000"
-                          placeholderTextColor={colors.shellTextSoft}
-                          style={styles.textField}
-                        />
-                      </View>
-                      <View style={styles.fieldStackHalf}>
-                        <Text style={styles.fieldLabel}>{t('debt.form.paymentDate')}</Text>
-                        <TextInput
-                          value={paymentForm.paymentDate}
-                          onChangeText={(text) => setPaymentForm((current) => ({ ...current, paymentDate: text }))}
-                          placeholder="2026-04-16"
-                          placeholderTextColor={colors.shellTextSoft}
-                          style={styles.textField}
-                        />
-                      </View>
-                    </View>
-
-                    <View style={styles.fieldStack}>
-                      <Text style={styles.fieldLabel}>{t('debt.form.proofImage')}</Text>
-                      <Pressable onPress={pickProofImage} style={styles.uploadButton}>
-                        <MaterialCommunityIcons name="paperclip" size={16} color={colors.onPrimary} />
-                        <Text style={styles.uploadButtonText}>
-                          {paymentForm.proofName ? t('debt.form.changeProof') : t('debt.form.chooseProof')}
+                      <View style={styles.modalHeroCopy}>
+                        <Text style={styles.modalHeroTitle}>
+                          {formMode === 'create'
+                            ? t('debt.modal.createPreviewTitle')
+                            : t('debt.modal.paymentPreviewTitle')}
                         </Text>
-                      </Pressable>
-                      <Text style={styles.uploadHint}>
-                        {paymentForm.proofName ? paymentForm.proofName : t('debt.form.noProofSelected')}
-                      </Text>
+                        <Text style={styles.modalHeroText}>
+                          {formMode === 'create' ? t('debt.createSubtitle') : t('debt.paymentSubtitle')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.modalHeroMetrics}>
+                      {formMode === 'create' ? (
+                        <>
+                          <View style={styles.modalMetricCard}>
+                            <Text style={styles.modalMetricLabel}>{t('debt.modal.totalPreview')}</Text>
+                            <Text numberOfLines={1} style={styles.modalMetricValue}>
+                              {createTotalPreview}
+                            </Text>
+                          </View>
+                          <View style={styles.modalMetricCard}>
+                            <Text style={styles.modalMetricLabel}>{t('debt.modal.installmentPreview')}</Text>
+                            <Text numberOfLines={1} style={styles.modalMetricValue}>
+                              {createInstallmentPreview}
+                            </Text>
+                          </View>
+                        </>
+                      ) : (
+                        <>
+                          <View style={styles.modalMetricCard}>
+                            <Text style={styles.modalMetricLabel}>{t('debt.modal.amountPreview')}</Text>
+                            <Text numberOfLines={1} style={styles.modalMetricValue}>
+                              {paymentAmountPreview}
+                            </Text>
+                          </View>
+                          <View style={styles.modalMetricCard}>
+                            <Text style={styles.modalMetricLabel}>{t('debt.modal.remainingPreview')}</Text>
+                            <Text numberOfLines={1} style={styles.modalMetricValue}>
+                              {formatCurrency(paymentTargetRemaining, locale)}
+                            </Text>
+                          </View>
+                        </>
+                      )}
                     </View>
                   </View>
-                )}
+
+                  {!!formError && (
+                    <View style={styles.formErrorCard}>
+                      <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.danger} />
+                      <Text style={styles.formErrorText}>{formError}</Text>
+                    </View>
+                  )}
+
+                  {formMode === 'create' ? (
+                    <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
+                      <View style={styles.modalSectionCard}>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                            <MaterialCommunityIcons name="rename-box" size={18} color={modalAccent} />
+                          </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('debt.modal.createSectionTitle')}</Text>
+                            <Text style={styles.modalSectionSubtitle}>{t('debt.modal.createSectionHelper')}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.fieldStack}>
+                          <Text style={styles.fieldLabel}>{t('debt.form.name')}</Text>
+                          <View style={styles.inputShell}>
+                            <View style={styles.inputIconWrap}>
+                              <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
+                            </View>
+                            <TextInput
+                              value={debtForm.name}
+                              onChangeText={(text) => setDebtForm((current) => ({ ...current, name: text }))}
+                              placeholder={t('debt.form.namePlaceholder')}
+                              placeholderTextColor={colors.shellTextSoft}
+                              style={styles.inputControl}
+                            />
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.modalSectionCard}>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                            <MaterialCommunityIcons name="cash-multiple" size={18} color={modalAccent} />
+                          </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('debt.modal.scheduleSectionTitle')}</Text>
+                            <Text style={styles.modalSectionSubtitle}>{t('debt.modal.scheduleSectionHelper')}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.fieldRow}>
+                          <View style={styles.fieldStackHalf}>
+                            <Text style={styles.fieldLabel}>{t('debt.form.totalAmount')}</Text>
+                            <View style={styles.inputShell}>
+                              <TextInput
+                                value={debtForm.totalAmount}
+                                onChangeText={(text) =>
+                                  setDebtForm((current) => ({
+                                    ...current,
+                                    totalAmount: formatRupiahInput(text),
+                                  }))
+                                }
+                                keyboardType="number-pad"
+                                placeholder="12.000.000"
+                                placeholderTextColor={colors.shellTextSoft}
+                                style={styles.inputControl}
+                              />
+                            </View>
+                          </View>
+                          <View style={styles.fieldStackHalf}>
+                            <Text style={styles.fieldLabel}>{t('debt.form.monthlyInstallment')}</Text>
+                            <View style={styles.inputShell}>
+                              <TextInput
+                                value={debtForm.monthlyInstallment}
+                                onChangeText={(text) =>
+                                  setDebtForm((current) => ({
+                                    ...current,
+                                    monthlyInstallment: formatRupiahInput(text),
+                                  }))
+                                }
+                                keyboardType="number-pad"
+                                placeholder="1.000.000"
+                                placeholderTextColor={colors.shellTextSoft}
+                                style={styles.inputControl}
+                              />
+                            </View>
+                          </View>
+                        </View>
+
+                        <View style={styles.fieldStack}>
+                          <Text style={styles.fieldLabel}>{t('debt.form.dueDate')}</Text>
+                          <View style={styles.inputShell}>
+                            <View style={styles.inputIconWrap}>
+                              <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
+                            </View>
+                            <TextInput
+                              value={debtForm.dueDate}
+                              onChangeText={(text) => setDebtForm((current) => ({ ...current, dueDate: text }))}
+                              placeholder="2026-04-16"
+                              placeholderTextColor={colors.shellTextSoft}
+                              style={styles.inputControl}
+                            />
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
+                      <View style={styles.modalSectionCard}>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                            <MaterialCommunityIcons name="credit-card-outline" size={18} color={modalAccent} />
+                          </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('debt.modal.targetSectionTitle')}</Text>
+                            <Text style={styles.modalSectionSubtitle}>{t('debt.modal.targetSectionHelper')}</Text>
+                          </View>
+                        </View>
+
+                        {debts.length ? (
+                          <>
+                            <View style={styles.debtChipGrid}>
+                              {debts.map((debt) => {
+                                const isSelectedDebt = debt.id === (selectedDebtId ?? debts[0]?.id);
+
+                                return (
+                                  <Pressable
+                                    key={debt.id}
+                                    onPress={() => setSelectedDebtId(debt.id)}
+                                    style={[styles.debtChip, isSelectedDebt && styles.debtChipSelected]}>
+                                    <Text style={[styles.debtChipText, isSelectedDebt && styles.debtChipTextSelected]}>
+                                      {debt.name}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+
+                            {paymentTarget ? (
+                              <View style={styles.selectedDebtCard}>
+                                <View style={styles.selectedDebtHeader}>
+                                  <View style={styles.selectedDebtCopy}>
+                                    <Text numberOfLines={1} style={styles.selectedDebtTitle}>
+                                      {paymentTarget.name}
+                                    </Text>
+                                    <Text style={styles.selectedDebtMeta}>{formatDate(paymentTarget.due_date, locale)}</Text>
+                                  </View>
+                                  <View style={styles.selectedDebtBadge}>
+                                    <Text style={styles.selectedDebtBadgeText}>{paymentTargetStatus}</Text>
+                                  </View>
+                                </View>
+
+                                <View style={styles.selectedDebtStats}>
+                                  <View style={styles.selectedDebtStatCard}>
+                                    <Text style={styles.selectedDebtStatLabel}>{t('debt.modal.remainingPreview')}</Text>
+                                    <Text numberOfLines={1} style={styles.selectedDebtStatValue}>
+                                      {formatCurrency(paymentTargetRemaining, locale)}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.selectedDebtStatCard}>
+                                    <Text style={styles.selectedDebtStatLabel}>{t('debt.modal.installmentPreview')}</Text>
+                                    <Text numberOfLines={1} style={styles.selectedDebtStatValue}>
+                                      {formatCurrency(paymentTargetInstallment, locale)}
+                                    </Text>
+                                  </View>
+                                </View>
+                              </View>
+                            ) : null}
+                          </>
+                        ) : (
+                          <View style={styles.emptyOptionCard}>
+                            <Text style={styles.emptyOptionText}>{t('debt.modal.noDebtOptions')}</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.modalSectionCard}>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                            <MaterialCommunityIcons name="cash-fast" size={18} color={modalAccent} />
+                          </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('debt.modal.formSectionTitle')}</Text>
+                            <Text style={styles.modalSectionSubtitle}>{t('debt.modal.formSectionHelper')}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.fieldRow}>
+                          <View style={styles.fieldStackHalf}>
+                            <Text style={styles.fieldLabel}>{t('debt.form.amount')}</Text>
+                            <View style={styles.inputShell}>
+                              <TextInput
+                                value={paymentForm.amount}
+                                onChangeText={(text) =>
+                                  setPaymentForm((current) => ({
+                                    ...current,
+                                    amount: formatRupiahInput(text),
+                                  }))
+                                }
+                                keyboardType="number-pad"
+                                placeholder="1.000.000"
+                                placeholderTextColor={colors.shellTextSoft}
+                                style={styles.inputControl}
+                              />
+                            </View>
+                          </View>
+                          <View style={styles.fieldStackHalf}>
+                            <Text style={styles.fieldLabel}>{t('debt.form.paymentDate')}</Text>
+                            <View style={styles.inputShell}>
+                              <View style={styles.inputIconWrap}>
+                                <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
+                              </View>
+                              <TextInput
+                                value={paymentForm.paymentDate}
+                                onChangeText={(text) => setPaymentForm((current) => ({ ...current, paymentDate: text }))}
+                                placeholder="2026-04-16"
+                                placeholderTextColor={colors.shellTextSoft}
+                                style={styles.inputControl}
+                              />
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.modalSectionCard}>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                            <MaterialCommunityIcons name="paperclip" size={18} color={modalAccent} />
+                          </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('debt.modal.proofSectionTitle')}</Text>
+                            <Text style={styles.modalSectionSubtitle}>{t('debt.modal.proofSectionHelper')}</Text>
+                          </View>
+                        </View>
+
+                        <Pressable
+                          onPress={pickProofImage}
+                          style={[
+                            styles.uploadDropzone,
+                            proofSelected && {
+                              borderColor: alpha(modalAccent, 0.34),
+                              backgroundColor: alpha(modalAccent, isLight ? 0.08 : 0.12),
+                            },
+                          ]}>
+                          <View style={[styles.uploadDropzoneIcon, { backgroundColor: alpha(modalAccent, 0.14) }]}>
+                            <MaterialCommunityIcons
+                              name={proofSelected ? 'check-bold' : 'file-image-plus-outline'}
+                              size={20}
+                              color={modalAccent}
+                            />
+                          </View>
+                          <View style={styles.uploadDropzoneCopy}>
+                            <Text style={styles.uploadDropzoneTitle}>
+                              {proofSelected ? t('debt.form.changeProof') : t('debt.form.chooseProof')}
+                            </Text>
+                            <Text style={styles.uploadDropzoneSubtitle}>
+                              {proofSelected ? t('debt.modal.proofReady') : t('debt.form.noProofSelected')}
+                            </Text>
+                          </View>
+                          <View style={styles.uploadDropzoneBadge}>
+                            <Text style={styles.uploadDropzoneBadgeText}>{proofSelected ? proofBadgeLabel : 'IMG'}</Text>
+                          </View>
+                        </Pressable>
+
+                        <View style={[styles.proofFileCard, proofSelected && styles.proofFileCardActive]}>
+                          <View style={styles.proofFileIcon}>
+                            <MaterialCommunityIcons
+                              name={proofSelected ? 'file-check-outline' : 'file-outline'}
+                              size={18}
+                              color={proofSelected ? modalAccent : colors.shellTextMuted}
+                            />
+                          </View>
+                          <View style={styles.proofFileCopy}>
+                            <Text numberOfLines={1} style={styles.proofFileName}>
+                              {proofSelected ? paymentForm.proofName : t('debt.modal.proofMissing')}
+                            </Text>
+                            <Text style={styles.proofFileMeta}>
+                              {proofSelected ? t('debt.modal.proofReady') : t('debt.modal.proofSectionHelper')}
+                            </Text>
+                          </View>
+                          {proofSelected ? (
+                            <Pressable onPress={clearProofSelection} style={styles.proofRemoveButton}>
+                              <Text style={styles.proofRemoveText}>{t('debt.form.removeProof')}</Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
               </View>
 
               <View style={[styles.modalActions, keyboardOpen && styles.modalActionsKeyboard]}>
@@ -1768,20 +2080,20 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       justifyContent: 'flex-end',
     },
     modalSheet: {
-      borderTopLeftRadius: 28,
-      borderTopRightRadius: 28,
-      backgroundColor: colors.shellCard,
+      borderTopLeftRadius: 32,
+      borderTopRightRadius: 32,
+      backgroundColor: colors.shellBackground,
       paddingHorizontal: 18,
       paddingTop: 10,
-      paddingBottom: Math.max(18, bottomInset + 12),
+      paddingBottom: Math.max(12, bottomInset + 8),
       borderWidth: 1,
       borderColor: colors.shellBorder,
       maxHeight: '92%',
-      gap: 12,
+      gap: 14,
     },
     modalSheetKeyboard: {
       paddingTop: 8,
-      paddingBottom: Math.max(14, bottomInset + 8),
+      paddingBottom: Math.max(10, bottomInset + 6),
       gap: 10,
     },
     modalHandle: {
@@ -1789,7 +2101,7 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       width: 52,
       height: 5,
       borderRadius: 999,
-      backgroundColor: colors.shellCardMuted,
+      backgroundColor: alpha(colors.shellTextSoft, 0.46),
     },
     modalHeader: {
       flexDirection: 'row',
@@ -1804,12 +2116,13 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
     },
     modalBody: {
       gap: 16,
+      flexShrink: 1,
+      minHeight: 0,
     },
     modalBodyKeyboard: {
       gap: 12,
     },
     modalKicker: {
-      color: colors.secondary,
       fontSize: 10,
       fontWeight: '800',
       textTransform: 'uppercase',
@@ -1842,9 +2155,97 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.shellCardMuted,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
     },
-    formError: {
+    modalScroll: {
+      flexGrow: 0,
+    },
+    modalContent: {
+      gap: 14,
+      paddingBottom: 8,
+    },
+    modalContentKeyboard: {
+      gap: 10,
+    },
+    modalHeroCard: {
+      borderRadius: 28,
+      borderWidth: 1,
+      padding: 18,
+      gap: 16,
+    },
+    modalHeroTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+    },
+    modalHeroIcon: {
+      width: 52,
+      height: 52,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalHeroCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    modalHeroTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 18,
+      lineHeight: 22,
+      fontWeight: '900',
+    },
+    modalHeroText: {
+      color: colors.shellTextSecondary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    modalHeroMetrics: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    modalMetricCard: {
+      flex: 1,
+      minWidth: 0,
+      borderRadius: 18,
+      backgroundColor: alpha(colors.surfaceContainerLowest, 0.72),
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      gap: 4,
+    },
+    modalMetricLabel: {
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      lineHeight: 13,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.2,
+    },
+    modalMetricValue: {
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 15 : 16,
+      lineHeight: compact ? 20 : 22,
+      fontWeight: '900',
+      letterSpacing: -0.5,
+    },
+    formErrorCard: {
+      borderRadius: 18,
+      backgroundColor: alpha(colors.danger, 0.08),
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, 0.22),
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    formErrorText: {
+      flex: 1,
+      minWidth: 0,
       color: colors.danger,
       fontSize: 12,
       lineHeight: 18,
@@ -1869,34 +2270,88 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       gap: 10,
     },
     fieldLabel: {
-      color: colors.shellTextMuted,
+      color: colors.shellTextSecondary,
       fontSize: 10,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1.2,
     },
-    textField: {
-      minHeight: 52,
-      borderRadius: 16,
-      backgroundColor: colors.shellCardMuted,
+    modalSectionCard: {
+      borderRadius: 24,
+      backgroundColor: colors.shellCard,
       borderWidth: 1,
       borderColor: colors.shellBorder,
+      padding: 16,
+      gap: 14,
+    },
+    modalSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    modalSectionIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalSectionCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    modalSectionTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 19,
+      fontWeight: '800',
+    },
+    modalSectionSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 17,
+      fontWeight: '600',
+    },
+    inputShell: {
+      minHeight: 56,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    inputIconWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    inputControl: {
+      flex: 1,
+      minWidth: 0,
       color: colors.shellTextPrimary,
       fontSize: 14,
+      lineHeight: 20,
       fontWeight: '600',
-      paddingHorizontal: 14,
-      paddingVertical: 12,
+      paddingVertical: 16,
+      paddingRight: 12,
     },
     debtChipGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 8,
+      gap: 10,
     },
     debtChip: {
-      borderRadius: 999,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      backgroundColor: colors.shellCardMuted,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      backgroundColor: colors.shellCardSoft,
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
@@ -1912,42 +2367,214 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
     debtChipTextSelected: {
       color: colors.primary,
     },
-    uploadButton: {
-      minHeight: 52,
-      borderRadius: 16,
-      backgroundColor: colors.primary,
+    selectedDebtCard: {
+      borderRadius: 20,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 14,
+      gap: 12,
+    },
+    selectedDebtHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      paddingHorizontal: 16,
+      justifyContent: 'space-between',
+      gap: 10,
     },
-    uploadButtonText: {
-      color: colors.onPrimary,
-      fontSize: 13,
+    selectedDebtCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 3,
+    },
+    selectedDebtTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      fontWeight: '800',
+    },
+    selectedDebtMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    selectedDebtBadge: {
+      minHeight: 30,
+      borderRadius: 999,
+      backgroundColor: alpha(colors.primary, 0.12),
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+    },
+    selectedDebtBadgeText: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.9,
+    },
+    selectedDebtStats: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    selectedDebtStatCard: {
+      flex: 1,
+      minWidth: 0,
+      borderRadius: 16,
+      backgroundColor: colors.shellCard,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 4,
+    },
+    selectedDebtStatLabel: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1,
     },
-    uploadHint: {
+    selectedDebtStatValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '900',
+    },
+    emptyOptionCard: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+    },
+    emptyOptionText: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    uploadDropzone: {
+      minHeight: 88,
+      borderRadius: 22,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: alpha(colors.shellTextSoft, 0.36),
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    uploadDropzoneIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    uploadDropzoneCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 3,
+    },
+    uploadDropzoneTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    uploadDropzoneSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 17,
+      fontWeight: '600',
+    },
+    uploadDropzoneBadge: {
+      minWidth: 44,
+      height: 32,
+      borderRadius: 12,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 10,
+    },
+    uploadDropzoneBadgeText: {
+      color: colors.shellTextSecondary,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+    },
+    proofFileCard: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    proofFileCardActive: {
+      backgroundColor: alpha(colors.secondary, 0.08),
+      borderColor: alpha(colors.secondary, 0.2),
+    },
+    proofFileIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: colors.shellCard,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    proofFileCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    proofFileName: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    proofFileMeta: {
       color: colors.shellTextMuted,
       fontSize: 11,
       lineHeight: 16,
-      fontWeight: '500',
+      fontWeight: '600',
+    },
+    proofRemoveButton: {
+      minHeight: 34,
+      borderRadius: 12,
+      backgroundColor: alpha(colors.danger, 0.08),
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, 0.2),
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+    },
+    proofRemoveText: {
+      color: colors.danger,
+      fontSize: 11,
+      fontWeight: '800',
     },
     modalActions: {
       flexDirection: 'row',
       gap: 10,
-      paddingTop: 4,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor: colors.shellBorder,
     },
     modalActionsKeyboard: {
       paddingTop: 2,
+      borderTopWidth: 0,
     },
     cancelButton: {
       flex: 1,
-      minHeight: 52,
-      borderRadius: 16,
-      backgroundColor: colors.shellCardMuted,
+      minHeight: 54,
+      borderRadius: 18,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: 14,
@@ -1961,8 +2588,8 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
     },
     confirmButton: {
       flex: 1,
-      minHeight: 52,
-      borderRadius: 16,
+      minHeight: 54,
+      borderRadius: 18,
       backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
