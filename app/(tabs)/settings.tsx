@@ -237,6 +237,19 @@ export default function SettingsScreen() {
               rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
               style={styles.preferenceRow}
             />
+
+            <View style={styles.rowDivider} />
+
+            <SettingsRow
+              colors={colors}
+              icon="wallet-outline"
+              title={t('settings.wallets')}
+              subtitle={t('settings.walletsMeta')}
+              iconTone="primary"
+              onPress={() => router.push('/wallets')}
+              rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
+              style={styles.preferenceRow}
+            />
           </View>
         </View>
 

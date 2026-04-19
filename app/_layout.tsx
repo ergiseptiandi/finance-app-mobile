@@ -35,6 +35,7 @@ function RootNavigator() {
         <Stack.Screen name="reset-password" />
         <Stack.Screen name="register" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="wallets" />
         <Stack.Screen
           name="modal"
           options={{ presentation: 'modal', headerShown: true, title: t('common.modal') }}
