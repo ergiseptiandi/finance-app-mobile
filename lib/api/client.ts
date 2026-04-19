@@ -26,6 +26,12 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isErrorEnvelope = (value: unknown): value is ErrorEnvelope =>
   isObject(value) && typeof value.Message === 'string';
 
+const isFormData = (value: unknown): value is FormData =>
+  typeof FormData !== 'undefined' && value instanceof FormData;
+
+const isBlob = (value: unknown): value is Blob =>
+  typeof Blob !== 'undefined' && value instanceof Blob;
+
 const parseResponse = async (response: Response) => {
   const contentType = response.headers.get('content-type') ?? '';
   const raw = await response.text();
@@ -50,7 +56,13 @@ export const request = async <T>(url: string, options: RequestOptions = {}) => {
   const headers = new Headers(optionHeaders);
   headers.set('Accept', 'application/json');
 
-  if (body !== undefined && !headers.has('Content-Type')) {
+  const hasBinaryBody =
+    isFormData(body) ||
+    isBlob(body) ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body);
+
+  if (body !== undefined && !headers.has('Content-Type') && !hasBinaryBody) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -62,7 +74,12 @@ export const request = async <T>(url: string, options: RequestOptions = {}) => {
   const response = await fetch(url, {
     ...rest,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body:
+      body === undefined
+        ? undefined
+        : hasBinaryBody
+          ? (body as BodyInit)
+          : JSON.stringify(body),
   });
 
   const payload = await parseResponse(response);

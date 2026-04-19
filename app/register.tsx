@@ -99,7 +99,7 @@ export default function RegisterScreen() {
               <View style={[styles.grid, isWide && styles.gridWide]}>
                 <View style={[styles.heroColumn, isWide && styles.heroColumnWide]}>
                   <View style={styles.heroBadge}>
-                    <MaterialCommunityIcons name="sparkles" size={14} color={colors.primary} />
+                    <MaterialCommunityIcons name="star-outline" size={14} color={colors.primary} />
                     <Text style={styles.heroBadgeText}>{t('register.heroBadge')}</Text>
                   </View>
 
