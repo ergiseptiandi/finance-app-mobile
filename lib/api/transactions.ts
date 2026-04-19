@@ -12,6 +12,7 @@ export type TransactionType = 'income' | 'expense';
 export type TransactionRecord = {
   id: number;
   user_id: number;
+  wallet_id?: number | null;
   type: TransactionType;
   category: string;
   amount: number;
@@ -36,6 +37,7 @@ export type TransactionSummaryData = {
 };
 
 export type CreateTransactionPayload = {
+  wallet_id?: number;
   type: TransactionType;
   category: string;
   amount: number;
@@ -49,6 +51,7 @@ export type ListTransactionsParams = {
   month?: string;
   start_date?: string;
   end_date?: string;
+  wallet_id?: number;
   category?: string;
   type?: TransactionType;
   page?: number;

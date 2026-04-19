@@ -38,6 +38,7 @@ import {
   type TransactionSummaryData,
   type TransactionType,
 } from '@/lib/api/transactions';
+import { listWallets, type WalletRecord } from '@/lib/api/wallets';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { useAppLanguage } from '@/providers/language-provider';
@@ -54,6 +55,7 @@ type PaginationState = {
 
 type TransactionFormState = {
   id?: number;
+  walletId: number | null;
   type: TransactionType;
   category: string;
   amount: string;
@@ -68,6 +70,7 @@ type TransactionSection = {
 };
 
 type ActivityListFilters = {
+  walletId: number | null;
   type: ActivityFilterType;
   category: string;
   dateMode: ActivityDateFilterMode;
@@ -80,6 +83,7 @@ type ActivityCacheState = {
   summary: TransactionSummaryData;
   transactions: TransactionRecord[];
   categories: CategoryRecord[];
+  wallets: WalletRecord[];
   pagination: PaginationState;
 };
 
@@ -106,6 +110,7 @@ const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
 const getTodayInputValue = () => new Date().toISOString().slice(0, 10);
 
 const createDefaultActivityFilters = (): ActivityListFilters => ({
+  walletId: null,
   type: 'all',
   category: '',
   dateMode: 'month',
@@ -115,6 +120,7 @@ const createDefaultActivityFilters = (): ActivityListFilters => ({
 });
 
 const createEmptyTransactionForm = (): TransactionFormState => ({
+  walletId: null,
   type: 'expense',
   category: '',
   amount: '',
@@ -125,6 +131,7 @@ const createEmptyTransactionForm = (): TransactionFormState => ({
 const createTransactionListParams = (filters: ActivityListFilters, page: number, perPage: number) => ({
   page,
   per_page: perPage,
+  wallet_id: filters.walletId ?? undefined,
   type: filters.type === 'all' ? undefined : filters.type,
   category: filters.category || undefined,
   month: filters.dateMode === 'month' ? filters.month : undefined,
@@ -138,6 +145,7 @@ const createActivityCacheSuffix = (filters: ActivityListFilters) =>
     filters.month,
     filters.startDate,
     filters.endDate,
+    filters.walletId ?? 'all',
     filters.type,
     filters.category.trim().toLowerCase(),
   ].join('|');
@@ -285,6 +293,7 @@ const getFilterRangeDays = (startDate: string, endDate: string) => {
 
 const toTransactionForm = (record: TransactionRecord): TransactionFormState => ({
   id: record.id,
+  walletId: record.wallet_id ?? null,
   type: record.type,
   category: record.category,
   amount: formatCurrencyInput(String(record.amount)),
@@ -317,6 +326,8 @@ const toDaySectionKey = (value: string) => {
 
   return parsed.toISOString().slice(0, 10);
 };
+
+const isMainWalletName = (value?: string | null) => value?.trim().toLowerCase() === 'main';
 
 function SummaryStat({
   colors,
@@ -482,6 +493,7 @@ export default function ActivityScreen() {
   const [summary, setSummary] = useState<TransactionSummaryData>(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
+  const [wallets, setWallets] = useState<WalletRecord[]>([]);
   const [pagination, setPagination] = useState<PaginationState>(DEFAULT_PAGINATION);
   const [filters, setFilters] = useState<ActivityListFilters>(createDefaultActivityFilters);
   const [draftFilters, setDraftFilters] = useState<ActivityListFilters>(createDefaultActivityFilters);
@@ -534,6 +546,7 @@ export default function ActivityScreen() {
       setSummary(cached.data.summary);
       setTransactions(cached.data.transactions);
       setCategories(cached.data.categories);
+      setWallets(cached.data.wallets ?? []);
       setPagination(cached.data.pagination);
       setLoading(false);
     };
@@ -593,35 +606,46 @@ export default function ActivityScreen() {
           return;
         }
 
-        const [summaryResponse, transactionResponse, categoryResponse] = await withAuthorizedRequest((accessToken) =>
-          Promise.all([
+        const [summaryResponse, transactionResponse, categoryResponse, walletResponse] = await withAuthorizedRequest((accessToken) =>
+          Promise.allSettled([
             getTransactionSummary(accessToken),
             listTransactions(accessToken, createTransactionListParams(filters, 1, 10)),
             listCategories(accessToken),
+            listWallets(accessToken),
           ])
         );
 
-        setSummary(summaryResponse.Data ?? DEFAULT_SUMMARY);
-        setTransactions(transactionResponse.Data.data ?? []);
-        setCategories(categoryResponse.Data ?? []);
+        if (
+          summaryResponse.status !== 'fulfilled' ||
+          transactionResponse.status !== 'fulfilled' ||
+          categoryResponse.status !== 'fulfilled'
+        ) {
+          throw new Error('load_failed');
+        }
+
+        setSummary(summaryResponse.value.Data ?? DEFAULT_SUMMARY);
+        setTransactions(transactionResponse.value.Data.data ?? []);
+        setCategories(categoryResponse.value.Data ?? []);
+        setWallets(walletResponse.status === 'fulfilled' ? walletResponse.value.Data ?? [] : []);
         setPagination({
-          page: transactionResponse.Data.page ?? 1,
-          perPage: transactionResponse.Data.per_page ?? 10,
-          total: transactionResponse.Data.total ?? 0,
-          totalPages: transactionResponse.Data.total_pages ?? 1,
+          page: transactionResponse.value.Data.page ?? 1,
+          perPage: transactionResponse.value.Data.per_page ?? 10,
+          total: transactionResponse.value.Data.total ?? 0,
+          totalPages: transactionResponse.value.Data.total_pages ?? 1,
         });
 
         await writeScreenCache(
           buildScreenCacheKey('activity', session.user.id, createActivityCacheSuffix(filters)),
           {
-            summary: summaryResponse.Data ?? DEFAULT_SUMMARY,
-            transactions: transactionResponse.Data.data ?? [],
-            categories: categoryResponse.Data ?? [],
+            summary: summaryResponse.value.Data ?? DEFAULT_SUMMARY,
+            transactions: transactionResponse.value.Data.data ?? [],
+            categories: categoryResponse.value.Data ?? [],
+            wallets: walletResponse.status === 'fulfilled' ? walletResponse.value.Data ?? [] : [],
             pagination: {
-              page: transactionResponse.Data.page ?? 1,
-              perPage: transactionResponse.Data.per_page ?? 10,
-              total: transactionResponse.Data.total ?? 0,
-              totalPages: transactionResponse.Data.total_pages ?? 1,
+              page: transactionResponse.value.Data.page ?? 1,
+              perPage: transactionResponse.value.Data.per_page ?? 10,
+              total: transactionResponse.value.Data.total ?? 0,
+              totalPages: transactionResponse.value.Data.total_pages ?? 1,
             },
           }
         );
@@ -880,6 +904,7 @@ export default function ActivityScreen() {
 
     try {
       const payload = {
+        wallet_id: selectedTransactionWalletId ?? undefined,
         type: form.type,
         category: normalizedCategory,
         amount: normalizedAmount,
@@ -904,7 +929,7 @@ export default function ActivityScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [closeTransactionModal, form, loadActivity, t, withAuthorizedRequest]);
+  }, [closeTransactionModal, loadActivity, selectedTransactionWalletId, form, t, withAuthorizedRequest]);
 
   const handleDeleteTransaction = useCallback(async () => {
     if (!form.id) {
@@ -984,6 +1009,18 @@ export default function ActivityScreen() {
         .sort((left, right) => left.name.localeCompare(right.name)),
     [categories, form.type]
   );
+  const walletMap = useMemo(
+    () => new Map(wallets.map((wallet) => [wallet.id, wallet] as const)),
+    [wallets]
+  );
+  const walletOptions = useMemo(
+    () => [...wallets].sort((left, right) => left.name.localeCompare(right.name)),
+    [wallets]
+  );
+  const selectableWalletOptions = useMemo(
+    () => walletOptions.filter((wallet) => !isMainWalletName(wallet.name)),
+    [walletOptions]
+  );
   const filterCategories = useMemo(
     () =>
       [...new Set(categories.map((category) => category.name.trim()).filter(Boolean))].sort((left, right) =>
@@ -1001,6 +1038,14 @@ export default function ActivityScreen() {
     ? toCurrency(normalizedPreviewAmount, locale)
     : t('activity.transactions.modalAmountPending');
   const dateInputLabel = toDateInputLabel(form.date, locale);
+  const selectedTransactionWalletId =
+    form.walletId && walletMap.get(form.walletId) && !isMainWalletName(walletMap.get(form.walletId)?.name)
+      ? form.walletId
+      : null;
+  const selectedWalletLabel =
+    form.walletId && walletMap.get(form.walletId)
+      ? walletMap.get(form.walletId)?.name ?? t('activity.transactions.walletDefault')
+      : t('activity.transactions.walletDefault');
   const modalKicker = form.id
     ? t('activity.transactions.modalEditKicker')
     : t('activity.transactions.modalCreateKicker');
@@ -1008,13 +1053,19 @@ export default function ActivityScreen() {
     ? t('activity.transactions.modalIncomeHint')
     : t('activity.transactions.modalExpenseHint');
   const activeFilterCount =
+    (filters.walletId ? 1 : 0) +
     (filters.type !== 'all' ? 1 : 0) +
     (filters.category ? 1 : 0) +
     (filters.dateMode === 'range' || filters.month !== getCurrentMonthInputValue() ? 1 : 0);
+  const activeFilterWalletLabel =
+    filters.walletId && walletMap.get(filters.walletId)
+      ? walletMap.get(filters.walletId)?.name ?? ''
+      : '';
   const activeFilterChips = [
     filters.dateMode === 'month'
       ? toMonthInputLabel(filters.month, locale)
       : `${toDateInputLabel(filters.startDate, locale)} - ${toDateInputLabel(filters.endDate, locale)}`,
+    activeFilterWalletLabel,
     filters.type !== 'all'
       ? filters.type === 'income'
         ? t('activity.transactions.income')
@@ -1376,6 +1427,44 @@ export default function ActivityScreen() {
                     <View style={styles.modalSectionCard}>
                       <View style={styles.modalSectionHeader}>
                         <View style={[styles.modalSectionIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                          <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
+                        </View>
+                        <View style={styles.modalSectionCopy}>
+                          <Text style={styles.modalSectionTitle}>{t('activity.transactions.filterWalletTitle')}</Text>
+                          <Text style={styles.modalSectionSubtitle}>
+                            {t('activity.transactions.filterWalletHelper')}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.filterChipWrap}>
+                        <Pressable
+                          onPress={() => setDraftFilters((current) => ({ ...current, walletId: null }))}
+                          style={[styles.filterChip, !draftFilters.walletId && styles.filterChipActive]}>
+                          <Text style={[styles.filterChipText, !draftFilters.walletId && styles.filterChipTextActive]}>
+                            {t('activity.transactions.all')}
+                          </Text>
+                        </Pressable>
+
+                        {walletOptions.map((wallet) => {
+                          const active = draftFilters.walletId === wallet.id;
+                          return (
+                            <Pressable
+                              key={wallet.id}
+                              onPress={() => setDraftFilters((current) => ({ ...current, walletId: wallet.id }))}
+                              style={[styles.filterChip, active && styles.filterChipActive]}>
+                              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                {wallet.name}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    <View style={styles.modalSectionCard}>
+                      <View style={styles.modalSectionHeader}>
+                        <View style={[styles.modalSectionIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
                           <MaterialCommunityIcons name="swap-horizontal" size={18} color={colors.primary} />
                         </View>
                         <View style={styles.modalSectionCopy}>
@@ -1560,7 +1649,47 @@ export default function ActivityScreen() {
                                 {t('activity.transactions.modalCategoryCount', { count: availableCategories.length })}
                               </Text>
                             </View>
+                        </View>
+                      </View>
+
+                        <View style={styles.modalSectionCard}>
+                          <View style={styles.modalSectionHeader}>
+                            <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                              <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
+                            </View>
+                            <View style={styles.modalSectionCopy}>
+                              <Text style={styles.modalSectionTitle}>{t('activity.transactions.walletTitle')}</Text>
+                              <Text style={styles.modalSectionSubtitle}>
+                                {t('activity.transactions.walletHelper')}
+                              </Text>
+                            </View>
                           </View>
+
+                          <View style={styles.filterChipWrap}>
+                            <Pressable
+                              onPress={() => setForm((current) => ({ ...current, walletId: null }))}
+                              style={[styles.filterChip, !form.walletId && styles.filterChipActive]}>
+                              <Text style={[styles.filterChipText, !form.walletId && styles.filterChipTextActive]}>
+                                {t('activity.transactions.walletDefault')}
+                              </Text>
+                            </Pressable>
+
+                            {selectableWalletOptions.map((wallet) => {
+                              const active = form.walletId === wallet.id;
+                              return (
+                                <Pressable
+                                  key={wallet.id}
+                                  onPress={() => setForm((current) => ({ ...current, walletId: wallet.id }))}
+                                  style={[styles.filterChip, active && styles.filterChipActive]}>
+                                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                    {wallet.name}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+
+                          <Text style={styles.monthSummaryMeta}>{selectedWalletLabel}</Text>
                         </View>
 
                         <View style={styles.modalSectionCard}>

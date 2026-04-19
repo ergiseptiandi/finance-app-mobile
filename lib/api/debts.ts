@@ -44,6 +44,7 @@ export type InstallmentRecord = {
 export type DebtPaymentRecord = {
   id: number;
   debt_id: number;
+  wallet_id?: NumericLike;
   installment_id?: number | null;
   amount: NumericLike;
   payment_date: string;

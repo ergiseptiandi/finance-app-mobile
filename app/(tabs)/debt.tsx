@@ -41,6 +41,7 @@ import {
   type DebtRecord,
   type InstallmentRecord,
 } from '@/lib/api/debts';
+import { listWallets, type WalletRecord } from '@/lib/api/wallets';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 
 type StatusTone = 'danger' | 'success' | 'warning' | 'neutral';
@@ -54,6 +55,7 @@ type DebtFormState = {
 };
 
 type PaymentFormState = {
+  walletId: number | null;
   amount: string;
   paymentDate: string;
   proofName: string;
@@ -141,6 +143,7 @@ const createDebtFormFromRecord = (debt: DebtRecord | DebtDetail): DebtFormState 
 });
 
 const createEmptyPaymentForm = (): PaymentFormState => ({
+  walletId: null,
   amount: '',
   paymentDate: getTodayInputValue(),
   proofName: '',
@@ -274,6 +277,8 @@ const getTotalAmount = (debts: DebtRecord[], selector: (debt: DebtRecord) => num
 const selectNextPendingInstallment = (installments: InstallmentRecord[]) =>
   installments.find((installment) => installment.status !== 'paid') ?? null;
 
+const isMainWalletName = (value?: string | null) => value?.trim().toLowerCase() === 'main';
+
 export default function DebtScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -286,6 +291,7 @@ export default function DebtScreen() {
   const styles = createStyles(colors, compact, insets.top, insets.bottom);
 
   const [debts, setDebts] = useState<DebtRecord[]>([]);
+  const [wallets, setWallets] = useState<WalletRecord[]>([]);
   const [selectedDebtId, setSelectedDebtId] = useState<number | null>(null);
   const selectedDebtIdRef = useRef<number | null>(null);
   const [selectedDebt, setSelectedDebt] = useState<DebtDetail | null>(null);
@@ -420,9 +426,15 @@ export default function DebtScreen() {
           return;
         }
 
-        const response = await withAuthorizedRequest((accessToken) => listDebts(accessToken));
-        const nextDebts = response.Data ?? [];
+        const [debtResponse, walletResponse] = await withAuthorizedRequest((accessToken) =>
+          Promise.allSettled([listDebts(accessToken), listWallets(accessToken)])
+        );
+        if (debtResponse.status !== 'fulfilled') {
+          throw new Error('load_failed');
+        }
+        const nextDebts = debtResponse.value.Data ?? [];
         setDebts(nextDebts);
+        setWallets(walletResponse.status === 'fulfilled' ? walletResponse.value.Data ?? [] : []);
 
         const nextSelectedId =
           preferredDebtId && nextDebts.some((debt) => debt.id === preferredDebtId)
@@ -675,6 +687,10 @@ export default function DebtScreen() {
 
     try {
       const formData = new FormData();
+      const selectedPaymentWallet = paymentForm.walletId ? walletMap.get(paymentForm.walletId) : null;
+      if (selectedPaymentWallet && !isMainWalletName(selectedPaymentWallet.name)) {
+        formData.append('wallet_id', String(selectedPaymentWallet.id));
+      }
       formData.append('amount', toPlainAmountString(paymentForm.amount));
       formData.append('payment_date', toApiDate(paymentForm.paymentDate));
       formData.append(
@@ -706,9 +722,11 @@ export default function DebtScreen() {
     loadDebts,
     paymentForm.amount,
     paymentForm.paymentDate,
+    paymentForm.walletId,
     paymentForm.proofName,
     paymentForm.proofType,
     paymentForm.proofUri,
+    walletMap,
     selectedDebtId,
     t,
     withAuthorizedRequest,
@@ -781,6 +799,19 @@ export default function DebtScreen() {
 
     return debts.find((debt) => debt.id === (selectedDebtId ?? debts[0]?.id)) ?? selected ?? debts[0] ?? null;
   }, [debts, selected, selectedDebtId]);
+  const walletOptions = useMemo(() => [...wallets].sort((left, right) => left.name.localeCompare(right.name)), [wallets]);
+  const selectableWalletOptions = useMemo(
+    () => walletOptions.filter((wallet) => !isMainWalletName(wallet.name)),
+    [walletOptions]
+  );
+  const walletMap = useMemo(
+    () => new Map(walletOptions.map((wallet) => [wallet.id, wallet] as const)),
+    [walletOptions]
+  );
+  const selectedPaymentWalletLabel =
+    paymentForm.walletId && walletMap.has(paymentForm.walletId)
+      ? walletMap.get(paymentForm.walletId)?.name ?? t('debt.form.walletDefault')
+      : t('debt.form.walletDefault');
   const createTotalValue = parseCurrencyInput(debtForm.totalAmount);
   const createInstallmentValue = parseCurrencyInput(debtForm.monthlyInstallment);
   const paymentAmountValue = parseCurrencyInput(paymentForm.amount);
@@ -1108,20 +1139,29 @@ export default function DebtScreen() {
               <Text style={styles.timelineTitle}>{t('debt.paymentHistory')}</Text>
               {selected.payments?.length ? (
                 <View style={styles.paymentList}>
-                  {selected.payments.map((payment: DebtPaymentRecord) => (
-                    <View key={payment.id} style={styles.paymentItem}>
-                      <View style={styles.paymentIconWrap}>
-                        <MaterialCommunityIcons name="receipt-text-outline" size={16} color={colors.secondaryAccent} />
+                  {selected.payments.map((payment: DebtPaymentRecord) => {
+                    const paymentWalletLabel =
+                      payment.wallet_id && walletMap.has(Number(payment.wallet_id))
+                        ? walletMap.get(Number(payment.wallet_id))?.name ?? t('debt.form.walletDefault')
+                        : t('debt.form.walletDefault');
+
+                    return (
+                      <View key={payment.id} style={styles.paymentItem}>
+                        <View style={styles.paymentIconWrap}>
+                          <MaterialCommunityIcons name="receipt-text-outline" size={16} color={colors.secondaryAccent} />
+                        </View>
+                        <View style={styles.paymentCopy}>
+                          <Text style={styles.paymentTitle}>{formatCurrency(toNumber(payment.amount), locale)}</Text>
+                          <Text style={styles.paymentMeta}>
+                            {formatDayLabel(payment.payment_date, locale)} | {paymentWalletLabel}
+                          </Text>
+                        </View>
+                        <Text numberOfLines={1} style={styles.paymentProof}>
+                          {payment.proof_image}
+                        </Text>
                       </View>
-                      <View style={styles.paymentCopy}>
-                        <Text style={styles.paymentTitle}>{formatCurrency(toNumber(payment.amount), locale)}</Text>
-                        <Text style={styles.paymentMeta}>{formatDayLabel(payment.payment_date, locale)}</Text>
-                      </View>
-                      <Text numberOfLines={1} style={styles.paymentProof}>
-                        {payment.proof_image}
-                      </Text>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               ) : (
                 <Text style={styles.emptyInline}>{t('debt.noPayments')}</Text>
@@ -1483,6 +1523,44 @@ export default function DebtScreen() {
                             </View>
                           </View>
                         </View>
+                      </View>
+
+                      <View style={styles.modalSectionCard}>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                            <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
+                          </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('debt.form.walletTitle')}</Text>
+                            <Text style={styles.modalSectionSubtitle}>{t('debt.form.walletHelper')}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.debtChipGrid}>
+                          <Pressable
+                            onPress={() => setPaymentForm((current) => ({ ...current, walletId: null }))}
+                            style={[styles.debtChip, !paymentForm.walletId && styles.debtChipSelected]}>
+                            <Text style={[styles.debtChipText, !paymentForm.walletId && styles.debtChipTextSelected]}>
+                              {t('debt.form.walletDefault')}
+                            </Text>
+                          </Pressable>
+
+                          {selectableWalletOptions.map((wallet) => {
+                            const active = paymentForm.walletId === wallet.id;
+                            return (
+                              <Pressable
+                                key={wallet.id}
+                                onPress={() => setPaymentForm((current) => ({ ...current, walletId: wallet.id }))}
+                                style={[styles.debtChip, active && styles.debtChipSelected]}>
+                                <Text style={[styles.debtChipText, active && styles.debtChipTextSelected]}>
+                                  {wallet.name}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+
+                        <Text style={styles.emptyOptionText}>{selectedPaymentWalletLabel}</Text>
                       </View>
 
                       <View style={styles.modalSectionCard}>
