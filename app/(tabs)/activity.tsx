@@ -1038,8 +1038,11 @@ export default function ActivityScreen() {
     ? toCurrency(normalizedPreviewAmount, locale)
     : t('activity.transactions.modalAmountPending');
   const dateInputLabel = toDateInputLabel(form.date, locale);
+  const transactionWalletLocked = form.type === 'income';
   const selectedTransactionWalletId =
-    form.walletId && walletMap.get(form.walletId) && !isMainWalletName(walletMap.get(form.walletId)?.name)
+    transactionWalletLocked
+      ? null
+      : form.walletId && walletMap.get(form.walletId) && !isMainWalletName(walletMap.get(form.walletId)?.name)
       ? form.walletId
       : null;
   const selectedWalletLabel =
@@ -1660,36 +1663,46 @@ export default function ActivityScreen() {
                             <View style={styles.modalSectionCopy}>
                               <Text style={styles.modalSectionTitle}>{t('activity.transactions.walletTitle')}</Text>
                               <Text style={styles.modalSectionSubtitle}>
-                                {t('activity.transactions.walletHelper')}
+                                {transactionWalletLocked
+                                  ? t('activity.transactions.walletLockedIncome')
+                                  : t('activity.transactions.walletHelper')}
                               </Text>
                             </View>
                           </View>
 
-                          <View style={styles.filterChipWrap}>
-                            <Pressable
-                              onPress={() => setForm((current) => ({ ...current, walletId: null }))}
-                              style={[styles.filterChip, !form.walletId && styles.filterChipActive]}>
-                              <Text style={[styles.filterChipText, !form.walletId && styles.filterChipTextActive]}>
-                                {t('activity.transactions.walletDefault')}
-                              </Text>
-                            </Pressable>
-
-                            {selectableWalletOptions.map((wallet) => {
-                              const active = form.walletId === wallet.id;
-                              return (
+                          {transactionWalletLocked ? (
+                            <View style={styles.emptyOptionCard}>
+                              <Text style={styles.emptyOptionText}>{t('activity.transactions.walletDefault')}</Text>
+                            </View>
+                          ) : (
+                            <>
+                              <View style={styles.filterChipWrap}>
                                 <Pressable
-                                  key={wallet.id}
-                                  onPress={() => setForm((current) => ({ ...current, walletId: wallet.id }))}
-                                  style={[styles.filterChip, active && styles.filterChipActive]}>
-                                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                                    {wallet.name}
+                                  onPress={() => setForm((current) => ({ ...current, walletId: null }))}
+                                  style={[styles.filterChip, !form.walletId && styles.filterChipActive]}>
+                                  <Text style={[styles.filterChipText, !form.walletId && styles.filterChipTextActive]}>
+                                    {t('activity.transactions.walletDefault')}
                                   </Text>
                                 </Pressable>
-                              );
-                            })}
-                          </View>
 
-                          <Text style={styles.monthSummaryMeta}>{selectedWalletLabel}</Text>
+                                {selectableWalletOptions.map((wallet) => {
+                                  const active = form.walletId === wallet.id;
+                                  return (
+                                    <Pressable
+                                      key={wallet.id}
+                                      onPress={() => setForm((current) => ({ ...current, walletId: wallet.id }))}
+                                      style={[styles.filterChip, active && styles.filterChipActive]}>
+                                      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                        {wallet.name}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </View>
+
+                              <Text style={styles.monthSummaryMeta}>{selectedWalletLabel}</Text>
+                            </>
+                          )}
                         </View>
 
                         <View style={styles.modalSectionCard}>
@@ -1714,6 +1727,7 @@ export default function ActivityScreen() {
                                     setForm((current) => ({
                                       ...current,
                                       type,
+                                      walletId: type === 'income' ? null : current.walletId,
                                       category:
                                         current.type === type
                                           ? current.category

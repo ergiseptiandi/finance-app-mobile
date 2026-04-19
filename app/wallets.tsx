@@ -166,6 +166,8 @@ const sortTransfers = (transfers: WalletTransferRecord[]) =>
     return rightTime - leftTime;
   });
 
+const isMainWalletName = (value?: string | null) => value?.trim().toLowerCase() === 'main';
+
 export default function WalletsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const isDark = colorScheme === 'dark';
@@ -350,12 +352,17 @@ export default function WalletsScreen() {
   }, []);
 
   const startEditWallet = useCallback((wallet: WalletRecord) => {
+    if (isMainWalletName(wallet.name)) {
+      setError(t('wallets.mainLocked'));
+      return;
+    }
+
     setWalletForm({
       id: wallet.id,
       name: wallet.name,
       openingBalance: formatCurrencyInput(String(toNumber(wallet.opening_balance))),
     });
-  }, []);
+  }, [t]);
 
   const handleSaveWallet = useCallback(async () => {
     const normalizedName = walletForm.name.trim();
@@ -363,6 +370,14 @@ export default function WalletsScreen() {
     if (!normalizedName) {
       setError(t('wallets.validation'));
       return;
+    }
+
+    if (walletForm.id) {
+      const currentWallet = resolvedWallets.find((wallet) => wallet.id === walletForm.id);
+      if (currentWallet && isMainWalletName(currentWallet.name)) {
+        setError(t('wallets.mainLocked'));
+        return;
+      }
     }
 
     setWalletSubmitting(true);
@@ -391,10 +406,15 @@ export default function WalletsScreen() {
     } finally {
       setWalletSubmitting(false);
     }
-  }, [loadWallets, t, walletForm, withAuthorizedRequest]);
+  }, [loadWallets, resolvedWallets, t, walletForm, withAuthorizedRequest]);
 
   const handleDeleteWallet = useCallback(
     (wallet: WalletRecord) => {
+      if (isMainWalletName(wallet.name)) {
+        setError(t('wallets.mainLocked'));
+        return;
+      }
+
       Alert.alert(t('wallets.deleteTitle'), t('wallets.deleteMessage', { name: wallet.name }), [
         { text: t('common.cancel'), style: 'cancel' },
         {
@@ -644,11 +664,20 @@ export default function WalletsScreen() {
         ) : (
           <View style={styles.walletList}>
             {resolvedWallets.map((wallet) => (
-              <View key={wallet.id} style={styles.walletCard}>
+              <View
+                key={wallet.id}
+                style={[
+                  styles.walletCard,
+                  isMainWalletName(wallet.name) && styles.walletCardLocked,
+                ]}>
                 <View style={styles.walletCardMain}>
                   <View style={styles.walletCardTop}>
                     <View style={styles.walletIconShell}>
-                      <MaterialCommunityIcons name="wallet" size={18} color={colors.primary} />
+                      <MaterialCommunityIcons
+                        name={isMainWalletName(wallet.name) ? 'lock-outline' : 'wallet'}
+                        size={18}
+                        color={colors.primary}
+                      />
                     </View>
                     <View style={styles.walletCardCopy}>
                       <Text numberOfLines={1} style={styles.walletName}>
@@ -657,6 +686,9 @@ export default function WalletsScreen() {
                       <Text style={styles.walletMeta}>
                         {t('wallets.openingBalanceLabel')}: {formatCurrency(toNumber(wallet.opening_balance), locale)}
                       </Text>
+                      {isMainWalletName(wallet.name) ? (
+                        <Text style={styles.walletLockMeta}>{t('wallets.mainLocked')}</Text>
+                      ) : null}
                     </View>
                   </View>
 
@@ -673,21 +705,28 @@ export default function WalletsScreen() {
                     <MaterialCommunityIcons name="swap-horizontal" size={14} color={colors.onPrimary} />
                     <Text style={styles.walletActionPrimaryText}>{t('wallets.transferAction')}</Text>
                   </Pressable>
-                  <View style={styles.walletActionRow}>
-                    <Pressable onPress={() => startEditWallet(wallet)} style={styles.walletIconButton}>
-                      <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleDeleteWallet(wallet)}
-                      disabled={walletDeletingId === wallet.id}
-                      style={styles.walletIconButton}>
-                      {walletDeletingId === wallet.id ? (
-                        <ActivityIndicator size="small" color={colors.danger} />
-                      ) : (
-                        <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
-                      )}
-                    </Pressable>
-                  </View>
+                  {isMainWalletName(wallet.name) ? (
+                    <View style={styles.walletLockedChip}>
+                      <MaterialCommunityIcons name="shield-lock-outline" size={14} color={colors.primary} />
+                      <Text style={styles.walletLockedChipText}>{t('wallets.mainLockedShort')}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.walletActionRow}>
+                      <Pressable onPress={() => startEditWallet(wallet)} style={styles.walletIconButton}>
+                        <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleDeleteWallet(wallet)}
+                        disabled={walletDeletingId === wallet.id}
+                        style={styles.walletIconButton}>
+                        {walletDeletingId === wallet.id ? (
+                          <ActivityIndicator size="small" color={colors.danger} />
+                        ) : (
+                          <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+                        )}
+                      </Pressable>
+                    </View>
+                  )}
                 </View>
               </View>
             ))}
@@ -1149,6 +1188,10 @@ const createStyles = (colors: AppColorTheme, topInset: number) => {
       borderColor: colors.shellBorder,
       gap: 14,
     },
+    walletCardLocked: {
+      borderColor: alpha(colors.primary, 0.26),
+      backgroundColor: alpha(colors.primary, 0.05),
+    },
     walletCardMain: {
       gap: 14,
     },
@@ -1181,6 +1224,14 @@ const createStyles = (colors: AppColorTheme, topInset: number) => {
       fontSize: 11,
       lineHeight: 16,
       fontWeight: '500',
+    },
+    walletLockMeta: {
+      color: colors.primary,
+      fontSize: 10,
+      lineHeight: 14,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
     },
     walletBalanceShell: {
       borderRadius: 18,
@@ -1223,6 +1274,26 @@ const createStyles = (colors: AppColorTheme, topInset: number) => {
       alignItems: 'center',
       gap: 10,
       justifyContent: 'flex-end',
+    },
+    walletLockedChip: {
+      minHeight: 38,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      backgroundColor: alpha(colors.primary, 0.08),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.16),
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      alignSelf: 'flex-end',
+    },
+    walletLockedChipText: {
+      color: colors.primary,
+      fontSize: 11,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
     },
     walletIconButton: {
       width: 38,
