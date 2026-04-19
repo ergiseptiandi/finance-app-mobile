@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Pressable,
@@ -200,9 +201,11 @@ export default function ReportsScreen() {
     [t, withAuthorizedRequest]
   );
 
-  useEffect(() => {
-    loadReports();
-  }, [loadReports]);
+  useFocusEffect(
+    useCallback(() => {
+      loadReports();
+    }, [loadReports])
+  );
 
   const totalIncome = toNumber(remainingBalance?.total_income);
   const totalExpense = toNumber(remainingBalance?.total_expense);
@@ -276,10 +279,6 @@ export default function ReportsScreen() {
             <Text style={styles.title}>{t('reports.title')}</Text>
             <Text style={styles.subtitle}>{t('reports.subtitle')}</Text>
           </View>
-
-          <Pressable style={styles.refreshButton} onPress={() => loadReports(true)}>
-            <MaterialCommunityIcons name="refresh" size={16} color={colors.onPrimary} />
-          </Pressable>
         </View>
 
         {loading ? (
@@ -582,18 +581,6 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       fontSize: 15,
       lineHeight: 24,
       fontWeight: '500',
-    },
-    refreshButton: {
-      width: 42,
-      height: 42,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.primary,
-      shadowColor: alpha(colors.primary, 0.28),
-      shadowOpacity: 1,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 6 },
     },
     loadingState: {
       borderRadius: 28,

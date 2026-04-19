@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Pressable,
   ScrollView,
@@ -76,25 +77,27 @@ export default function SettingsScreen() {
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(true);
 
-  useEffect(() => {
-    let active = true;
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-    const loadSession = async () => {
-      const session = await getAuthSession();
-      if (!session || !active) {
-        return;
-      }
+      const loadSession = async () => {
+        const session = await getAuthSession();
+        if (!session || !active) {
+          return;
+        }
 
-      setDisplayName(session.user.name || 'Alex Sterling');
-      setEmail(session.user.email || 'alex.sterling@ledger.io');
-    };
+        setDisplayName(session.user.name || 'Alex Sterling');
+        setEmail(session.user.email || 'alex.sterling@ledger.io');
+      };
 
-    loadSession();
+      loadSession();
 
-    return () => {
-      active = false;
-    };
-  }, []);
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const initials = useMemo(() => {
     return displayName

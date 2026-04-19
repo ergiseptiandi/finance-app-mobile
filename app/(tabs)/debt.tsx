@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
@@ -278,10 +279,11 @@ export default function DebtScreen() {
 
   const [debts, setDebts] = useState<DebtRecord[]>([]);
   const [selectedDebtId, setSelectedDebtId] = useState<number | null>(null);
+  const selectedDebtIdRef = useRef<number | null>(null);
   const [selectedDebt, setSelectedDebt] = useState<DebtDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [, setDetailLoading] = useState(false);
   const [submittingInstallmentId, setSubmittingInstallmentId] = useState<number | null>(null);
   const [formVisible, setFormVisible] = useState(false);
   const [formMode, setFormMode] = useState<DebtFormMode>('create');
@@ -398,8 +400,14 @@ export default function DebtScreen() {
   );
 
   useEffect(() => {
-    loadDebts();
-  }, [loadDebts]);
+    selectedDebtIdRef.current = selectedDebtId;
+  }, [selectedDebtId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDebts(false, selectedDebtIdRef.current);
+    }, [loadDebts])
+  );
 
   useEffect(() => {
     if (!formVisible) {
@@ -749,10 +757,6 @@ export default function DebtScreen() {
               <MaterialCommunityIcons name="wallet-outline" size={14} color={colors.secondaryAccent} />
               <Text style={styles.heroBadgeText}>{t('debt.kicker')}</Text>
             </View>
-            <Pressable onPress={onRefresh} style={styles.heroAction}>
-              <MaterialCommunityIcons name="refresh" size={16} color={colors.onPrimary} />
-              <Text style={styles.heroActionText}>{t('debt.refresh')}</Text>
-            </Pressable>
           </View>
 
           <Text style={styles.heroTitle}>{t('debt.title')}</Text>
@@ -1517,11 +1521,6 @@ export default function DebtScreen() {
         </View>
       </Modal>
 
-      {(loading || detailLoading) && !debts.length ? null : (
-        <Pressable style={styles.fab} onPress={onRefresh}>
-          <MaterialCommunityIcons name="refresh" size={18} color={colors.shellFabIcon} />
-        </Pressable>
-      )}
     </View>
   );
 }
@@ -1637,22 +1636,6 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1.3,
-    },
-    heroAction: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      borderRadius: 14,
-      backgroundColor: alpha(colors.onPrimary, 0.14),
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-    },
-    heroActionText: {
-      color: colors.onPrimary,
-      fontSize: 11,
-      fontWeight: '800',
-      textTransform: 'uppercase',
-      letterSpacing: 1.1,
     },
     heroTitle: {
       color: colors.onPrimary,
@@ -2745,22 +2728,6 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1,
-    },
-    fab: {
-      position: 'absolute',
-      right: 16,
-      bottom: 116,
-      width: 44,
-      height: 44,
-      borderRadius: 12,
-      backgroundColor: colors.shellFab,
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: alpha(colors.shellFab, 0.4),
-      shadowOpacity: 1,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 18,
     },
   });
 

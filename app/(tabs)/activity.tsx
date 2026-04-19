@@ -3,6 +3,7 @@ import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -555,9 +556,11 @@ export default function ActivityScreen() {
     [filters, t, withAuthorizedRequest]
   );
 
-  useEffect(() => {
-    loadActivity();
-  }, [loadActivity]);
+  useFocusEffect(
+    useCallback(() => {
+      loadActivity();
+    }, [loadActivity])
+  );
 
   useEffect(() => {
     if (!transactionModalVisible) {
