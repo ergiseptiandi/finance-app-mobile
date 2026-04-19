@@ -69,7 +69,7 @@ export const request = async <T>(url: string, options: RequestOptions = {}) => {
 
   if (!response.ok) {
     const message = isErrorEnvelope(payload)
-      ? payload.Message
+      ? payload.Message ?? `Request failed with status ${response.status}`
       : `Request failed with status ${response.status}`;
     throw new ApiRequestError(response.status, message, payload);
   }

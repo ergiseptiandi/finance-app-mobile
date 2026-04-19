@@ -71,9 +71,39 @@ const formatSignedCurrency = (value: number, locale: string) => {
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
 
-const toShortMonth = (value: string, fallback: string, locale: string) => {
+const parseDateValue = (value: string) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-').map(Number);
+    return new Date(year, month - 1, 1);
+  }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+};
+
+const toDayLabel = (value: string, fallback: string, locale: string) => {
+  const date = parseDateValue(value);
+  if (!date) {
+    return fallback;
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+  }).format(date);
+};
+
+const toShortMonth = (value: string, fallback: string, locale: string) => {
+  const date = parseDateValue(value);
+  if (!date) {
     return fallback;
   }
 
@@ -94,9 +124,24 @@ const extractComparisonValue = (data: DashboardComparisonData | null, keys: stri
     if (typeof value === 'number') {
       return value;
     }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
   }
 
   return 0;
+};
+
+const formatExpenseCurrency = (value: number, locale: string) => {
+  if (value <= 0) {
+    return formatDetailCurrency(0, locale);
+  }
+
+  return formatSignedCurrency(-Math.abs(value), locale);
 };
 
 export default function DashboardScreen() {
@@ -211,9 +256,16 @@ export default function DashboardScreen() {
     loadDashboard();
   }, [loadDashboard]);
 
-  const currentBalance = summary?.total_balance ?? 1284092.42;
-  const liquidCashFlow = (summary?.monthly_income ?? 0) - (summary?.monthly_expense ?? 0);
+  const currentBalance = toNumber(summary?.total_balance);
+  const monthlyIncome = toNumber(summary?.monthly_income);
+  const monthlyExpense = toNumber(summary?.monthly_expense);
+  const liquidCashFlow = monthlyIncome - monthlyExpense;
   const todayExpense = extractComparisonValue(comparison, ['today_expense', 'today', 'todayAmount']);
+  const yesterdayExpense = extractComparisonValue(comparison, [
+    'yesterday_expense',
+    'yesterday',
+    'yesterdayAmount',
+  ]);
   const thisMonthExpense = extractComparisonValue(comparison, [
     'this_month_expense',
     'thisMonth',
@@ -225,23 +277,28 @@ export default function DashboardScreen() {
     'last_month',
   ]);
 
+  const salaryAmount = toNumber(expenseVsSalary?.salary_amount ?? expenseVsSalary?.salary);
+  const expenseAmount = toNumber(expenseVsSalary?.expense_amount ?? expenseVsSalary?.expense);
   const debtRatioRaw =
-    expenseVsSalary?.percentage ??
-    ((expenseVsSalary?.salary_amount ?? 0) > 0
-      ? (toNumber(expenseVsSalary?.expense_amount) / toNumber(expenseVsSalary?.salary_amount)) * 100
-      : 24);
+    toNumber(expenseVsSalary?.percentage) ||
+    (salaryAmount > 0 ? (expenseAmount / salaryAmount) * 100 : 0);
   const debtRatio = Math.max(0, Math.min(100, Math.round(debtRatioRaw)));
   const leverageRatio = Math.max(0.08, Math.min(0.99, debtRatio / 100));
 
   const monthlyMomentum =
     lastMonthExpense > 0
-      ? Math.abs(((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100)
-      : 12.4;
+      ? ((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100
+      : thisMonthExpense > 0
+        ? 100
+        : 0;
+  const momentumPrefix = monthlyMomentum > 0 ? '+' : '';
+  const momentumIcon = monthlyMomentum >= 0 ? 'trending-up' : 'trending-down';
+  const activeMonthLabel = new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date());
 
   const trendPoints = useMemo<TrendPoint[]>(() => {
     if (trendMode === 'daily' && dailySpending.length > 0) {
       return dailySpending.slice(-7).map((item, index, items) => ({
-        label: toShortMonth(item.date, `D${index + 1}`, locale),
+        label: toDayLabel(item.date, `D${index + 1}`, locale),
         value: toNumber(item.amount),
         active: index === items.length - 1,
       }));
@@ -249,7 +306,7 @@ export default function DashboardScreen() {
 
     if (monthlySpending.length > 0) {
       return monthlySpending.slice(-7).map((item, index, items) => ({
-        label: String(item.label ?? item.month ?? `M${index + 1}`).slice(0, 3).toUpperCase(),
+        label: toShortMonth(String(item.date ?? item.month ?? item.label ?? ''), `M${index + 1}`, locale),
         value: toNumber(item.amount),
         active: index === items.length - 2 || index === items.length - 1,
       }));
@@ -268,40 +325,33 @@ export default function DashboardScreen() {
 
   const trendPeak = Math.max(...trendPoints.map((item) => item.value), 1);
   const liquidProgress = Math.max(12, Math.min(100, debtRatio > 0 ? 100 - debtRatio : 72));
-  const projectedWorth = currentBalance * 1.17;
+  const projectedWorth = Math.max(0, currentBalance + Math.max(liquidCashFlow, 0) * 6);
 
   const activityItems = useMemo<ActivityItem[]>(
     () => [
       {
-        icon: 'cart-outline',
-        title: t('dashboard.activity.appleStoreBerlin'),
-        meta: t('dashboard.activity.appleStoreBerlinMeta'),
-        amount: formatSignedCurrency(-(todayExpense || 2199000), locale),
-        kind: t('dashboard.activity.debit4492'),
+        icon: 'calendar-today',
+        title: t('dashboard.activity.todayExpense'),
+        meta: t('dashboard.activity.todayExpenseMeta'),
+        amount: formatExpenseCurrency(todayExpense, locale),
+        kind: t('dashboard.activity.expense'),
       },
       {
-        icon: 'cash-fast',
-        title: t('dashboard.activity.inboundDividends'),
-        meta: t('dashboard.activity.inboundDividendsMeta'),
-        amount: formatSignedCurrency(
-          summary?.monthly_income ? summary.monthly_income * 0.12 : 840120,
-          locale
-        ),
-        kind: t('dashboard.activity.credit0012'),
-        positive: true,
+        icon: 'history',
+        title: t('dashboard.activity.yesterdayExpense'),
+        meta: t('dashboard.activity.yesterdayExpenseMeta'),
+        amount: formatExpenseCurrency(yesterdayExpense, locale),
+        kind: t('dashboard.activity.expense'),
       },
       {
-        icon: 'airplane',
-        title: t('dashboard.activity.lufthansaAirlines'),
-        meta: t('dashboard.activity.lufthansaAirlinesMeta'),
-        amount: formatSignedCurrency(
-          -(summary?.monthly_expense ? summary.monthly_expense * 0.22 : 1420000),
-          locale
-        ),
-        kind: t('dashboard.activity.debit4492'),
+        icon: 'calendar-month-outline',
+        title: t('dashboard.activity.monthExpense', { month: activeMonthLabel }),
+        meta: t('dashboard.activity.monthExpenseMeta'),
+        amount: formatExpenseCurrency(thisMonthExpense || monthlyExpense, locale),
+        kind: t('dashboard.activity.expense'),
       },
     ],
-    [locale, summary?.monthly_expense, summary?.monthly_income, t, todayExpense]
+    [activeMonthLabel, locale, monthlyExpense, t, thisMonthExpense, todayExpense, yesterdayExpense]
   );
 
   return (
@@ -352,9 +402,10 @@ export default function DashboardScreen() {
 
               <View style={styles.momentumRow}>
                 <View style={styles.momentumBadge}>
-                  <MaterialCommunityIcons name="trending-up" size={12} color={colors.secondaryAccent} />
+                  <MaterialCommunityIcons name={momentumIcon} size={12} color={colors.secondaryAccent} />
                   <Text style={styles.momentumBadgeText}>
-                    +{monthlyMomentum.toFixed(1)}% {t('dashboard.thisMonth')}
+                    {momentumPrefix}
+                    {monthlyMomentum.toFixed(1)}% {t('dashboard.thisMonth')}
                   </Text>
                 </View>
                 <Text numberOfLines={1} style={styles.momentumHint}>
@@ -372,7 +423,7 @@ export default function DashboardScreen() {
                     adjustsFontSizeToFit
                     minimumFontScale={0.75}
                     style={styles.liquidAmount}>
-                    {formatSignedCurrency(liquidCashFlow || 12400000, locale)}
+                    {formatSignedCurrency(liquidCashFlow, locale)}
                   </Text>
                 </View>
                 <View style={styles.cardIconShell}>
@@ -386,7 +437,7 @@ export default function DashboardScreen() {
 
               <View style={styles.liquidMetaRow}>
                 <Text numberOfLines={1} style={styles.cardMeta}>
-                  {t('dashboard.opEx')}: {formatCompactCurrency(summary?.monthly_expense ?? 4200000, locale)}
+                  {t('dashboard.opEx')}: {formatCompactCurrency(monthlyExpense, locale)}
                 </Text>
                 <Text numberOfLines={1} style={styles.cardMeta}>
                   {t('dashboard.burn')}: {debtRatio}%

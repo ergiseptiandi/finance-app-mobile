@@ -7,35 +7,47 @@ export type ApiEnvelope<T> = {
   Data: T;
 };
 
+type NumericLike = number | string | null;
+
 export type DashboardSummaryData = {
-  total_balance: number;
-  monthly_income: number;
-  monthly_expense: number;
+  total_balance: NumericLike;
+  monthly_income: NumericLike;
+  monthly_expense: NumericLike;
 };
 
 export type DailySpendingItem = {
   date: string;
-  amount: number;
+  amount: NumericLike;
 };
 
 export type MonthlySpendingItem = {
   month?: string;
   label?: string;
   date?: string;
-  amount: number;
+  amount: NumericLike;
 };
 
 export type DashboardComparisonData = {
-  today_expense?: number;
-  yesterday_expense?: number;
-  this_month_expense?: number;
-  last_month_expense?: number;
+  today_expense?: NumericLike;
+  yesterday_expense?: NumericLike;
+  this_month_expense?: NumericLike;
+  last_month_expense?: NumericLike;
+  today?: NumericLike;
+  yesterday?: NumericLike;
+  this_month?: NumericLike;
+  last_month?: NumericLike;
+  todayAmount?: NumericLike;
+  yesterdayAmount?: NumericLike;
+  thisMonth?: NumericLike;
+  lastMonth?: NumericLike;
 };
 
 export type ExpenseVsSalaryData = {
-  expense_amount?: number;
-  salary_amount?: number;
-  percentage?: number;
+  expense_amount?: NumericLike;
+  salary_amount?: NumericLike;
+  percentage?: NumericLike;
+  expense?: NumericLike;
+  salary?: NumericLike;
 };
 
 export const getDashboardSummary = (accessToken: string) =>
