@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Modal,
   Pressable,
   RefreshControl,
@@ -8,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  Platform,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -222,7 +224,7 @@ export default function DebtScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const compact = width < 380;
-  const styles = createStyles(colors, compact, insets.top);
+  const styles = createStyles(colors, compact, insets.top, insets.bottom);
 
   const [debts, setDebts] = useState<DebtRecord[]>([]);
   const [selectedDebtId, setSelectedDebtId] = useState<number | null>(null);
@@ -237,8 +239,11 @@ export default function DebtScreen() {
   const [formError, setFormError] = useState('');
   const [debtForm, setDebtForm] = useState<DebtFormState>(createEmptyDebtForm);
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>(createEmptyPaymentForm);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
+  const keyboardOpen = keyboardHeight > 0;
+  const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
 
   const withAuthorizedRequest = useCallback(async <T,>(task: (accessToken: string) => Promise<T>) => {
     const session = await getAuthSession();
@@ -345,6 +350,28 @@ export default function DebtScreen() {
   useEffect(() => {
     loadDebts();
   }, [loadDebts]);
+
+  useEffect(() => {
+    if (!formVisible) {
+      setKeyboardHeight(0);
+      return;
+    }
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [formVisible]);
 
   const onRefresh = useCallback(() => {
     loadDebts(true, selectedDebtId);
@@ -894,174 +921,178 @@ export default function DebtScreen() {
       <Modal
         visible={formVisible}
         transparent
-        animationType="fade"
+        animationType="slide"
         statusBarTranslucent
         onRequestClose={closeForm}>
         <View style={styles.modalBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeForm} />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
+          <View style={[styles.modalKeyboard, keyboardOpen && { paddingBottom: modalLift }]}>
+            <View style={[styles.modalSheet, keyboardOpen && styles.modalSheetKeyboard]}>
+              <View style={styles.modalHandle} />
 
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderCopy}>
-                <Text style={styles.modalKicker}>
-                  {formMode === 'create' ? t('debt.createKicker') : t('debt.paymentKicker')}
-                </Text>
-                <Text style={styles.modalTitle}>
-                  {formMode === 'create' ? t('debt.createTitle') : t('debt.paymentTitle')}
-                </Text>
-                <Text style={styles.modalSubtitle}>
-                  {formMode === 'create' ? t('debt.createSubtitle') : t('debt.paymentSubtitle')}
-                </Text>
-              </View>
-
-              <Pressable onPress={closeForm} style={styles.modalClose}>
-                <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
-              </Pressable>
-            </View>
-
-            {!!formError && <Text style={styles.formError}>{formError}</Text>}
-
-            {formMode === 'create' ? (
-              <View style={styles.formStack}>
-                <View style={styles.fieldStack}>
-                  <Text style={styles.fieldLabel}>{t('debt.form.name')}</Text>
-                  <TextInput
-                    value={debtForm.name}
-                    onChangeText={(text) => setDebtForm((current) => ({ ...current, name: text }))}
-                    placeholder={t('debt.form.namePlaceholder')}
-                    placeholderTextColor={colors.shellTextSoft}
-                    style={styles.textField}
-                  />
-                </View>
-
-                <View style={styles.fieldRow}>
-                  <View style={styles.fieldStackHalf}>
-                    <Text style={styles.fieldLabel}>{t('debt.form.totalAmount')}</Text>
-                    <TextInput
-                      value={debtForm.totalAmount}
-                      onChangeText={(text) =>
-                        setDebtForm((current) => ({ ...current, totalAmount: text.replace(/[^\d]/g, '') }))
-                      }
-                      keyboardType="number-pad"
-                      placeholder="12000000"
-                      placeholderTextColor={colors.shellTextSoft}
-                      style={styles.textField}
-                    />
-                  </View>
-                  <View style={styles.fieldStackHalf}>
-                    <Text style={styles.fieldLabel}>{t('debt.form.monthlyInstallment')}</Text>
-                    <TextInput
-                      value={debtForm.monthlyInstallment}
-                      onChangeText={(text) =>
-                        setDebtForm((current) => ({
-                          ...current,
-                          monthlyInstallment: text.replace(/[^\d]/g, ''),
-                        }))
-                      }
-                      keyboardType="number-pad"
-                      placeholder="1000000"
-                      placeholderTextColor={colors.shellTextSoft}
-                      style={styles.textField}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.fieldStack}>
-                  <Text style={styles.fieldLabel}>{t('debt.form.dueDate')}</Text>
-                  <TextInput
-                    value={debtForm.dueDate}
-                    onChangeText={(text) => setDebtForm((current) => ({ ...current, dueDate: text }))}
-                    placeholder="2026-04-16"
-                    placeholderTextColor={colors.shellTextSoft}
-                    style={styles.textField}
-                  />
-                </View>
-              </View>
-            ) : (
-              <View style={styles.formStack}>
-                <View style={styles.fieldStack}>
-                  <Text style={styles.fieldLabel}>{t('debt.form.targetDebt')}</Text>
-                  <View style={styles.debtChipGrid}>
-                    {debts.map((debt) => {
-                      const isSelectedDebt = debt.id === (selectedDebtId ?? debts[0]?.id);
-
-                      return (
-                        <Pressable
-                          key={debt.id}
-                          onPress={() => setSelectedDebtId(debt.id)}
-                          style={[styles.debtChip, isSelectedDebt && styles.debtChipSelected]}>
-                          <Text style={[styles.debtChipText, isSelectedDebt && styles.debtChipTextSelected]}>
-                            {debt.name}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                <View style={styles.fieldRow}>
-                  <View style={styles.fieldStackHalf}>
-                    <Text style={styles.fieldLabel}>{t('debt.form.amount')}</Text>
-                    <TextInput
-                      value={paymentForm.amount}
-                      onChangeText={(text) =>
-                        setPaymentForm((current) => ({ ...current, amount: text.replace(/[^\d]/g, '') }))
-                      }
-                      keyboardType="number-pad"
-                      placeholder="1000000"
-                      placeholderTextColor={colors.shellTextSoft}
-                      style={styles.textField}
-                    />
-                  </View>
-                  <View style={styles.fieldStackHalf}>
-                    <Text style={styles.fieldLabel}>{t('debt.form.paymentDate')}</Text>
-                    <TextInput
-                      value={paymentForm.paymentDate}
-                      onChangeText={(text) => setPaymentForm((current) => ({ ...current, paymentDate: text }))}
-                      placeholder="2026-04-16"
-                      placeholderTextColor={colors.shellTextSoft}
-                      style={styles.textField}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.fieldStack}>
-                  <Text style={styles.fieldLabel}>{t('debt.form.proofImage')}</Text>
-                  <Pressable onPress={pickProofImage} style={styles.uploadButton}>
-                    <MaterialCommunityIcons name="paperclip" size={16} color={colors.onPrimary} />
-                    <Text style={styles.uploadButtonText}>
-                      {paymentForm.proofName ? t('debt.form.changeProof') : t('debt.form.chooseProof')}
+              <View style={[styles.modalBody, keyboardOpen && styles.modalBodyKeyboard]}>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderCopy}>
+                    <Text style={styles.modalKicker}>
+                      {formMode === 'create' ? t('debt.createKicker') : t('debt.paymentKicker')}
                     </Text>
+                    <Text style={[styles.modalTitle, keyboardOpen && styles.modalTitleKeyboard]}>
+                      {formMode === 'create' ? t('debt.createTitle') : t('debt.paymentTitle')}
+                    </Text>
+                    <Text style={[styles.modalSubtitle, keyboardOpen && styles.modalSubtitleKeyboard]}>
+                      {formMode === 'create' ? t('debt.createSubtitle') : t('debt.paymentSubtitle')}
+                    </Text>
+                  </View>
+
+                  <Pressable onPress={closeForm} style={styles.modalClose}>
+                    <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
                   </Pressable>
-                  <Text style={styles.uploadHint}>
-                    {paymentForm.proofName ? paymentForm.proofName : t('debt.form.noProofSelected')}
-                  </Text>
                 </View>
-              </View>
-            )}
 
-            <View style={styles.modalActions}>
-              <Pressable onPress={closeForm} style={styles.cancelButton}>
-                <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
-              </Pressable>
+                {!!formError && <Text style={styles.formError}>{formError}</Text>}
 
-              <Pressable
-                onPress={formMode === 'create' ? submitDebtForm : submitPaymentForm}
-                disabled={formSubmitting}
-                style={({ pressed }) => [
-                  styles.confirmButton,
-                  pressed && styles.confirmButtonPressed,
-                  formSubmitting && styles.confirmButtonDisabled,
-                ]}>
-                {formSubmitting ? (
-                  <ActivityIndicator color={colors.onPrimary} />
+                {formMode === 'create' ? (
+                  <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
+                    <View style={styles.fieldStack}>
+                      <Text style={styles.fieldLabel}>{t('debt.form.name')}</Text>
+                      <TextInput
+                        value={debtForm.name}
+                        onChangeText={(text) => setDebtForm((current) => ({ ...current, name: text }))}
+                        placeholder={t('debt.form.namePlaceholder')}
+                        placeholderTextColor={colors.shellTextSoft}
+                        style={styles.textField}
+                      />
+                    </View>
+
+                    <View style={styles.fieldRow}>
+                      <View style={styles.fieldStackHalf}>
+                        <Text style={styles.fieldLabel}>{t('debt.form.totalAmount')}</Text>
+                        <TextInput
+                          value={debtForm.totalAmount}
+                          onChangeText={(text) =>
+                            setDebtForm((current) => ({ ...current, totalAmount: text.replace(/[^\d]/g, '') }))
+                          }
+                          keyboardType="number-pad"
+                          placeholder="12000000"
+                          placeholderTextColor={colors.shellTextSoft}
+                          style={styles.textField}
+                        />
+                      </View>
+                      <View style={styles.fieldStackHalf}>
+                        <Text style={styles.fieldLabel}>{t('debt.form.monthlyInstallment')}</Text>
+                        <TextInput
+                          value={debtForm.monthlyInstallment}
+                          onChangeText={(text) =>
+                            setDebtForm((current) => ({
+                              ...current,
+                              monthlyInstallment: text.replace(/[^\d]/g, ''),
+                            }))
+                          }
+                          keyboardType="number-pad"
+                          placeholder="1000000"
+                          placeholderTextColor={colors.shellTextSoft}
+                          style={styles.textField}
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.fieldStack}>
+                      <Text style={styles.fieldLabel}>{t('debt.form.dueDate')}</Text>
+                      <TextInput
+                        value={debtForm.dueDate}
+                        onChangeText={(text) => setDebtForm((current) => ({ ...current, dueDate: text }))}
+                        placeholder="2026-04-16"
+                        placeholderTextColor={colors.shellTextSoft}
+                        style={styles.textField}
+                      />
+                    </View>
+                  </View>
                 ) : (
-                  <Text style={styles.confirmButtonText}>
-                    {formMode === 'create' ? t('debt.form.createSubmit') : t('debt.form.paymentSubmit')}
-                  </Text>
+                  <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
+                    <View style={styles.fieldStack}>
+                      <Text style={styles.fieldLabel}>{t('debt.form.targetDebt')}</Text>
+                      <View style={styles.debtChipGrid}>
+                        {debts.map((debt) => {
+                          const isSelectedDebt = debt.id === (selectedDebtId ?? debts[0]?.id);
+
+                          return (
+                            <Pressable
+                              key={debt.id}
+                              onPress={() => setSelectedDebtId(debt.id)}
+                              style={[styles.debtChip, isSelectedDebt && styles.debtChipSelected]}>
+                              <Text style={[styles.debtChipText, isSelectedDebt && styles.debtChipTextSelected]}>
+                                {debt.name}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    <View style={styles.fieldRow}>
+                      <View style={styles.fieldStackHalf}>
+                        <Text style={styles.fieldLabel}>{t('debt.form.amount')}</Text>
+                        <TextInput
+                          value={paymentForm.amount}
+                          onChangeText={(text) =>
+                            setPaymentForm((current) => ({ ...current, amount: text.replace(/[^\d]/g, '') }))
+                          }
+                          keyboardType="number-pad"
+                          placeholder="1000000"
+                          placeholderTextColor={colors.shellTextSoft}
+                          style={styles.textField}
+                        />
+                      </View>
+                      <View style={styles.fieldStackHalf}>
+                        <Text style={styles.fieldLabel}>{t('debt.form.paymentDate')}</Text>
+                        <TextInput
+                          value={paymentForm.paymentDate}
+                          onChangeText={(text) => setPaymentForm((current) => ({ ...current, paymentDate: text }))}
+                          placeholder="2026-04-16"
+                          placeholderTextColor={colors.shellTextSoft}
+                          style={styles.textField}
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.fieldStack}>
+                      <Text style={styles.fieldLabel}>{t('debt.form.proofImage')}</Text>
+                      <Pressable onPress={pickProofImage} style={styles.uploadButton}>
+                        <MaterialCommunityIcons name="paperclip" size={16} color={colors.onPrimary} />
+                        <Text style={styles.uploadButtonText}>
+                          {paymentForm.proofName ? t('debt.form.changeProof') : t('debt.form.chooseProof')}
+                        </Text>
+                      </Pressable>
+                      <Text style={styles.uploadHint}>
+                        {paymentForm.proofName ? paymentForm.proofName : t('debt.form.noProofSelected')}
+                      </Text>
+                    </View>
+                  </View>
                 )}
-              </Pressable>
+              </View>
+
+              <View style={[styles.modalActions, keyboardOpen && styles.modalActionsKeyboard]}>
+                <Pressable onPress={closeForm} style={styles.cancelButton}>
+                  <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={formMode === 'create' ? submitDebtForm : submitPaymentForm}
+                  disabled={formSubmitting}
+                  style={({ pressed }) => [
+                    styles.confirmButton,
+                    pressed && styles.confirmButtonPressed,
+                    formSubmitting && styles.confirmButtonDisabled,
+                  ]}>
+                  {formSubmitting ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.confirmButtonText}>
+                      {formMode === 'create' ? t('debt.form.createSubmit') : t('debt.form.paymentSubmit')}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -1144,7 +1175,7 @@ function StatusChip({
   );
 }
 
-const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number) =>
+const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number, bottomInset: number) =>
   StyleSheet.create({
     root: {
       flex: 1,
@@ -1732,16 +1763,26 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       backgroundColor: alpha(colors.inverseSurface, 0.56),
       justifyContent: 'flex-end',
     },
+    modalKeyboard: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
     modalSheet: {
       borderTopLeftRadius: 28,
       borderTopRightRadius: 28,
       backgroundColor: colors.shellCard,
       paddingHorizontal: 18,
       paddingTop: 10,
-      paddingBottom: Math.max(18, Math.round(topInset * 0.5)),
-      gap: 16,
+      paddingBottom: Math.max(18, bottomInset + 12),
       borderWidth: 1,
       borderColor: colors.shellBorder,
+      maxHeight: '92%',
+      gap: 12,
+    },
+    modalSheetKeyboard: {
+      paddingTop: 8,
+      paddingBottom: Math.max(14, bottomInset + 8),
+      gap: 10,
     },
     modalHandle: {
       alignSelf: 'center',
@@ -1761,6 +1802,12 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       minWidth: 0,
       gap: 4,
     },
+    modalBody: {
+      gap: 16,
+    },
+    modalBodyKeyboard: {
+      gap: 12,
+    },
     modalKicker: {
       color: colors.secondary,
       fontSize: 10,
@@ -1775,11 +1822,19 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       fontWeight: '900',
       letterSpacing: -1,
     },
+    modalTitleKeyboard: {
+      fontSize: compact ? 21 : 22,
+      lineHeight: compact ? 26 : 28,
+    },
     modalSubtitle: {
       color: colors.shellTextMuted,
       fontSize: 13,
       lineHeight: 20,
       fontWeight: '500',
+    },
+    modalSubtitleKeyboard: {
+      fontSize: 12,
+      lineHeight: 17,
     },
     modalClose: {
       width: 38,
@@ -1797,6 +1852,9 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
     },
     formStack: {
       gap: 14,
+    },
+    formStackKeyboard: {
+      gap: 10,
     },
     fieldStack: {
       gap: 8,
@@ -1881,6 +1939,9 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       flexDirection: 'row',
       gap: 10,
       paddingTop: 4,
+    },
+    modalActionsKeyboard: {
+      paddingTop: 2,
     },
     cancelButton: {
       flex: 1,

@@ -192,28 +192,36 @@ function SummaryStat({
   showProgress?: boolean;
   progress?: number;
 }) {
+  const isLight = colors === Colors.light;
   const accentMap = {
     primary: {
-      background: alpha(colors.primary, 0.12),
+      background: alpha(colors.primary, isLight ? 0.08 : 0.14),
       fill: colors.primary,
-      metaColor: colors.secondaryAccent,
+      borderColor: alpha(colors.primary, isLight ? 0.14 : 0.24),
+      metaColor: isLight ? colors.secondary : colors.secondaryAccent,
     },
     secondary: {
-      background: alpha(colors.surfaceContainerHigh, 0.16),
-      fill: colors.primaryContainer,
-      metaColor: colors.shellTextMuted,
+      background: isLight ? colors.shellCardSoft : alpha(colors.surfaceContainerHigh, 0.16),
+      fill: isLight ? colors.primary : colors.primaryContainer,
+      borderColor: alpha(colors.primary, isLight ? 0.08 : 0.18),
+      metaColor: colors.shellTextSecondary,
     },
     teal: {
-      background: alpha(colors.secondary, 0.12),
-      fill: colors.secondaryAccent,
-      metaColor: colors.secondaryAccent,
+      background: alpha(colors.secondary, isLight ? 0.08 : 0.12),
+      fill: isLight ? colors.secondary : colors.secondaryAccent,
+      borderColor: alpha(colors.secondary, isLight ? 0.14 : 0.22),
+      metaColor: colors.secondary,
     },
   } as const;
 
   const palette = accentMap[accent];
 
   return (
-    <View style={[summaryStyles(colors).card, { backgroundColor: palette.background }]}>
+    <View
+      style={[
+        summaryStyles(colors).card,
+        { backgroundColor: palette.background, borderColor: palette.borderColor },
+      ]}>
       <Text style={summaryStyles(colors).title}>{title}</Text>
       <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={summaryStyles(colors).value}>
         {value}
@@ -880,6 +888,7 @@ const summaryStyles = (colors: AppColorTheme) =>
       paddingVertical: 22,
       gap: 12,
       overflow: 'hidden',
+      borderWidth: 1,
     },
     title: {
       color: colors.shellTextMuted,
