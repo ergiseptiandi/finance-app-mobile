@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import {
   ActivityIndicator,
   Alert,
@@ -34,7 +38,6 @@ import {
   getDebtInstallments,
   getDebtPayments,
   listDebts,
-  markInstallmentAsPaid,
   updateDebt,
   type DebtDetail,
   type DebtPaymentRecord,
@@ -61,6 +64,13 @@ type PaymentFormState = {
   proofName: string;
   proofUri: string;
   proofType: string;
+};
+
+type OpenPaymentFormOptions = {
+  debtId?: number;
+  locked?: boolean;
+  amount?: string;
+  paymentDate?: string;
 };
 
 type DebtCacheState = {
@@ -305,6 +315,9 @@ export default function DebtScreen() {
   const [formError, setFormError] = useState('');
   const [debtForm, setDebtForm] = useState<DebtFormState>(createEmptyDebtForm);
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>(createEmptyPaymentForm);
+  const [paymentTargetDebtId, setPaymentTargetDebtId] = useState<number | null>(null);
+  const [paymentTargetLocked, setPaymentTargetLocked] = useState(false);
+  const [iosPaymentDatePickerVisible, setIosPaymentDatePickerVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
@@ -512,29 +525,20 @@ export default function DebtScreen() {
   );
 
   const handleMarkPaid = useCallback(
-    async (installment: InstallmentRecord) => {
-      if (!selectedDebtId) {
+    (installment: InstallmentRecord) => {
+      const targetDebtId = installment.debt_id || selectedDebtId || debts[0]?.id || null;
+      if (!targetDebtId) {
         return;
       }
 
       setSubmittingInstallmentId(installment.id);
-
-      try {
-        await withAuthorizedRequest((accessToken) =>
-          markInstallmentAsPaid(accessToken, selectedDebtId, installment.id, {
-            paid_at: new Date().toISOString(),
-          })
-        );
-        await loadDebts(true, selectedDebtId);
-      } catch (err) {
-        if (!(err instanceof Error && err.message === 'missing_session')) {
-          setDetailError(t('debt.partialError'));
-        }
-      } finally {
-        setSubmittingInstallmentId(null);
-      }
+      openPaymentForm({
+        debtId: targetDebtId,
+        locked: true,
+        amount: formatRupiahInput(String(toNumber(installment.amount))),
+      });
     },
-    [loadDebts, selectedDebtId, t, withAuthorizedRequest]
+    [debts, openPaymentForm, selectedDebtId]
   );
 
   const closeForm = useCallback(() => {
@@ -542,6 +546,9 @@ export default function DebtScreen() {
     setFormError('');
     setDebtForm(createEmptyDebtForm());
     setPaymentForm(createEmptyPaymentForm());
+    setPaymentTargetDebtId(null);
+    setPaymentTargetLocked(false);
+    setIosPaymentDatePickerVisible(false);
   }, []);
 
   const openCreateDebtForm = useCallback(() => {
@@ -562,16 +569,20 @@ export default function DebtScreen() {
     setDebtForm(createDebtFormFromRecord(selectedDebt));
   }, [selectedDebt]);
 
-  const openPaymentForm = useCallback(() => {
+  const openPaymentForm = useCallback((options: OpenPaymentFormOptions = {}) => {
+    const targetDebtId = options.debtId ?? selectedDebtId ?? debts[0]?.id ?? null;
     setFormMode('payment');
     setFormVisible(true);
     setFormError('');
-    if (!selectedDebtId && debts[0]) {
-      setSelectedDebtId(debts[0].id);
+    setPaymentTargetDebtId(targetDebtId);
+    setPaymentTargetLocked(Boolean(options.locked));
+    if (targetDebtId) {
+      setSelectedDebtId(targetDebtId);
     }
     setPaymentForm((current) => ({
       ...createEmptyPaymentForm(),
       amount:
+        options.amount ||
         current.amount ||
         formatRupiahInput(
           String(
@@ -583,6 +594,7 @@ export default function DebtScreen() {
               : 0
           )
         ),
+      paymentDate: options.paymentDate || current.paymentDate || getTodayInputValue(),
     }));
   }, [debts, selectedDebt, selectedDebtId]);
 
@@ -614,6 +626,34 @@ export default function DebtScreen() {
       proofType: '',
     }));
   }, []);
+
+  const handlePaymentDateChange = useCallback(
+    (_event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (selectedDate) {
+        setPaymentForm((current) => ({ ...current, paymentDate: selectedDate.toISOString().slice(0, 10) }));
+      }
+
+      if (Platform.OS === 'ios') {
+        setIosPaymentDatePickerVisible(false);
+      }
+    },
+    []
+  );
+
+  const openPaymentDatePicker = useCallback(() => {
+    const currentDate = paymentForm.paymentDate ? new Date(`${paymentForm.paymentDate}T00:00:00`) : new Date();
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: currentDate,
+        mode: 'date',
+        onChange: handlePaymentDateChange,
+      });
+      return;
+    }
+
+    setIosPaymentDatePickerVisible(true);
+  }, [handlePaymentDateChange, paymentForm.paymentDate]);
 
   const submitDebtForm = useCallback(async () => {
     setFormError('');
@@ -675,7 +715,7 @@ export default function DebtScreen() {
   const submitPaymentForm = useCallback(async () => {
     setFormError('');
 
-    const targetDebtId = selectedDebtId ?? debts[0]?.id ?? null;
+    const targetDebtId = paymentTargetDebtId ?? selectedDebtId ?? debts[0]?.id ?? null;
     const amount = parseCurrencyInput(paymentForm.amount);
 
     if (!targetDebtId || !Number.isFinite(amount) || amount <= 0 || !paymentForm.proofUri) {
@@ -727,6 +767,7 @@ export default function DebtScreen() {
     paymentForm.proofType,
     paymentForm.proofUri,
     walletMap,
+    paymentTargetDebtId,
     selectedDebtId,
     t,
     withAuthorizedRequest,
@@ -793,12 +834,13 @@ export default function DebtScreen() {
   const dueLabel = selected ? formatDueLabel(selected.due_date, t) : '';
   const modalAccent = formMode === 'payment' ? colors.secondary : colors.primary;
   const paymentTarget = useMemo<DebtRecord | DebtDetail | null>(() => {
-    if (selected && (selectedDebtId === null || selected.id === selectedDebtId)) {
-      return selected;
+    const targetId = paymentTargetDebtId ?? selectedDebtId ?? debts[0]?.id ?? null;
+    if (targetId === null) {
+      return selected ?? debts[0] ?? null;
     }
 
-    return debts.find((debt) => debt.id === (selectedDebtId ?? debts[0]?.id)) ?? selected ?? debts[0] ?? null;
-  }, [debts, selected, selectedDebtId]);
+    return debts.find((debt) => debt.id === targetId) ?? selected ?? debts[0] ?? null;
+  }, [debts, paymentTargetDebtId, selected, selectedDebtId]);
   const walletOptions = useMemo(() => [...wallets].sort((left, right) => left.name.localeCompare(right.name)), [wallets]);
   const selectableWalletOptions = useMemo(
     () => walletOptions.filter((wallet) => !isMainWalletName(wallet.name)),
@@ -1410,33 +1452,45 @@ export default function DebtScreen() {
                   ) : (
                     <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
                       <View style={styles.modalSectionCard}>
-                        <View style={styles.modalSectionHeader}>
-                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
-                            <MaterialCommunityIcons name="credit-card-outline" size={18} color={modalAccent} />
+                          <View style={styles.modalSectionHeader}>
+                            <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                              <MaterialCommunityIcons name="credit-card-outline" size={18} color={modalAccent} />
+                            </View>
+                            <View style={styles.modalSectionCopy}>
+                              <Text style={styles.modalSectionTitle}>{t('debt.modal.targetSectionTitle')}</Text>
+                              <Text style={styles.modalSectionSubtitle}>
+                                {paymentTargetLocked ? t('debt.modal.targetLocked') : t('debt.modal.targetSectionHelper')}
+                              </Text>
+                            </View>
                           </View>
-                          <View style={styles.modalSectionCopy}>
-                            <Text style={styles.modalSectionTitle}>{t('debt.modal.targetSectionTitle')}</Text>
-                            <Text style={styles.modalSectionSubtitle}>{t('debt.modal.targetSectionHelper')}</Text>
-                          </View>
-                        </View>
 
                         {debts.length ? (
                           <>
                             <View style={styles.debtChipGrid}>
-                              {debts.map((debt) => {
-                                const isSelectedDebt = debt.id === (selectedDebtId ?? debts[0]?.id);
-
-                                return (
-                                  <Pressable
-                                    key={debt.id}
-                                    onPress={() => setSelectedDebtId(debt.id)}
-                                    style={[styles.debtChip, isSelectedDebt && styles.debtChipSelected]}>
-                                    <Text style={[styles.debtChipText, isSelectedDebt && styles.debtChipTextSelected]}>
-                                      {debt.name}
+                              {paymentTargetLocked ? (
+                                paymentTarget ? (
+                                  <View style={[styles.debtChip, styles.debtChipSelected]}>
+                                    <Text style={[styles.debtChipText, styles.debtChipTextSelected]}>
+                                      {paymentTarget.name}
                                     </Text>
-                                  </Pressable>
-                                );
-                              })}
+                                  </View>
+                                ) : null
+                              ) : (
+                                debts.map((debt) => {
+                                  const isSelectedDebt = debt.id === (selectedDebtId ?? debts[0]?.id);
+
+                                  return (
+                                    <Pressable
+                                      key={debt.id}
+                                      onPress={() => setSelectedDebtId(debt.id)}
+                                      style={[styles.debtChip, isSelectedDebt && styles.debtChipSelected]}>
+                                      <Text style={[styles.debtChipText, isSelectedDebt && styles.debtChipTextSelected]}>
+                                        {debt.name}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })
+                              )}
                             </View>
 
                             {paymentTarget ? (
@@ -1488,40 +1542,47 @@ export default function DebtScreen() {
                           </View>
                         </View>
 
-                        <View style={styles.fieldRow}>
-                          <View style={styles.fieldStackHalf}>
-                            <Text style={styles.fieldLabel}>{t('debt.form.amount')}</Text>
-                            <View style={styles.inputShell}>
-                              <TextInput
-                                value={paymentForm.amount}
-                                onChangeText={(text) =>
-                                  setPaymentForm((current) => ({
-                                    ...current,
-                                    amount: formatRupiahInput(text),
-                                  }))
-                                }
-                                keyboardType="number-pad"
-                                placeholder="1.000.000"
-                                placeholderTextColor={colors.shellTextSoft}
-                                style={styles.inputControl}
+                        <View style={styles.fieldStack}>
+                          <Text style={styles.fieldLabel}>{t('debt.form.amount')}</Text>
+                          <View style={styles.inputShell}>
+                            <TextInput
+                              value={paymentForm.amount}
+                              onChangeText={(text) =>
+                                setPaymentForm((current) => ({
+                                  ...current,
+                                  amount: formatRupiahInput(text),
+                                }))
+                              }
+                              keyboardType="number-pad"
+                              placeholder="1.000.000"
+                              placeholderTextColor={colors.shellTextSoft}
+                              style={styles.inputControl}
+                            />
+                          </View>
+                        </View>
+
+                        <View style={styles.fieldStack}>
+                          <Text style={styles.fieldLabel}>{t('debt.form.paymentDate')}</Text>
+                          <Pressable
+                            onPress={openPaymentDatePicker}
+                            style={({ pressed }) => [styles.inputShell, pressed && styles.actionButtonPressed]}>
+                            <View style={styles.inputIconWrap}>
+                              <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
+                            </View>
+                            <Text style={styles.inputControl}>{formatDate(paymentForm.paymentDate, locale)}</Text>
+                          </Pressable>
+                          {Platform.OS === 'ios' && iosPaymentDatePickerVisible ? (
+                            <View style={styles.datePickerCard}>
+                              <DateTimePicker
+                                value={new Date(`${paymentForm.paymentDate}T00:00:00`)}
+                                mode="date"
+                                display="spinner"
+                                onChange={handlePaymentDateChange}
+                                accentColor={modalAccent}
+                                themeVariant={isLight ? 'light' : 'dark'}
                               />
                             </View>
-                          </View>
-                          <View style={styles.fieldStackHalf}>
-                            <Text style={styles.fieldLabel}>{t('debt.form.paymentDate')}</Text>
-                            <View style={styles.inputShell}>
-                              <View style={styles.inputIconWrap}>
-                                <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
-                              </View>
-                              <TextInput
-                                value={paymentForm.paymentDate}
-                                onChangeText={(text) => setPaymentForm((current) => ({ ...current, paymentDate: text }))}
-                                placeholder="2026-04-16"
-                                placeholderTextColor={colors.shellTextSoft}
-                                style={styles.inputControl}
-                              />
-                            </View>
-                          </View>
+                          ) : null}
                         </View>
                       </View>
 
