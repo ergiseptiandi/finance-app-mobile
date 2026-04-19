@@ -17,7 +17,7 @@ import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
 import { useAppTheme } from '@/providers/theme-provider';
-import { clearAuthSession, getAuthSession } from '@/lib/auth-session';
+import { getAuthSession, signOut } from '@/lib/auth-session';
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -279,7 +279,7 @@ export default function SettingsScreen() {
           <Pressable
             style={styles.logoutButton}
             onPress={async () => {
-              await clearAuthSession();
+              await signOut();
               router.replace('/login');
             }}>
             <MaterialCommunityIcons name="logout" size={18} color={colors.danger} />

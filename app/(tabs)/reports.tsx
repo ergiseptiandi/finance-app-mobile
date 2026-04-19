@@ -17,8 +17,8 @@ import { ReportsSkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
-import { ApiRequestError, refreshToken } from '@/lib/api/auth';
-import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
+import { ApiRequestError } from '@/lib/api/auth';
+import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import {
   getAverageDailySpending,
   getExpenseByCategory,
@@ -173,11 +173,10 @@ export default function ReportsScreen() {
       return await task(session.token.access_token);
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 401 && session.token.refresh_token) {
-        const refreshed = await refreshToken({
-          refresh_token: session.token.refresh_token,
-        });
-        await saveAuthSession(refreshed.Data);
-        return task(refreshed.Data.token.access_token);
+        const refreshed = await refreshStoredAuthSession();
+        if (refreshed) {
+          return task(refreshed.token.access_token);
+        }
       }
 
       if (err instanceof ApiRequestError && err.status === 401) {

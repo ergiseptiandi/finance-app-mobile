@@ -22,8 +22,8 @@ import { DashboardSkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
-import { ApiRequestError, refreshToken } from '@/lib/api/auth';
-import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
+import { ApiRequestError } from '@/lib/api/auth';
+import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import {
   DashboardComparisonData,
   DashboardSummaryData,
@@ -390,11 +390,10 @@ export default function DashboardScreen() {
         );
 
         if (hasUnauthorized && session.token.refresh_token) {
-          const refreshed = await refreshToken({
-            refresh_token: session.token.refresh_token,
-          });
-          await saveAuthSession(refreshed.Data);
-          results = await fetchBundle(refreshed.Data.token.access_token);
+          const refreshed = await refreshStoredAuthSession();
+          if (refreshed) {
+            results = await fetchBundle(refreshed.token.access_token);
+          }
         }
 
         const [summaryResult, dailyResult, monthlyResult, comparisonResult, ratioResult] = results;
