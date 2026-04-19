@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -311,7 +313,8 @@ export default function ActivityScreen() {
   const insets = useSafeAreaInsets();
   const { language, t } = useAppLanguage();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
-  const styles = createStyles(colors, insets.top);
+  const styles = createStyles(colors, insets.top, insets.bottom);
+  const isLight = colors === Colors.light;
 
   const [summary, setSummary] = useState<TransactionSummaryData>(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -598,6 +601,21 @@ export default function ActivityScreen() {
         .sort((left, right) => left.name.localeCompare(right.name)),
     [categories, form.type]
   );
+  const isIncomeForm = form.type === 'income';
+  const modalAccent = isIncomeForm ? colors.secondary : colors.primary;
+  const modalAccentSoft = alpha(modalAccent, isLight ? 0.1 : 0.18);
+  const modalAccentBorder = alpha(modalAccent, isLight ? 0.16 : 0.28);
+  const normalizedPreviewAmount = Number.parseFloat(form.amount.replace(',', '.'));
+  const hasAmountPreview = Number.isFinite(normalizedPreviewAmount) && normalizedPreviewAmount > 0;
+  const amountPreview = hasAmountPreview
+    ? toCurrency(normalizedPreviewAmount, locale)
+    : t('activity.transactions.modalAmountPending');
+  const modalKicker = form.id
+    ? t('activity.transactions.modalEditKicker')
+    : t('activity.transactions.modalCreateKicker');
+  const modalToneCopy = isIncomeForm
+    ? t('activity.transactions.modalIncomeHint')
+    : t('activity.transactions.modalExpenseHint');
 
   return (
     <>
@@ -731,12 +749,22 @@ export default function ActivityScreen() {
         {!!error && <Text style={styles.errorText}>{error}</Text>}
       </ScrollView>
 
-      <Modal visible={transactionModalVisible} animationType="slide" transparent onRequestClose={closeTransactionModal}>
-        <View style={styles.modalOverlay}>
+      <Modal
+        visible={transactionModalVisible}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={closeTransactionModal}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}>
           <Pressable style={styles.modalBackdrop} onPress={closeTransactionModal} />
           <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.modalHeaderCopy}>
+                <Text style={[styles.modalKicker, { color: modalAccent }]}>{modalKicker}</Text>
                 <Text style={styles.modalTitle}>
                   {form.id ? t('activity.transactions.editTitle') : t('activity.transactions.createTitle')}
                 </Text>
@@ -753,128 +781,303 @@ export default function ActivityScreen() {
                 <Text style={styles.stateText}>{t('activity.transactions.detailLoading')}</Text>
               </View>
             ) : (
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formContent}>
-                <View style={styles.typeSegment}>
-                  {(['expense', 'income'] as TransactionType[]).map((type) => {
-                    const active = type === form.type;
-                    return (
-                      <Pressable
-                        key={type}
-                        onPress={() =>
-                          setForm((current) => ({
-                            ...current,
-                            type,
-                            category:
-                              current.type === type
-                                ? current.category
-                                : categories.some((item) => item.type === type && item.name === current.category)
-                                  ? current.category
-                                  : '',
-                          }))
-                        }
-                        style={[styles.typePill, active && styles.typePillActive]}>
-                        <Text style={[styles.typePillText, active && styles.typePillTextActive]}>
-                          {type === 'income' ? t('activity.transactions.income') : t('activity.transactions.expense')}
+              <>
+                <ScrollView
+                  style={styles.modalScroll}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.formContent}>
+                  <View
+                    style={[
+                      styles.modalHeroCard,
+                      {
+                        backgroundColor: modalAccentSoft,
+                        borderColor: modalAccentBorder,
+                      },
+                    ]}>
+                    <View style={styles.modalHeroMain}>
+                      <View
+                        style={[
+                          styles.modalHeroIcon,
+                          { backgroundColor: alpha(modalAccent, isLight ? 0.14 : 0.18) },
+                        ]}>
+                        <MaterialCommunityIcons
+                          name={isIncomeForm ? 'trending-up' : 'trending-down'}
+                          size={22}
+                          color={modalAccent}
+                        />
+                      </View>
+                      <View style={styles.modalHeroCopy}>
+                        <Text style={styles.modalHeroTitle}>
+                          {isIncomeForm ? t('activity.transactions.income') : t('activity.transactions.expense')}
                         </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                        <Text style={styles.modalHeroText}>{modalToneCopy}</Text>
+                      </View>
+                    </View>
 
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>{t('activity.transactions.category')}</Text>
-                  {availableCategories.length > 0 ? (
-                    <View style={styles.categoryWrap}>
-                      {availableCategories.map((category) => {
-                        const active = form.category === category.name;
+                    <View style={styles.modalHeroMetrics}>
+                      <View style={styles.modalMetric}>
+                        <Text style={styles.modalMetricLabel}>{t('activity.transactions.modalAmountPreview')}</Text>
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.modalMetricValue, !hasAmountPreview && styles.modalMetricValueMuted]}>
+                          {amountPreview}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.modalMetricBadge,
+                          {
+                            borderColor: modalAccentBorder,
+                            backgroundColor: alpha(colors.surfaceContainerLowest, isLight ? 0.8 : 0.14),
+                          },
+                        ]}>
+                        <MaterialCommunityIcons name="shape-outline" size={14} color={modalAccent} />
+                        <Text style={[styles.modalMetricBadgeText, { color: modalAccent }]}>
+                          {t('activity.transactions.modalCategoryCount', { count: availableCategories.length })}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.modalSectionCard}>
+                    <View style={styles.modalSectionHeader}>
+                      <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                        <MaterialCommunityIcons name="swap-horizontal" size={18} color={modalAccent} />
+                      </View>
+                      <View style={styles.modalSectionCopy}>
+                        <Text style={styles.modalSectionTitle}>{t('activity.transactions.modalTypeTitle')}</Text>
+                        <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.modalTypeHelper')}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.typeSegment}>
+                      {(['expense', 'income'] as TransactionType[]).map((type) => {
+                        const active = type === form.type;
+                        const typeColor = type === 'income' ? colors.secondary : colors.primary;
                         return (
                           <Pressable
-                            key={category.id}
-                            onPress={() => setForm((current) => ({ ...current, category: category.name }))}
-                            style={[styles.categoryChip, active && styles.categoryChipActive]}>
-                            <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
-                              {category.name}
+                            key={type}
+                            onPress={() =>
+                              setForm((current) => ({
+                                ...current,
+                                type,
+                                category:
+                                  current.type === type
+                                    ? current.category
+                                    : categories.some((item) => item.type === type && item.name === current.category)
+                                      ? current.category
+                                      : '',
+                              }))
+                            }
+                            style={[
+                              styles.typePill,
+                              active && {
+                                backgroundColor: alpha(typeColor, isLight ? 0.12 : 0.18),
+                                borderColor: alpha(typeColor, isLight ? 0.3 : 0.36),
+                              },
+                            ]}>
+                            <View
+                              style={[
+                                styles.typePillIcon,
+                                { backgroundColor: active ? alpha(typeColor, 0.16) : colors.shellCardMuted },
+                              ]}>
+                              <MaterialCommunityIcons
+                                name={type === 'income' ? 'trending-up' : 'trending-down'}
+                                size={16}
+                                color={active ? typeColor : colors.shellTextMuted}
+                              />
+                            </View>
+                            <Text
+                              style={[
+                                styles.typePillText,
+                                active && {
+                                  color: typeColor,
+                                },
+                              ]}>
+                              {type === 'income' ? t('activity.transactions.income') : t('activity.transactions.expense')}
                             </Text>
                           </Pressable>
                         );
                       })}
                     </View>
-                  ) : (
-                    <View style={styles.emptyCategoryBox}>
-                      <Text style={styles.emptyCategoryText}>{t('activity.transactions.categoryFromSettings')}</Text>
-                      <Pressable onPress={() => router.push('/categories')} style={styles.emptyCategoryButton}>
-                        <Text style={styles.emptyCategoryButtonText}>{t('activity.transactions.openCategories')}</Text>
-                      </Pressable>
+                  </View>
+
+                  <View style={styles.modalSectionCard}>
+                    <View style={styles.modalSectionHeader}>
+                      <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                        <MaterialCommunityIcons name="shape-outline" size={18} color={modalAccent} />
+                      </View>
+                      <View style={styles.modalSectionCopy}>
+                        <Text style={styles.modalSectionTitle}>{t('activity.transactions.modalCategoryTitle')}</Text>
+                        <Text style={styles.modalSectionSubtitle}>
+                          {t('activity.transactions.modalCategoryHelper')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {availableCategories.length > 0 ? (
+                      <View style={styles.categoryWrap}>
+                        {availableCategories.map((category) => {
+                          const active = form.category === category.name;
+                          return (
+                            <Pressable
+                              key={category.id}
+                              onPress={() => setForm((current) => ({ ...current, category: category.name }))}
+                              style={[styles.categoryChip, active && styles.categoryChipActive]}>
+                              <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
+                                {category.name}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <View style={styles.emptyCategoryBox}>
+                        <Text style={styles.emptyCategoryText}>{t('activity.transactions.categoryFromSettings')}</Text>
+                        <Pressable onPress={() => router.push('/categories')} style={styles.emptyCategoryButton}>
+                          <Text style={styles.emptyCategoryButtonText}>{t('activity.transactions.openCategories')}</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.modalSectionCard}>
+                    <View style={styles.modalSectionHeader}>
+                      <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                        <MaterialCommunityIcons name="receipt-text-outline" size={18} color={modalAccent} />
+                      </View>
+                      <View style={styles.modalSectionCopy}>
+                        <Text style={styles.modalSectionTitle}>{t('activity.transactions.modalDetailsTitle')}</Text>
+                        <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.modalDetailsHelper')}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.fieldGrid}>
+                      <View style={[styles.fieldGroup, styles.fieldHalf]}>
+                        <Text style={styles.fieldLabel}>{t('activity.transactions.amount')}</Text>
+                        <View style={styles.inputShell}>
+                          <View style={styles.inputPrefix}>
+                            <Text style={styles.inputPrefixText}>IDR</Text>
+                          </View>
+                          <TextInput
+                            value={form.amount}
+                            onChangeText={(value) => setForm((current) => ({ ...current, amount: value }))}
+                            placeholder="1500000"
+                            placeholderTextColor={colors.inputPlaceholder}
+                            keyboardType="decimal-pad"
+                            style={styles.inputControl}
+                          />
+                        </View>
+                      </View>
+
+                      <View style={[styles.fieldGroup, styles.fieldHalf]}>
+                        <Text style={styles.fieldLabel}>{t('activity.transactions.date')}</Text>
+                        <View style={styles.inputShell}>
+                          <View style={styles.inputIconWrap}>
+                            <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
+                          </View>
+                          <TextInput
+                            value={form.date}
+                            onChangeText={(value) => setForm((current) => ({ ...current, date: value }))}
+                            placeholder="2026-04-17"
+                            placeholderTextColor={colors.inputPlaceholder}
+                            style={styles.inputControl}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.modalSectionCard}>
+                    <View style={styles.modalSectionHeader}>
+                      <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                        <MaterialCommunityIcons name="text-box-outline" size={18} color={modalAccent} />
+                      </View>
+                      <View style={styles.modalSectionCopy}>
+                        <Text style={styles.modalSectionTitle}>{t('activity.transactions.modalNotesTitle')}</Text>
+                        <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.modalNotesHelper')}</Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.inputShell, styles.textareaShell]}>
+                      <View style={styles.inputIconWrap}>
+                        <MaterialCommunityIcons name="pencil-outline" size={18} color={modalAccent} />
+                      </View>
+                      <TextInput
+                        value={form.description}
+                        onChangeText={(value) => setForm((current) => ({ ...current, description: value }))}
+                        placeholder={t('activity.transactions.descriptionPlaceholder')}
+                        placeholderTextColor={colors.inputPlaceholder}
+                        multiline
+                        textAlignVertical="top"
+                        style={[styles.inputControl, styles.textareaInput]}
+                      />
+                    </View>
+                  </View>
+
+                  {!!formError && (
+                    <View style={styles.formErrorCard}>
+                      <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.danger} />
+                      <Text style={styles.formErrorText}>{formError}</Text>
                     </View>
                   )}
-                </View>
+                </ScrollView>
 
-                <View style={styles.fieldGrid}>
-                  <View style={[styles.fieldGroup, styles.fieldHalf]}>
-                    <Text style={styles.fieldLabel}>{t('activity.transactions.amount')}</Text>
-                    <TextInput
-                      value={form.amount}
-                      onChangeText={(value) => setForm((current) => ({ ...current, amount: value }))}
-                      placeholder="1500000"
-                      placeholderTextColor={colors.inputPlaceholder}
-                      keyboardType="decimal-pad"
-                      style={styles.input}
-                    />
-                  </View>
-
-                  <View style={[styles.fieldGroup, styles.fieldHalf]}>
-                    <Text style={styles.fieldLabel}>{t('activity.transactions.date')}</Text>
-                    <TextInput
-                      value={form.date}
-                      onChangeText={(value) => setForm((current) => ({ ...current, date: value }))}
-                      placeholder="2026-04-17"
-                      placeholderTextColor={colors.inputPlaceholder}
-                      style={styles.input}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>{t('activity.transactions.description')}</Text>
-                  <TextInput
-                    value={form.description}
-                    onChangeText={(value) => setForm((current) => ({ ...current, description: value }))}
-                    placeholder={t('activity.transactions.descriptionPlaceholder')}
-                    placeholderTextColor={colors.inputPlaceholder}
-                    multiline
-                    textAlignVertical="top"
-                    style={[styles.input, styles.textarea]}
-                  />
-                </View>
-
-                {!!formError && <Text style={styles.errorText}>{formError}</Text>}
-
-                <Pressable onPress={handleSaveTransaction} disabled={submitting || deleting} style={styles.submitButton}>
-                  {submitting ? (
-                    <ActivityIndicator color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.submitButtonText}>
-                      {form.id ? t('activity.transactions.update') : t('activity.transactions.create')}
-                    </Text>
-                  )}
-                </Pressable>
-
-                {form.id ? (
-                  <Pressable onPress={handleDeleteTransaction} disabled={submitting || deleting} style={styles.deleteButton}>
-                    {deleting ? (
-                      <ActivityIndicator color={colors.danger} />
+                <View style={styles.modalFooter}>
+                  <View style={styles.modalActionsRow}>
+                    {form.id ? (
+                      <Pressable
+                        onPress={handleDeleteTransaction}
+                        disabled={submitting || deleting}
+                        style={({ pressed }) => [
+                          styles.deleteButton,
+                          pressed && !(submitting || deleting) && styles.actionButtonPressed,
+                          (submitting || deleting) && styles.actionButtonDisabled,
+                        ]}>
+                        {deleting ? (
+                          <ActivityIndicator color={colors.danger} />
+                        ) : (
+                          <>
+                            <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+                            <Text style={styles.deleteButtonText}>{t('activity.transactions.delete')}</Text>
+                          </>
+                        )}
+                      </Pressable>
                     ) : (
-                      <>
-                        <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
-                        <Text style={styles.deleteButtonText}>{t('activity.transactions.delete')}</Text>
-                      </>
+                      <Pressable
+                        onPress={closeTransactionModal}
+                        disabled={submitting || deleting}
+                        style={({ pressed }) => [
+                          styles.secondaryActionButton,
+                          pressed && !(submitting || deleting) && styles.actionButtonPressed,
+                        ]}>
+                        <Text style={styles.secondaryActionButtonText}>{t('common.cancel')}</Text>
+                      </Pressable>
                     )}
-                  </Pressable>
-                ) : null}
-              </ScrollView>
+
+                    <Pressable
+                      onPress={handleSaveTransaction}
+                      disabled={submitting || deleting}
+                      style={({ pressed }) => [
+                        styles.submitButton,
+                        pressed && !(submitting || deleting) && styles.actionButtonPressed,
+                        (submitting || deleting) && styles.actionButtonDisabled,
+                      ]}>
+                      {submitting ? (
+                        <ActivityIndicator color={colors.onPrimary} />
+                      ) : (
+                        <Text style={styles.submitButtonText}>
+                          {form.id ? t('activity.transactions.update') : t('activity.transactions.create')}
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              </>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -1010,7 +1213,7 @@ const rowStyles = (colors: AppColorTheme) =>
     },
   });
 
-const createStyles = (colors: AppColorTheme, topInset: number) =>
+const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: number) =>
   StyleSheet.create({
     screen: {
       flex: 1,
@@ -1019,7 +1222,7 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     content: {
       paddingHorizontal: 18,
       paddingTop: Math.max(topInset + 12, 26),
-      paddingBottom: 150,
+      paddingBottom: Math.max(bottomInset + 126, 150),
       gap: 18,
     },
     hero: {
@@ -1191,22 +1394,42 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       flex: 1,
     },
     modalSheet: {
-      maxHeight: '88%',
-      borderTopLeftRadius: 28,
-      borderTopRightRadius: 28,
+      maxHeight: '90%',
+      borderTopLeftRadius: 32,
+      borderTopRightRadius: 32,
       backgroundColor: colors.shellBackground,
       paddingHorizontal: 18,
-      paddingTop: 18,
-      paddingBottom: 28,
+      paddingTop: 10,
+      paddingBottom: 0,
       gap: 16,
       borderTopWidth: 1,
       borderColor: colors.shellBorder,
+    },
+    modalHandle: {
+      alignSelf: 'center',
+      width: 46,
+      height: 5,
+      borderRadius: 999,
+      backgroundColor: alpha(colors.shellTextSoft, 0.5),
+      marginBottom: 2,
     },
     modalHeader: {
       flexDirection: 'row',
       alignItems: 'flex-start',
       justifyContent: 'space-between',
       gap: 12,
+    },
+    modalHeaderCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    modalKicker: {
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.8,
     },
     modalTitle: {
       color: colors.shellTextPrimary,
@@ -1232,6 +1455,9 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
+    modalScroll: {
+      flexGrow: 0,
+    },
     modalLoadingState: {
       paddingVertical: 36,
       alignItems: 'center',
@@ -1240,7 +1466,124 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
     formContent: {
       gap: 14,
-      paddingBottom: 10,
+      paddingBottom: 18,
+    },
+    modalHeroCard: {
+      borderRadius: 28,
+      borderWidth: 1,
+      padding: 18,
+      gap: 16,
+    },
+    modalHeroMain: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+    },
+    modalHeroIcon: {
+      width: 52,
+      height: 52,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalHeroCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 3,
+    },
+    modalHeroTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 18,
+      lineHeight: 22,
+      fontWeight: '900',
+    },
+    modalHeroText: {
+      color: colors.shellTextSecondary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    modalHeroMetrics: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    modalMetric: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    modalMetricLabel: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 1.4,
+    },
+    modalMetricValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 20,
+      lineHeight: 24,
+      fontWeight: '900',
+      letterSpacing: -0.6,
+    },
+    modalMetricValueMuted: {
+      color: colors.shellTextMuted,
+    },
+    modalMetricBadge: {
+      minHeight: 34,
+      maxWidth: '48%',
+      borderRadius: 14,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    modalMetricBadgeText: {
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '800',
+    },
+    modalSectionCard: {
+      borderRadius: 26,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 16,
+      gap: 14,
+    },
+    modalSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    modalSectionIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalSectionCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    modalSectionTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '800',
+    },
+    modalSectionSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 17,
+      fontWeight: '600',
     },
     typeSegment: {
       flexDirection: 'row',
@@ -1248,27 +1591,31 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
     typePill: {
       flex: 1,
-      minHeight: 42,
-      borderRadius: 14,
-      backgroundColor: colors.shellCard,
+      minHeight: 52,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
       borderWidth: 1,
       borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+      gap: 10,
     },
-    typePillActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
+    typePillIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     typePillText: {
       color: colors.shellTextSecondary,
       fontSize: 13,
+      lineHeight: 16,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 0.8,
-    },
-    typePillTextActive: {
-      color: colors.onPrimary,
     },
     fieldGroup: {
       gap: 8,
@@ -1287,21 +1634,61 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       lineHeight: 16,
       fontWeight: '700',
     },
-    input: {
-      minHeight: 52,
-      borderRadius: 16,
-      backgroundColor: colors.shellCard,
+    inputShell: {
+      minHeight: 56,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
       borderWidth: 1,
       borderColor: colors.shellBorder,
-      paddingHorizontal: 14,
-      paddingVertical: 14,
-      color: colors.shellTextPrimary,
-      fontSize: 14,
-      lineHeight: 20,
-      fontWeight: '500',
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
     },
-    textarea: {
-      minHeight: 112,
+    inputIconWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 2,
+      marginTop: 2,
+    },
+    inputPrefix: {
+      minWidth: 46,
+      height: 34,
+      borderRadius: 12,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 10,
+    },
+    inputPrefixText: {
+      color: colors.shellTextSecondary,
+      fontSize: 12,
+      lineHeight: 14,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+    },
+    inputControl: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '600',
+      paddingVertical: 16,
+      paddingRight: 14,
+    },
+    textareaShell: {
+      minHeight: 132,
+      alignItems: 'flex-start',
+      paddingTop: 10,
+    },
+    textareaInput: {
+      minHeight: 104,
+      paddingTop: 8,
     },
     categoryWrap: {
       flexDirection: 'row',
@@ -1359,13 +1746,60 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontSize: 12,
       fontWeight: '800',
     },
+    formErrorCard: {
+      borderRadius: 18,
+      backgroundColor: alpha(colors.danger, 0.08),
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, 0.24),
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    formErrorText: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.danger,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    modalFooter: {
+      borderTopWidth: 1,
+      borderTopColor: colors.shellBorder,
+      paddingTop: 14,
+      paddingBottom: Math.max(bottomInset, 12),
+      backgroundColor: colors.shellBackground,
+    },
+    modalActionsRow: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    secondaryActionButton: {
+      minHeight: 54,
+      minWidth: 110,
+      borderRadius: 18,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 18,
+    },
+    secondaryActionButtonText: {
+      color: colors.shellTextSecondary,
+      fontSize: 14,
+      lineHeight: 18,
+      fontWeight: '800',
+    },
     submitButton: {
-      minHeight: 52,
+      flex: 1,
+      minHeight: 54,
       borderRadius: 18,
       backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 4,
     },
     submitButtonText: {
       color: colors.onPrimary,
@@ -1373,7 +1807,8 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontWeight: '800',
     },
     deleteButton: {
-      minHeight: 50,
+      minHeight: 54,
+      minWidth: 142,
       borderRadius: 18,
       borderWidth: 1,
       borderColor: alpha(colors.danger, 0.28),
@@ -1387,5 +1822,12 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       color: colors.danger,
       fontSize: 14,
       fontWeight: '800',
+    },
+    actionButtonPressed: {
+      opacity: 0.92,
+      transform: [{ scale: 0.99 }],
+    },
+    actionButtonDisabled: {
+      opacity: 0.6,
     },
   });
