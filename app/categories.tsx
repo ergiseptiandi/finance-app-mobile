@@ -21,18 +21,18 @@ import {
   deleteCategory,
   listCategories,
   updateCategory,
+  type CategoryType,
   type CategoryRecord,
 } from '@/lib/api/categories';
-import type { TransactionType } from '@/lib/api/transactions';
 import { useAppLanguage } from '@/providers/language-provider';
 
 type CategoryDraft = {
   id?: number;
   name: string;
-  type: TransactionType;
+  type: CategoryType;
 };
 
-const createEmptyCategoryDraft = (type: TransactionType = 'expense'): CategoryDraft => ({
+const createEmptyCategoryDraft = (type: CategoryType = 'expense'): CategoryDraft => ({
   type,
   name: '',
 });
@@ -79,7 +79,7 @@ export default function CategoriesScreen() {
   const { t } = useAppLanguage();
   const styles = createStyles(colors, insets.top);
 
-  const [filter, setFilter] = useState<'all' | TransactionType>('all');
+  const [filter, setFilter] = useState<'all' | CategoryType>('all');
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -229,7 +229,7 @@ export default function CategoriesScreen() {
 
       <View style={styles.formCard}>
         <View style={styles.typeSegment}>
-          {(['expense', 'income'] as TransactionType[]).map((type) => {
+          {(['expense', 'income'] as CategoryType[]).map((type) => {
             const active = type === draft.type;
             return (
               <Pressable

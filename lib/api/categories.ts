@@ -1,6 +1,5 @@
 import { buildApiUrl } from '@/constants/api';
 import { request } from '@/lib/api/client';
-import type { TransactionType } from '@/lib/api/transactions';
 
 export type ApiEnvelope<T> = {
   Status: string;
@@ -8,24 +7,30 @@ export type ApiEnvelope<T> = {
   Data: T;
 };
 
+export type CategoryType = 'income' | 'expense';
+
 export type CategoryRecord = {
   id: number;
   name: string;
-  type: TransactionType;
+  type: CategoryType;
   created_at: string;
   updated_at: string;
 };
 
 export type CreateCategoryPayload = {
   name: string;
-  type: TransactionType;
+  type: CategoryType;
 };
 
 export type UpdateCategoryPayload = Partial<CreateCategoryPayload>;
 
+export type ListCategoriesParams = {
+  type?: CategoryType;
+};
+
 const buildCategoriesUrl = (path = '') => buildApiUrl(`categories${path ? `/${path}` : ''}`);
 
-const withQuery = (url: string, params: { type?: TransactionType }) => {
+const withQuery = (url: string, params: ListCategoriesParams) => {
   const searchParams = new URLSearchParams();
 
   if (params.type) {
@@ -36,7 +41,7 @@ const withQuery = (url: string, params: { type?: TransactionType }) => {
   return query ? `${url}?${query}` : url;
 };
 
-export const listCategories = (accessToken: string, params: { type?: TransactionType } = {}) =>
+export const listCategories = (accessToken: string, params: ListCategoriesParams = {}) =>
   request<ApiEnvelope<CategoryRecord[]>>(withQuery(buildCategoriesUrl(), params), {
     method: 'GET',
     token: accessToken,
