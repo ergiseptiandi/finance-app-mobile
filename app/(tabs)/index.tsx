@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -13,29 +16,26 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DashboardSkeleton } from '@/components/ui/skeleton';
-import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
+import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAppLanguage } from '@/providers/language-provider';
 import { ApiRequestError } from '@/lib/api/auth';
-import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import {
+  DailySpendingItem,
   DashboardComparisonData,
   DashboardSummaryData,
-  DailySpendingItem,
-  MonthlySpendingItem,
-  type DashboardPeriodParams,
   getComparison,
   getDailySpending,
   getDashboardSummary,
   getMonthlySpending,
+  MonthlySpendingItem,
+  type DashboardPeriodParams,
 } from '@/lib/api/dashboard';
+import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
+import { useAppLanguage } from '@/providers/language-provider';
 
 type TrendMode = 'daily' | 'monthly';
 type DashboardDateFilterMode = 'month' | 'range';
@@ -108,7 +108,7 @@ const formatCompactCurrency = (value: number, locale: string) =>
     style: 'currency',
     currency: 'IDR',
     notation: 'compact',
-    maximumFractionDigits: 1,
+    maximumFractionDigits: 0,
   }).format(value);
 
 const formatDetailCurrency = (value: number, locale: string) =>
@@ -120,7 +120,7 @@ const formatDetailCurrency = (value: number, locale: string) =>
 
 const formatSignedCurrency = (value: number, locale: string) => {
   const formatted = formatDetailCurrency(Math.abs(value), locale);
-  return `${value >= 0 ? '+' : '-'}${formatted}`;
+  return value >= 0 ? formatted : `-${formatted}`;
 };
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
@@ -587,11 +587,11 @@ export default function DashboardScreen() {
   const totalDebt = toNumber(dashboardDebt?.total_debt);
   const debtToIncome = toNumber(
     dashboardDebt?.debt_to_income_ratio ??
-      (monthlyIncome > 0 ? (remainingDebt / monthlyIncome) * 100 : 0)
+    (monthlyIncome > 0 ? (remainingDebt / monthlyIncome) * 100 : 0)
   );
   const debtToBalance = toNumber(
     dashboardDebt?.debt_to_balance_ratio ??
-      (currentBalance > 0 ? (remainingDebt / currentBalance) * 100 : 0)
+    (currentBalance > 0 ? (remainingDebt / currentBalance) * 100 : 0)
   );
   const debtCompletion = toNumber(dashboardDebt?.completion_rate);
   const todayExpense = extractComparisonValue(comparison, ['today_expense', 'today', 'todayAmount']);
@@ -652,8 +652,8 @@ export default function DashboardScreen() {
     dashboardAlert?.message ??
     (summary
       ? `Cashflow bersih ${formatSignedCurrency(netCashflow, locale)} dengan expense ratio ${formatPercentValue(
-          Math.max(0, expenseRatio)
-        )}.`
+        Math.max(0, expenseRatio)
+      )}.`
       : t('dashboard.summaryInsightBody'));
 
   const activityItems = useMemo<ActivityItem[]>(
@@ -769,49 +769,6 @@ export default function DashboardScreen() {
               </View>
             </View>
 
-            <View style={styles.summaryCard}>
-              <View style={styles.cardHeader}>
-                <View style={styles.cardHeaderCopy}>
-                  <Text style={styles.cardEyebrow}>{t('dashboard.summary.title')}</Text>
-                  <Text style={styles.cardTitle}>{activePeriodLabel}</Text>
-                </View>
-                <View style={styles.summaryBadge}>
-                  <Text style={styles.summaryBadgeLabel}>{t('dashboard.filter.currentPeriod')}</Text>
-                </View>
-              </View>
-
-              <View style={styles.summaryGrid}>
-                {summaryHighlights.map((item) => (
-                  <View key={item.label} style={styles.summaryMetric}>
-                    <Text numberOfLines={1} style={styles.summaryMetricLabel}>
-                      {item.label}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.72}
-                      style={styles.summaryMetricValue}>
-                      {item.value}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.summaryMetricMeta}>
-                      {item.meta}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              <View style={styles.summaryStatsRow}>
-                <View style={styles.summaryStatPill}>
-                  <Text style={styles.summaryStatLabel}>{t('dashboard.summary.savingsRate')}</Text>
-                  <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, savingsRate))}</Text>
-                </View>
-                <View style={styles.summaryStatPill}>
-                  <Text style={styles.summaryStatLabel}>{t('dashboard.summary.debtLoad')}</Text>
-                  <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
-                </View>
-              </View>
-            </View>
-
             <View style={styles.filterCard}>
               <View style={styles.filterCardHeader}>
                 <View style={styles.filterCardCopy}>
@@ -851,12 +808,56 @@ export default function DashboardScreen() {
               </View>
 
               <View style={styles.liquidMetaRow}>
-                <Text numberOfLines={1} style={styles.cardMeta}>
+                <Text style={styles.cardMeta}>
                   {t('dashboard.opEx')}: {formatCompactCurrency(monthlyExpense, locale)}
                 </Text>
-                <Text numberOfLines={1} style={styles.cardMeta}>
+                <Text style={styles.cardMeta}>
                   {t('dashboard.burn')}: {formatPercentValue(Math.max(0, expenseRatio))}
                 </Text>
+              </View>
+            </View>
+
+            <View style={styles.summaryCard}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardHeaderCopy}>
+                  <Text style={styles.cardEyebrow}>{t('dashboard.summary.title')}</Text>
+                  <Text style={styles.cardTitle}>{activePeriodLabel}</Text>
+                </View>
+                <View style={styles.summaryBadge}>
+                  <Text style={styles.summaryBadgeLabel}>{t('dashboard.filter.currentPeriod')}</Text>
+                </View>
+              </View>
+
+              <View style={styles.summaryGrid}>
+                {summaryHighlights.map((item) => (
+                  <View key={item.label} style={styles.summaryMetric}>
+                    <Text style={styles.summaryMetricLabel}>
+                      {item.label}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      ellipsizeMode="clip"
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.72}
+                      style={styles.summaryMetricValue}>
+                      {item.value}
+                    </Text>
+                    <Text style={styles.summaryMetricMeta}>
+                      {item.meta}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.summaryStatsRow}>
+                <View style={styles.summaryStatPill}>
+                  <Text style={styles.summaryStatLabel}>{t('dashboard.summary.savingsRate')}</Text>
+                  <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, savingsRate))}</Text>
+                </View>
+                <View style={styles.summaryStatPill}>
+                  <Text style={styles.summaryStatLabel}>{t('dashboard.summary.debtLoad')}</Text>
+                  <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
+                </View>
               </View>
             </View>
 
@@ -915,10 +916,10 @@ export default function DashboardScreen() {
               <Text style={styles.cardDescription}>
                 {dashboardDebt
                   ? t('dashboard.debtHealthBody', {
-                      remaining: formatCompactCurrency(remainingDebt, locale),
-                      total: formatCompactCurrency(totalDebt, locale),
-                      percent: formatPercentValue(Math.max(0, debtCompletion || debtToIncome)),
-                    })
+                    remaining: formatCompactCurrency(remainingDebt, locale),
+                    total: formatCompactCurrency(totalDebt, locale),
+                    percent: formatPercentValue(Math.max(0, debtCompletion || debtToIncome)),
+                  })
                   : t('dashboard.noDebtData')}
               </Text>
 
@@ -1438,15 +1439,17 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       backgroundColor: colors.primary,
     },
     liquidMetaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection: compact ? 'column' : 'row',
+      alignItems: compact ? 'flex-start' : 'center',
       justifyContent: 'space-between',
       gap: 10,
     },
     cardMeta: {
       flex: 1,
+      width: compact ? '100%' : undefined,
       color: colors.shellTextSoft,
       fontSize: 10,
+      lineHeight: 14,
       fontWeight: '700',
       textTransform: 'uppercase',
     },
@@ -1490,11 +1493,11 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       gap: 10,
     },
     summaryMetric: {
-      width: '48%',
+      width: compact ? '100%' : '48%',
       borderRadius: 20,
       backgroundColor: colors.shellCard,
       padding: 14,
-      gap: 6,
+      gap: 8,
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
@@ -1504,6 +1507,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '800',
       letterSpacing: 1.1,
       textTransform: 'uppercase',
+      lineHeight: 14,
     },
     summaryMetricValue: {
       color: colors.shellTextPrimary,
@@ -1511,24 +1515,31 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       lineHeight: compact ? 24 : 26,
       fontWeight: '900',
       letterSpacing: -0.7,
+      width: '100%',
+      flexShrink: 1,
+      textAlign: 'left',
+      includeFontPadding: false,
     },
     summaryMetricMeta: {
       color: colors.shellTextMuted,
       fontSize: 11,
       lineHeight: 16,
       fontWeight: '600',
+      flexShrink: 1,
     },
     summaryStatsRow: {
-      flexDirection: 'row',
+      flexDirection: compact ? 'column' : 'row',
       gap: 10,
     },
     summaryStatPill: {
       flex: 1,
+      width: compact ? '100%' : undefined,
       borderRadius: 18,
       backgroundColor: colors.shellCardMuted,
       paddingHorizontal: 14,
       paddingVertical: 12,
       gap: 4,
+      alignItems: 'flex-start',
     },
     summaryStatLabel: {
       color: colors.shellTextSoft,
@@ -1540,6 +1551,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     summaryStatValue: {
       color: colors.shellTextPrimary,
       fontSize: 14,
+      lineHeight: 18,
       fontWeight: '900',
     },
     segmentedControl: {

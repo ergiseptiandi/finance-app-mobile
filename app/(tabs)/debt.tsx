@@ -93,7 +93,7 @@ const formatCompactCurrency = (value: number, locale: string) =>
     style: 'currency',
     currency: 'IDR',
     notation: 'compact',
-    maximumFractionDigits: 1,
+    maximumFractionDigits: 0,
   }).format(value);
 
 const parseDate = (value: string) => {
