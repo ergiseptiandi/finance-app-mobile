@@ -378,10 +378,9 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'activity.card.ledgerTimeline.body':
       'Buka jejak kronologis yang lebih detail untuk setiap event debit dan kredit.',
     'debt.kicker': 'Utang',
-    'debt.title': 'Konsolidasikan risiko sebelum bertambah.',
-    'debt.subtitle':
-      'Workspace utang memakai kartu metrik ringkas agar nilai tetap terbaca di layar sempit tanpa clipping atau scroll horizontal.',
-    'debt.loading': 'Memuat portofolio utang...',
+    'debt.title': 'Kelola utang Anda.',
+    'debt.subtitle': 'Lihat sisa utang, cicilan, dan status pembayaran dalam satu tempat.',
+    'debt.loading': 'Memuat data utang...',
     'debt.loadError': 'Gagal memuat data utang. Coba lagi.',
     'debt.partialError': 'Sebagian data utang gagal dimuat. Tarik ke bawah untuk refresh.',
     'debt.saveError': 'Gagal menyimpan data utang. Coba lagi.',
@@ -913,10 +912,9 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'activity.card.ledgerTimeline.body':
       'Open a deeper chronological trace of every debit and credit event.',
     'debt.kicker': 'Debt',
-    'debt.title': 'Consolidate risk before it compounds.',
-    'debt.subtitle':
-      'The debt workspace uses short, fixed-width metric cards so values remain legible on narrow screens without clipping or horizontal scroll.',
-    'debt.loading': 'Loading your debt portfolio...',
+    'debt.title': 'Manage your debts.',
+    'debt.subtitle': 'See remaining balances, installments, and payment status in one place.',
+    'debt.loading': 'Loading debt data...',
     'debt.loadError': 'Failed to load debt data. Please try again.',
     'debt.partialError': 'Some debt data failed to load. Pull down to refresh.',
     'debt.saveError': 'Failed to save debt data. Please try again.',
