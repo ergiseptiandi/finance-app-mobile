@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -113,7 +112,6 @@ export default function SettingsScreen() {
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [notificationSaving, setNotificationSaving] = useState(false);
   const [notificationError, setNotificationError] = useState('');
-  const [notificationStatus, setNotificationStatus] = useState('');
   const [biometricEnabled, setBiometricEnabled] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -185,7 +183,6 @@ export default function SettingsScreen() {
 
       setNotificationSaving(true);
       setNotificationError('');
-      setNotificationStatus('');
 
       const payload = {
         enabled: nextState.enabled ?? pushEnabled,
@@ -209,7 +206,6 @@ export default function SettingsScreen() {
         setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? '09:00');
         setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
         setPushToken(data.push_token ?? '');
-        setNotificationStatus(t('settings.notificationsSaved'));
         return true;
       } catch {
         setNotificationError(t('settings.notificationsSaveError'));
@@ -278,8 +274,8 @@ export default function SettingsScreen() {
         value: parseTimeValue(currentValue),
         mode: 'time',
         is24Hour: true,
-        onChange: async (_, selectedDate) => {
-          if (!selectedDate) {
+        onChange: async (event, selectedDate) => {
+          if (event.type !== 'set' || !selectedDate) {
             return;
           }
 
@@ -471,8 +467,8 @@ export default function SettingsScreen() {
             <SettingsRow
               colors={colors}
               icon="bell-ring-outline"
-              title={t('settings.pushNotifications')}
-              subtitle={t('settings.pushNotificationsMeta')}
+              title={t('settings.notificationsLabel')}
+              subtitle={t('settings.notificationsLabelMeta')}
               iconTone="primary"
               accent
               rightSlot={
@@ -494,16 +490,18 @@ export default function SettingsScreen() {
               icon="cash-fast"
               title={t('settings.dailyExpenseReminder')}
               subtitle={t('settings.dailyExpenseReminderMeta')}
+              accent={dailyExpenseReminderEnabled}
+              onPress={() => void handleDailyReminderToggle()}
               rightSlot={
                 <Pressable
-                  onPress={() => void handleDailyReminderToggle()}
+                  onPress={() => void handlePickReminderTime('daily')}
                   disabled={notificationLoading || notificationSaving}
                   style={[
-                    styles.switchTrack,
-                    dailyExpenseReminderEnabled && styles.switchTrackActive,
+                    styles.notificationTimeButton,
                     (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
                   ]}>
-                  <View style={[styles.switchThumb, dailyExpenseReminderEnabled && styles.switchThumbActive]} />
+                  <Text style={styles.notificationTimeText}>{dailyExpenseReminderTime}</Text>
+                  <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
                 </Pressable>
               }
             />
@@ -514,67 +512,24 @@ export default function SettingsScreen() {
               title={t('settings.debtPaymentReminder')}
               subtitle={t('settings.debtPaymentReminderMeta')}
               iconTone="secondary"
+              accent={debtPaymentReminderEnabled}
+              onPress={() => void handleDebtReminderToggle()}
               rightSlot={
                 <Pressable
-                  onPress={() => void handleDebtReminderToggle()}
+                  onPress={() => void handlePickReminderTime('debt')}
                   disabled={notificationLoading || notificationSaving}
                   style={[
-                    styles.switchTrack,
-                    debtPaymentReminderEnabled && styles.switchTrackPrimary,
+                    styles.notificationTimeButton,
                     (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
                   ]}>
-                  <View style={[styles.switchThumb, debtPaymentReminderEnabled && styles.switchThumbPrimary]} />
+                  <Text style={styles.notificationTimeText}>{debtPaymentReminderTime}</Text>
+                  <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
                 </Pressable>
               }
             />
           </View>
 
-            <View style={styles.notificationInfoCard}>
-              {notificationLoading ? (
-                <View style={styles.notificationStatusRow}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={styles.notificationInfoText}>{t('settings.notificationsLoading')}</Text>
-              </View>
-            ) : null}
-
-            {notificationStatus ? <Text style={styles.notificationSuccessText}>{notificationStatus}</Text> : null}
-            {notificationError ? <Text style={styles.notificationErrorText}>{notificationError}</Text> : null}
-
-            <View style={styles.notificationMetaRow}>
-              <Text style={styles.notificationMetaLabel}>{t('settings.dailyExpenseReminderTime')}</Text>
-              <Pressable
-                onPress={() => void handlePickReminderTime('daily')}
-                disabled={notificationLoading || notificationSaving}
-                style={({ pressed }) => [
-                  styles.notificationTimeButton,
-                  (notificationLoading || notificationSaving) && styles.notificationTimeButtonDisabled,
-                  pressed && styles.notificationTimeButtonPressed,
-                ]}>
-                <Text style={styles.notificationMetaValue}>{dailyExpenseReminderTime}</Text>
-                <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
-              </Pressable>
-            </View>
-            <View style={styles.notificationMetaRow}>
-              <Text style={styles.notificationMetaLabel}>{t('settings.debtPaymentReminderTime')}</Text>
-              <Pressable
-                onPress={() => void handlePickReminderTime('debt')}
-                disabled={notificationLoading || notificationSaving}
-                style={({ pressed }) => [
-                  styles.notificationTimeButton,
-                  (notificationLoading || notificationSaving) && styles.notificationTimeButtonDisabled,
-                  pressed && styles.notificationTimeButtonPressed,
-                ]}>
-                <Text style={styles.notificationMetaValue}>{debtPaymentReminderTime}</Text>
-                <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
-              </Pressable>
-            </View>
-            <View style={styles.notificationMetaRow}>
-              <Text style={styles.notificationMetaLabel}>{t('settings.pushToken')}</Text>
-              <Text numberOfLines={1} style={styles.notificationMetaValue}>
-                {pushToken ? t('settings.pushTokenReady') : t('settings.pushTokenMissing')}
-              </Text>
-            </View>
-          </View>
+          {notificationError ? <Text style={styles.notificationErrorText}>{notificationError}</Text> : null}
         </View>
 
         <View style={styles.logoutWrap}>
@@ -885,7 +840,9 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     notificationTimeButton: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       gap: 6,
+      minWidth: 92,
       paddingHorizontal: 10,
       paddingVertical: 6,
       borderRadius: 999,
@@ -898,6 +855,13 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
     notificationTimeButtonDisabled: {
       opacity: 0.55,
+    },
+    notificationTimeText: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '800',
+      textAlign: 'right',
     },
     notificationMetaLabel: {
       flexShrink: 1,

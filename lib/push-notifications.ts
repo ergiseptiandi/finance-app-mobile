@@ -1,9 +1,29 @@
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 type NotificationData = Record<string, unknown> | undefined;
 
+type NotificationsModule = typeof import('expo-notifications');
+
+const isExpoGo =
+  Constants.appOwnership === 'expo' ||
+  Constants.executionEnvironment === 'storeClient';
+
+const getNotificationsModule = () => {
+  if (isExpoGo) {
+    return null;
+  }
+
+  return require('expo-notifications') as NotificationsModule;
+};
+
 export const registerNotificationHandler = () => {
+  const Notifications = getNotificationsModule();
+
+  if (!Notifications) {
+    return;
+  }
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -32,6 +52,12 @@ export const getDevicePushToken = async () => {
     return null;
   }
 
+  const Notifications = getNotificationsModule();
+
+  if (!Notifications) {
+    return null;
+  }
+
   const permission = await Notifications.getPermissionsAsync();
   let granted = permission.status === 'granted';
 
@@ -51,4 +77,16 @@ export const getDevicePushToken = async () => {
   }
 
   return token.data ?? null;
+};
+
+export const registerNotificationResponseListener = (
+  handler: Parameters<NotificationsModule['addNotificationResponseReceivedListener']>[0]
+) => {
+  const Notifications = getNotificationsModule();
+
+  if (!Notifications) {
+    return null;
+  }
+
+  return Notifications.addNotificationResponseReceivedListener(handler);
 };

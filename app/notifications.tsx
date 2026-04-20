@@ -22,29 +22,43 @@ import {
   markNotificationAsRead,
   type NotificationRecord,
 } from '@/lib/api/notifications';
-import { resolveNotificationRoute } from '@/lib/push-notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
 
-const toDateLabel = (value?: string | null, locale = 'id-ID') => {
+const toDateParts = (value?: string | null, locale = 'id-ID') => {
   if (!value) {
-    return '';
+    return { date: '', time: '' };
   }
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return value;
+    return { date: value, time: '' };
   }
 
-  return new Intl.DateTimeFormat(locale, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return {
+    date: new Intl.DateTimeFormat(locale, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(date),
+    time: new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date),
+  };
 };
+
+const markReadById = (items: NotificationRecord[], id: NotificationRecord['id']) =>
+  items.map((entry) =>
+    entry.id === id
+      ? {
+          ...entry,
+          read: true,
+          read_at: entry.read_at ?? new Date().toISOString(),
+        }
+      : entry
+  );
 
 const isUnreadNotification = (item: NotificationRecord) => {
   if (typeof item.read === 'boolean') {
@@ -93,6 +107,7 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState<number | string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => isUnreadNotification(item)).length,
@@ -159,33 +174,43 @@ export default function NotificationsScreen() {
     }, [loadNotifications])
   );
 
-  const openNotification = useCallback(
+  const markNotification = useCallback(
     async (item: NotificationRecord) => {
-      const route = resolveNotificationRoute(item.data ?? { kind: item.kind ?? item.type ?? undefined });
-
       setSavingId(item.id);
       try {
         await withAuthorizedRequest((accessToken) => markNotificationAsRead(accessToken, item.id));
-        setNotifications((current) =>
-          current.map((entry) =>
-            entry.id === item.id
-              ? {
-                  ...entry,
-                  read: true,
-                  read_at: entry.read_at ?? new Date().toISOString(),
-                }
-              : entry
-          )
-        );
+        setNotifications((current) => markReadById(current, item.id));
       } catch {
-        // keep navigation even if mark-read fails
+        // keep the UI responsive even if mark-read fails
       } finally {
         setSavingId(null);
-        router.push(route as never);
       }
     },
     [withAuthorizedRequest]
   );
+
+  const markAllAsRead = useCallback(async () => {
+    if (savingAll || loading || unreadCount === 0) {
+      return;
+    }
+
+    const unreadItems = notifications.filter((item) => isUnreadNotification(item));
+
+    if (unreadItems.length === 0) {
+      return;
+    }
+
+    setSavingAll(true);
+
+    try {
+      await withAuthorizedRequest((accessToken) =>
+        Promise.allSettled(unreadItems.map((item) => markNotificationAsRead(accessToken, item.id)))
+      );
+      setNotifications((current) => current.map((entry) => (isUnreadNotification(entry) ? { ...entry, read: true, read_at: entry.read_at ?? new Date().toISOString() } : entry)));
+    } finally {
+      setSavingAll(false);
+    }
+  }, [loading, notifications, savingAll, unreadCount, withAuthorizedRequest]);
 
   return (
     <View style={styles.screen}>
@@ -202,8 +227,26 @@ export default function NotificationsScreen() {
             <Text style={styles.kicker}>{t('notifications.kicker')}</Text>
             <Text style={styles.title}>{t('notifications.title')}</Text>
           </View>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{toNumber(unreadCount)}</Text>
+          <View style={styles.topBarActions}>
+            {unreadCount > 0 ? (
+              <Pressable
+                onPress={() => void markAllAsRead()}
+                disabled={savingAll}
+                style={({ pressed }) => [
+                  styles.readAllButton,
+                  pressed && styles.readAllButtonPressed,
+                  savingAll && styles.readAllButtonDisabled,
+                ]}>
+                {savingAll ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Text style={styles.readAllText}>{t('notifications.markAllRead')}</Text>
+                )}
+              </Pressable>
+            ) : null}
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{toNumber(unreadCount)}</Text>
+            </View>
           </View>
         </View>
 
@@ -230,11 +273,11 @@ export default function NotificationsScreen() {
               const unread = isUnreadNotification(item);
               const title = item.title?.trim() || t('notifications.defaultTitle');
               const message = item.message?.trim() || t('notifications.defaultBody');
-              const dateLabel = toDateLabel(item.created_at, locale);
+              const dateParts = toDateParts(item.created_at, locale);
               return (
                 <Pressable
                   key={String(item.id)}
-                  onPress={() => void openNotification(item)}
+                  onPress={() => void markNotification(item)}
                   style={({ pressed }) => [
                     styles.card,
                     unread && styles.cardUnread,
@@ -259,7 +302,10 @@ export default function NotificationsScreen() {
                     </Text>
                     <View style={styles.cardFooter}>
                       <Text style={styles.cardMeta}>{getNotificationKindLabel(item.kind ?? item.type, t)}</Text>
-                      <Text style={styles.cardMeta}>{dateLabel}</Text>
+                      <View style={styles.dateBlock}>
+                        <Text style={styles.dateText}>{dateParts.date}</Text>
+                        <Text style={styles.timeText}>{dateParts.time}</Text>
+                      </View>
                     </View>
                   </View>
                   {savingId === item.id ? <ActivityIndicator color={colors.primary} /> : null}
@@ -309,6 +355,11 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       minWidth: 0,
       gap: 2,
     },
+    topBarActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
     kicker: {
       color: colors.primary,
       fontSize: 10,
@@ -335,6 +386,27 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     badgeText: {
       color: colors.primary,
       fontSize: 12,
+      fontWeight: '800',
+    },
+    readAllButton: {
+      minHeight: 28,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.2),
+    },
+    readAllButtonPressed: {
+      opacity: 0.85,
+    },
+    readAllButtonDisabled: {
+      opacity: 0.6,
+    },
+    readAllText: {
+      color: colors.primary,
+      fontSize: 11,
       fontWeight: '800',
     },
     loadingState: {
@@ -439,16 +511,37 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     },
     cardFooter: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       justifyContent: 'space-between',
-      gap: 10,
+      gap: 12,
     },
     cardMeta: {
+      flex: 1,
+      minWidth: 0,
       color: colors.shellTextMuted,
       fontSize: 11,
       lineHeight: 16,
       fontWeight: '700',
       textTransform: 'uppercase',
       letterSpacing: 0.8,
+    },
+    dateBlock: {
+      alignItems: 'flex-end',
+      gap: 2,
+      flexShrink: 0,
+    },
+    dateText: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 15,
+      fontWeight: '700',
+      textAlign: 'right',
+    },
+    timeText: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '800',
+      textAlign: 'right',
     },
   });
