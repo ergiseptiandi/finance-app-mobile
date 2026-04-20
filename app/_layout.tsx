@@ -142,6 +142,7 @@ function RootNavigator() {
           <Stack.Screen name="forgot-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
           <Stack.Screen name="reset-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
           <Stack.Screen name="register" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+          <Stack.Screen name="biometric-unlock" options={{ animation: isDark ? 'none' : 'fade' }} />
           <Stack.Screen name="notifications" options={{ animation: isDark ? 'none' : 'simple_push' }} />
           <Stack.Screen name="(tabs)" options={{ animation: isDark ? 'none' : 'fade' }} />
           <Stack.Screen name="categories" options={{ animation: isDark ? 'none' : 'simple_push' }} />

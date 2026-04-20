@@ -5,17 +5,22 @@ import { Redirect } from 'expo-router';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAuthSession } from '@/lib/auth-session';
+import { getBiometricState } from '@/lib/biometric-auth';
 import { getOnboardingCompleted } from '@/lib/onboarding';
 
 export default function Index() {
   const colors = Colors[useColorScheme() ?? 'light'];
-  const [target, setTarget] = useState<'loading' | '/onboarding' | '/login' | '/(tabs)'>('loading');
+  const [target, setTarget] = useState<'loading' | '/onboarding' | '/login' | '/biometric-unlock' | '/(tabs)'>('loading');
 
   useEffect(() => {
     let active = true;
 
     const resolveTarget = async () => {
-      const [completed, session] = await Promise.all([getOnboardingCompleted(), getAuthSession()]);
+      const [completed, session, biometricState] = await Promise.all([
+        getOnboardingCompleted(),
+        getAuthSession(),
+        getBiometricState(),
+      ]);
 
       if (!active) {
         return;
@@ -26,7 +31,12 @@ export default function Index() {
         return;
       }
 
-      setTarget(session ? '/(tabs)' : '/login');
+      if (!session) {
+        setTarget('/login');
+        return;
+      }
+
+      setTarget(biometricState.enabled ? '/biometric-unlock' : '/(tabs)');
     };
 
     resolveTarget();

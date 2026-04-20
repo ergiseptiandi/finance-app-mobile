@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -17,8 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ApiRequestError, login, refreshToken } from '@/lib/api/auth';
-import { authenticateBiometric, getBiometricState, getBiometricRefreshToken } from '@/lib/biometric-auth';
+import { ApiRequestError, login } from '@/lib/api/auth';
 import { saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
 import { useAppLanguage } from '@/providers/language-provider';
@@ -40,31 +39,6 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [biometricLoading, setBiometricLoading] = useState(false);
-  const [biometricError, setBiometricError] = useState('');
-
-  useEffect(() => {
-    let active = true;
-
-    const loadBiometricState = async () => {
-      const state = await getBiometricState();
-
-      if (!active) {
-        return;
-      }
-
-      setBiometricEnabled(state.enabled);
-      setBiometricAvailable(state.available);
-    };
-
-    void loadBiometricState();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -93,50 +67,6 @@ export default function LoginScreen() {
       }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBiometricLogin = async () => {
-    if (loading || biometricLoading) {
-      return;
-    }
-
-    setBiometricLoading(true);
-    setBiometricError('');
-    setError('');
-
-    try {
-      const authenticated = await authenticateBiometric(t('login.biometricPrompt'));
-
-      if (!authenticated) {
-        setBiometricError(t('login.biometricCancelled'));
-        return;
-      }
-
-      const storedRefreshToken = await getBiometricRefreshToken();
-
-      if (!storedRefreshToken) {
-        setBiometricError(t('login.biometricUnavailable'));
-        return;
-      }
-
-      const response = await refreshToken({
-        refresh_token: storedRefreshToken,
-        device_name: DEVICE_NAME,
-      });
-
-      await saveAuthSession(response.Data);
-      showTransitionOverlay();
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      router.replace('/(tabs)');
-    } catch (err) {
-      if (err instanceof ApiRequestError) {
-        setBiometricError(err.message);
-      } else {
-        setBiometricError(t('login.biometricError'));
-      }
-    } finally {
-      setBiometricLoading(false);
     }
   };
 
@@ -285,35 +215,11 @@ export default function LoginScreen() {
                       )}
                     </Pressable>
 
-                    {biometricEnabled && biometricAvailable ? (
-                      <Pressable
-                        onPress={() => void handleBiometricLogin()}
-                        disabled={biometricLoading || loading}
-                        style={({ pressed }) => [
-                          styles.secondaryButton,
-                          pressed && !(biometricLoading || loading) && styles.pressedButton,
-                          (biometricLoading || loading) && styles.disabledButton,
-                        ]}>
-                        {biometricLoading ? (
-                          <ActivityIndicator color={colors.primary} />
-                        ) : (
-                          <>
-                            <MaterialCommunityIcons name="fingerprint" size={20} color={colors.primary} />
-                            <Text style={styles.secondaryButtonText}>{t('login.biometricSubmit')}</Text>
-                          </>
-                        )}
-                      </Pressable>
-                    ) : null}
-
-                    {!!biometricError && <Text style={styles.errorText}>{biometricError}</Text>}
-
                     <View style={styles.loginHintCard}>
                       <View style={styles.loginHintIconWrap}>
                         <MaterialCommunityIcons name="shield-check-outline" size={16} color={colors.primary} />
                       </View>
-                      <Text style={styles.loginHintText}>
-                        {biometricEnabled && biometricAvailable ? t('login.authHintBiometric') : t('login.authHint')}
-                      </Text>
+                      <Text style={styles.loginHintText}>{t('login.authHint')}</Text>
                     </View>
 
                     <View style={styles.footerRow}>
@@ -519,24 +425,6 @@ const createStyles = (colors: AppColorTheme, bottomInset: number) =>
       fontSize: 16,
       fontWeight: '800',
       letterSpacing: 0.3,
-    },
-    secondaryButton: {
-      marginTop: 12,
-      minHeight: 56,
-      borderRadius: 999,
-      backgroundColor: alpha(colors.primary, 0.08),
-      borderWidth: 1,
-      borderColor: alpha(colors.primary, 0.18),
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexDirection: 'row',
-      gap: 10,
-    },
-    secondaryButtonText: {
-      color: colors.primary,
-      fontSize: 15,
-      fontWeight: '800',
-      letterSpacing: 0.2,
     },
     loginHintCard: {
       marginTop: 18,

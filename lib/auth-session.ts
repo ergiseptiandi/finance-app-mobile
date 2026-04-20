@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { ApiRequestError, logout, refreshToken } from '@/lib/api/auth';
 import type { AuthSession } from '@/lib/api/auth';
-import { syncBiometricCredentials } from '@/lib/biometric-auth';
+import { clearBiometricCredentials, syncBiometricCredentials } from '@/lib/biometric-auth';
 import { clearAllScreenCache } from '@/lib/screen-cache';
 
 const SESSION_STORAGE_KEY = 'finance-go.auth.session';
@@ -39,6 +39,7 @@ export const getAuthSession = async () => {
 export const clearAuthSession = async () => {
   cachedSession = null;
   await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
+  await clearBiometricCredentials();
   await clearAllScreenCache();
 };
 
