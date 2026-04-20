@@ -1,3 +1,5 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,8 +15,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -24,9 +24,9 @@ import { useAppLanguage } from '@/providers/language-provider';
 
 const DEVICE_NAME =
   Platform.select({
-    android: 'Pulse Auth Android',
-    default: 'Pulse Auth Android',
-  }) ?? 'Pulse Auth Android';
+    android: 'Finance-GO Android',
+    default: 'Finance-GO Android',
+  }) ?? 'Finance-GO Android';
 
 export default function LoginScreen() {
   const { width } = useWindowDimensions();
@@ -149,7 +149,7 @@ export default function LoginScreen() {
                           autoCapitalize="none"
                           autoComplete="email"
                           keyboardType="email-address"
-                          placeholder="name@company.com"
+                          placeholder="Email"
                           placeholderTextColor={colors.inputPlaceholder}
                           style={styles.input}
                         />
@@ -215,10 +215,11 @@ export default function LoginScreen() {
                       )}
                     </Pressable>
 
-                    <View style={styles.inlineDivider}>
-                      <View style={styles.inlineDividerLine} />
-                      <Text style={styles.inlineDividerText}>{t('login.noSocialLogin')}</Text>
-                      <View style={styles.inlineDividerLine} />
+                    <View style={styles.loginHintCard}>
+                      <View style={styles.loginHintIconWrap}>
+                        <MaterialCommunityIcons name="shield-check-outline" size={16} color={colors.primary} />
+                      </View>
+                      <Text style={styles.loginHintText}>{t('login.authHint')}</Text>
                     </View>
 
                     <View style={styles.footerRow}>
@@ -423,23 +424,32 @@ const createStyles = (colors: AppColorTheme) =>
       fontWeight: '800',
       letterSpacing: 0.3,
     },
-    inlineDivider: {
-      marginTop: 22,
+    loginHintCard: {
+      marginTop: 18,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      gap: 10,
+      borderRadius: 16,
+      backgroundColor: alpha(colors.primary, 0.06),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.12),
     },
-    inlineDividerLine: {
+    loginHintIconWrap: {
+      width: 30,
+      height: 30,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.12),
+    },
+    loginHintText: {
       flex: 1,
-      height: 1,
-      backgroundColor: colors.dividerSoft,
-    },
-    inlineDividerText: {
-      color: colors.outlineVariant,
-      fontSize: 11,
-      fontWeight: '800',
-      letterSpacing: 1.8,
-      textTransform: 'uppercase',
+      color: colors.onSurfaceVariant,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
     },
     footerRow: {
       marginTop: 20,

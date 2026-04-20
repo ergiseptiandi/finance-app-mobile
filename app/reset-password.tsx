@@ -108,7 +108,7 @@ export default function ResetPasswordScreen() {
                   <View style={styles.formCard}>
                     <View style={styles.brandRow}>
                       <View>
-                        <Text style={styles.brandKicker}>Pulse Auth</Text>
+                        <Text style={styles.brandKicker}>Finance-GO</Text>
                         <Text style={styles.formTitle}>{t('reset.title')}</Text>
                       </View>
                       <View style={styles.brandMark}>

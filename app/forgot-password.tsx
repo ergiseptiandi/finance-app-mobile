@@ -1,3 +1,5 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,8 +15,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -113,7 +113,7 @@ export default function ForgotPasswordScreen() {
                   <View style={styles.formCard}>
                     <View style={styles.brandRow}>
                       <View>
-                        <Text style={styles.brandKicker}>Pulse Auth</Text>
+                        <Text style={styles.brandKicker}>Finance-GO</Text>
                         <Text style={styles.formTitle}>{t('forgot.title')}</Text>
                       </View>
                       <View style={styles.brandMark}>
@@ -137,7 +137,7 @@ export default function ForgotPasswordScreen() {
                           autoCapitalize="none"
                           autoComplete="email"
                           keyboardType="email-address"
-                          placeholder="name@company.com"
+                          placeholder="Email"
                           placeholderTextColor={colors.inputPlaceholder}
                           style={styles.input}
                         />
