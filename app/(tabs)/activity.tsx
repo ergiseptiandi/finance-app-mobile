@@ -954,7 +954,7 @@ export default function ActivityScreen() {
     }
   }, [closeTransactionModal, form.id, loadActivity, t, withAuthorizedRequest]);
 
-  const totalMovement = summary.total_income + summary.total_expense;
+  const transactionBalance = summary.balance;
   const visibleTransactions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
@@ -998,6 +998,7 @@ export default function ActivityScreen() {
       }));
   }, [locale, t, visibleTransactions]);
 
+  const totalMovement = summary.total_income + summary.total_expense;
   const streamProgress =
     pagination.total > 0 ? (visibleTransactions.length / Math.max(pagination.total, 1)) * 100 : 0;
   const incomeShare = totalMovement > 0 ? (summary.total_income / totalMovement) * 100 : 0;
@@ -1153,8 +1154,8 @@ export default function ActivityScreen() {
             <View style={styles.summaryStack}>
               <SummaryStat
                 colors={colors}
-                title={t('activity.transactions.netVolume')}
-                value={toCurrency(totalMovement, locale)}
+                title={t('activity.transactions.balance')}
+                value={toCurrency(transactionBalance, locale)}
                 meta={t('activity.transactions.thisPeriod')}
                 metaTone="positive"
                 accent="primary"
