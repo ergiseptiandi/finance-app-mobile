@@ -1316,9 +1316,6 @@ export default function DashboardScreen() {
         </View>
       </Modal>
 
-      <Pressable style={styles.fab}>
-        <MaterialCommunityIcons name="plus" size={28} color={colors.shellFabIcon} />
-      </Pressable>
     </View>
   );
 }
@@ -2373,22 +2370,6 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       color: colors.onPrimary,
       fontSize: 13,
       fontWeight: '800',
-    },
-    fab: {
-      position: 'absolute',
-      right: 16,
-      bottom: 116,
-      width: 44,
-      height: 44,
-      borderRadius: 12,
-      backgroundColor: colors.shellFab,
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: alpha(colors.shellFab, 0.4),
-      shadowOpacity: 1,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 18,
     },
   });
 };
