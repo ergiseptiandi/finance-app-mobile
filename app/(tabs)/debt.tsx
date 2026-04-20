@@ -549,6 +549,7 @@ export default function DebtScreen() {
     setPaymentTargetDebtId(null);
     setPaymentTargetLocked(false);
     setIosPaymentDatePickerVisible(false);
+    setSubmittingInstallmentId(null);
   }, []);
 
   const openCreateDebtForm = useCallback(() => {
