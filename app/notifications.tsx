@@ -1,0 +1,454 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppLanguage } from '@/providers/language-provider';
+import { ApiRequestError } from '@/lib/api/auth';
+import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
+import {
+  listNotifications,
+  markNotificationAsRead,
+  type NotificationRecord,
+} from '@/lib/api/notifications';
+import { resolveNotificationRoute } from '@/lib/push-notifications';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
+
+const toDateLabel = (value?: string | null, locale = 'id-ID') => {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const isUnreadNotification = (item: NotificationRecord) => {
+  if (typeof item.read === 'boolean') {
+    return !item.read;
+  }
+
+  return !item.read_at;
+};
+
+const getNotificationKindLabel = (kind: string | null | undefined, t: (key: string) => string) => {
+  if (kind === 'daily_expense_input') {
+    return t('notifications.kindDailyExpense');
+  }
+
+  if (kind === 'debt_payment') {
+    return t('notifications.kindDebtPayment');
+  }
+
+  return kind || t('notifications.kindFallback');
+};
+
+const normalizeNotificationList = (data: unknown): NotificationRecord[] => {
+  if (Array.isArray(data)) {
+    return data as NotificationRecord[];
+  }
+
+  if (data && typeof data === 'object') {
+    const items = (data as { data?: unknown }).data;
+    if (Array.isArray(items)) {
+      return items as NotificationRecord[];
+    }
+  }
+
+  return [];
+};
+
+export default function NotificationsScreen() {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+  const { language, t } = useAppLanguage();
+  const insets = useSafeAreaInsets();
+  const locale = language === 'id' ? 'id-ID' : 'en-US';
+  const styles = createStyles(colors, insets.top, insets.bottom);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [savingId, setSavingId] = useState<number | string | null>(null);
+
+  const unreadCount = useMemo(
+    () => notifications.filter((item) => isUnreadNotification(item)).length,
+    [notifications]
+  );
+
+  const withAuthorizedRequest = useCallback(
+    async <T,>(task: (accessToken: string) => Promise<T>) => {
+      const session = await getAuthSession();
+
+      if (!session) {
+        router.replace('/login');
+        throw new Error('missing_session');
+      }
+
+      try {
+        return await task(session.token.access_token);
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 401 && session.token.refresh_token) {
+          const refreshed = await refreshStoredAuthSession();
+          if (refreshed) {
+            return task(refreshed.token.access_token);
+          }
+        }
+
+        if (error instanceof ApiRequestError && error.status === 401) {
+          router.replace('/login');
+        }
+
+        throw error;
+      }
+    },
+    []
+  );
+
+  const loadNotifications = useCallback(
+    async (isRefresh = false) => {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      setError('');
+
+      try {
+        const response = await withAuthorizedRequest((accessToken) => listNotifications(accessToken));
+        setNotifications(normalizeNotificationList(response.Data));
+      } catch (loadError) {
+        if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
+          setError(t('notifications.loadError'));
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [t, withAuthorizedRequest]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadNotifications();
+    }, [loadNotifications])
+  );
+
+  const openNotification = useCallback(
+    async (item: NotificationRecord) => {
+      const route = resolveNotificationRoute(item.data ?? { kind: item.kind ?? item.type ?? undefined });
+
+      setSavingId(item.id);
+      try {
+        await withAuthorizedRequest((accessToken) => markNotificationAsRead(accessToken, item.id));
+        setNotifications((current) =>
+          current.map((entry) =>
+            entry.id === item.id
+              ? {
+                  ...entry,
+                  read: true,
+                  read_at: entry.read_at ?? new Date().toISOString(),
+                }
+              : entry
+          )
+        );
+      } catch {
+        // keep navigation even if mark-read fails
+      } finally {
+        setSavingId(null);
+        router.push(route as never);
+      }
+    },
+    [withAuthorizedRequest]
+  );
+
+  return (
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadNotifications(true)} tintColor={colors.primary} />}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.topBar}>
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <MaterialCommunityIcons name="chevron-left" size={24} color={colors.shellTextPrimary} />
+          </Pressable>
+          <View style={styles.topBarCopy}>
+            <Text style={styles.kicker}>{t('notifications.kicker')}</Text>
+            <Text style={styles.title}>{t('notifications.title')}</Text>
+          </View>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{toNumber(unreadCount)}</Text>
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={styles.loadingText}>{t('notifications.loading')}</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.stateCard}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={28} color={colors.danger} />
+            <Text style={styles.stateTitle}>{t('notifications.loadError')}</Text>
+            <Text style={styles.stateBody}>{error}</Text>
+          </View>
+        ) : notifications.length === 0 ? (
+          <View style={styles.stateCard}>
+            <MaterialCommunityIcons name="bell-outline" size={28} color={colors.outlineVariant} />
+            <Text style={styles.stateTitle}>{t('notifications.emptyTitle')}</Text>
+            <Text style={styles.stateBody}>{t('notifications.emptyBody')}</Text>
+          </View>
+        ) : (
+          <View style={styles.list}>
+            {notifications.map((item) => {
+              const unread = isUnreadNotification(item);
+              const title = item.title?.trim() || t('notifications.defaultTitle');
+              const message = item.message?.trim() || t('notifications.defaultBody');
+              const dateLabel = toDateLabel(item.created_at, locale);
+              return (
+                <Pressable
+                  key={String(item.id)}
+                  onPress={() => void openNotification(item)}
+                  style={({ pressed }) => [
+                    styles.card,
+                    unread && styles.cardUnread,
+                    pressed && styles.cardPressed,
+                  ]}>
+                  <View style={[styles.iconWrap, unread && styles.iconWrapUnread]}>
+                    <MaterialCommunityIcons
+                      name={item.kind === 'debt_payment' || item.type === 'debt_payment' ? 'calendar-clock' : 'cash-fast'}
+                      size={18}
+                      color={unread ? colors.primary : colors.shellTextMuted}
+                    />
+                  </View>
+                  <View style={styles.copy}>
+                    <View style={styles.cardHeader}>
+                      <Text numberOfLines={1} style={styles.cardTitle}>
+                        {title}
+                      </Text>
+                      {unread ? <View style={styles.unreadDot} /> : null}
+                    </View>
+                    <Text numberOfLines={2} style={styles.cardBody}>
+                      {message}
+                    </Text>
+                    <View style={styles.cardFooter}>
+                      <Text style={styles.cardMeta}>{getNotificationKindLabel(item.kind ?? item.type, t)}</Text>
+                      <Text style={styles.cardMeta}>{dateLabel}</Text>
+                    </View>
+                  </View>
+                  {savingId === item.id ? <ActivityIndicator color={colors.primary} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: number) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.shellBackground,
+    },
+    scroll: {
+      flex: 1,
+      backgroundColor: colors.shellBackground,
+    },
+    content: {
+      paddingHorizontal: 18,
+      paddingTop: Math.max(topInset + 12, 20),
+      paddingBottom: Math.max(bottomInset + 28, 28),
+      gap: 16,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    backButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      backgroundColor: colors.shellCard,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    topBarCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    kicker: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 2,
+      textTransform: 'uppercase',
+    },
+    title: {
+      color: colors.shellTextPrimary,
+      fontSize: 24,
+      lineHeight: 30,
+      fontWeight: '900',
+      letterSpacing: -0.9,
+    },
+    badge: {
+      minWidth: 38,
+      height: 28,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.12),
+    },
+    badgeText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    loadingState: {
+      minHeight: 220,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+    },
+    loadingText: {
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    stateCard: {
+      minHeight: 220,
+      borderRadius: 24,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+    },
+    stateTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 18,
+      lineHeight: 24,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    stateBody: {
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 20,
+      fontWeight: '500',
+      textAlign: 'center',
+    },
+    list: {
+      gap: 12,
+    },
+    card: {
+      flexDirection: 'row',
+      gap: 12,
+      borderRadius: 22,
+      padding: 14,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      alignItems: 'flex-start',
+    },
+    cardUnread: {
+      borderColor: alpha(colors.primary, 0.34),
+      backgroundColor: alpha(colors.primary, 0.05),
+    },
+    cardPressed: {
+      opacity: 0.92,
+    },
+    iconWrap: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    iconWrapUnread: {
+      backgroundColor: alpha(colors.primary, 0.12),
+    },
+    copy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 6,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    cardTitle: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '800',
+    },
+    unreadDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      flexShrink: 0,
+    },
+    cardBody: {
+      color: colors.shellTextSecondary,
+      fontSize: 13,
+      lineHeight: 19,
+      fontWeight: '500',
+    },
+    cardFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    cardMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+  });

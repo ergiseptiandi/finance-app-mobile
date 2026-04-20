@@ -782,7 +782,7 @@ export default function DashboardScreen() {
             </Text>
           </View>
 
-          <Pressable style={styles.iconButton}>
+          <Pressable onPress={() => router.push('/notifications')} style={styles.iconButton}>
             <MaterialCommunityIcons name="bell-outline" size={20} color={colors.shellTextPrimary} />
           </Pressable>
         </View>

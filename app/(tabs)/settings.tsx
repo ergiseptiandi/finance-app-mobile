@@ -9,6 +9,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,6 +48,17 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsData = {
   debt_payment_reminder_days_before: 3,
   push_token: '',
 };
+
+const parseTimeValue = (value: string) => {
+  const [hours, minutes] = value.split(':').map((part) => Number(part));
+  const nextDate = new Date();
+
+  nextDate.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+  return nextDate;
+};
+
+const formatTimeValue = (date: Date) =>
+  `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
 function SettingsRow({
   colors,
@@ -254,6 +266,43 @@ export default function SettingsScreen() {
     await persistNotificationSettings({ debtPaymentReminderEnabled: !debtPaymentReminderEnabled });
   }, [debtPaymentReminderEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
 
+  const handlePickReminderTime = useCallback(
+    (kind: 'daily' | 'debt') => {
+      if (notificationLoading || notificationSaving) {
+        return;
+      }
+
+      const currentValue = kind === 'daily' ? dailyExpenseReminderTime : debtPaymentReminderTime;
+
+      DateTimePickerAndroid.open({
+        value: parseTimeValue(currentValue),
+        mode: 'time',
+        is24Hour: true,
+        onChange: async (_, selectedDate) => {
+          if (!selectedDate) {
+            return;
+          }
+
+          const nextTime = formatTimeValue(selectedDate);
+
+          if (kind === 'daily') {
+            await persistNotificationSettings({ dailyExpenseReminderTime: nextTime });
+            return;
+          }
+
+          await persistNotificationSettings({ debtPaymentReminderTime: nextTime });
+        },
+      });
+    },
+    [
+      dailyExpenseReminderTime,
+      debtPaymentReminderTime,
+      notificationLoading,
+      notificationSaving,
+      persistNotificationSettings,
+    ]
+  );
+
   const initials = useMemo(() => {
     return displayName
       .split(' ')
@@ -408,6 +457,16 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings.notifications')}</Text>
+          <SettingsRow
+            colors={colors}
+            icon="inbox-outline"
+            title={t('settings.notificationInbox')}
+            subtitle={t('settings.notificationInboxMeta')}
+            iconTone="primary"
+            onPress={() => router.push('/notifications')}
+            rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
+            style={styles.notificationInboxRow}
+          />
           <View style={styles.gridTwo}>
             <SettingsRow
               colors={colors}
@@ -470,11 +529,11 @@ export default function SettingsScreen() {
             />
           </View>
 
-          <View style={styles.notificationInfoCard}>
-            {notificationLoading ? (
-              <View style={styles.notificationStatusRow}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.notificationInfoText}>{t('settings.notificationsLoading')}</Text>
+            <View style={styles.notificationInfoCard}>
+              {notificationLoading ? (
+                <View style={styles.notificationStatusRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.notificationInfoText}>{t('settings.notificationsLoading')}</Text>
               </View>
             ) : null}
 
@@ -483,13 +542,31 @@ export default function SettingsScreen() {
 
             <View style={styles.notificationMetaRow}>
               <Text style={styles.notificationMetaLabel}>{t('settings.dailyExpenseReminderTime')}</Text>
-              <Text style={styles.notificationMetaValue}>{dailyExpenseReminderTime}</Text>
+              <Pressable
+                onPress={() => void handlePickReminderTime('daily')}
+                disabled={notificationLoading || notificationSaving}
+                style={({ pressed }) => [
+                  styles.notificationTimeButton,
+                  (notificationLoading || notificationSaving) && styles.notificationTimeButtonDisabled,
+                  pressed && styles.notificationTimeButtonPressed,
+                ]}>
+                <Text style={styles.notificationMetaValue}>{dailyExpenseReminderTime}</Text>
+                <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
+              </Pressable>
             </View>
             <View style={styles.notificationMetaRow}>
               <Text style={styles.notificationMetaLabel}>{t('settings.debtPaymentReminderTime')}</Text>
-              <Text style={styles.notificationMetaValue}>
-                {debtPaymentReminderTime} · {t('settings.beforeDays', { count: debtPaymentReminderDaysBefore })}
-              </Text>
+              <Pressable
+                onPress={() => void handlePickReminderTime('debt')}
+                disabled={notificationLoading || notificationSaving}
+                style={({ pressed }) => [
+                  styles.notificationTimeButton,
+                  (notificationLoading || notificationSaving) && styles.notificationTimeButtonDisabled,
+                  pressed && styles.notificationTimeButtonPressed,
+                ]}>
+                <Text style={styles.notificationMetaValue}>{debtPaymentReminderTime}</Text>
+                <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
+              </Pressable>
             </View>
             <View style={styles.notificationMetaRow}>
               <Text style={styles.notificationMetaLabel}>{t('settings.pushToken')}</Text>
@@ -805,6 +882,23 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       justifyContent: 'space-between',
       gap: 10,
     },
+    notificationTimeButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    notificationTimeButtonPressed: {
+      opacity: 0.88,
+    },
+    notificationTimeButtonDisabled: {
+      opacity: 0.55,
+    },
     notificationMetaLabel: {
       flexShrink: 1,
       color: colors.shellTextMuted,
@@ -819,6 +913,9 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontWeight: '800',
       textAlign: 'right',
       flexShrink: 0,
+    },
+    notificationInboxRow: {
+      marginBottom: 12,
     },
     logoutWrap: {
       paddingTop: 8,
