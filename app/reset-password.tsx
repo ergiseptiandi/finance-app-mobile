@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -28,7 +28,8 @@ export default function ResetPasswordScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
-  const styles = createStyles(colors);
+  const insets = useSafeAreaInsets();
+  const styles = createStyles(colors, insets.bottom);
   const params = useLocalSearchParams<{ token?: string }>();
   const [token, setToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -224,7 +225,7 @@ export default function ResetPasswordScreen() {
   );
 }
 
-const createStyles = (colors: AppColorTheme) =>
+const createStyles = (colors: AppColorTheme, bottomInset: number) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -240,7 +241,8 @@ const createStyles = (colors: AppColorTheme) =>
     scrollContent: {
       flexGrow: 1,
       paddingHorizontal: 20,
-      paddingVertical: 24,
+      paddingTop: 24,
+      paddingBottom: 24 + bottomInset,
     },
     container: {
       flex: 1,

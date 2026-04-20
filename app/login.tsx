@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -32,7 +32,8 @@ export default function LoginScreen() {
   const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
   const { showTransitionOverlay } = useTransitionOverlay();
-  const styles = createStyles(colors);
+  const insets = useSafeAreaInsets();
+  const styles = createStyles(colors, insets.bottom);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -239,7 +240,7 @@ export default function LoginScreen() {
   );
 }
 
-const createStyles = (colors: AppColorTheme) =>
+const createStyles = (colors: AppColorTheme, bottomInset: number) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -255,7 +256,8 @@ const createStyles = (colors: AppColorTheme) =>
     scrollContent: {
       flexGrow: 1,
       paddingHorizontal: 20,
-      paddingVertical: 24,
+      paddingTop: 24,
+      paddingBottom: 24 + bottomInset,
     },
     container: {
       flex: 1,
