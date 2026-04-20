@@ -16,7 +16,8 @@ import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
 import { useAppTheme } from '@/providers/theme-provider';
-import { getAuthSession, signOut } from '@/lib/auth-session';
+import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
+import { getAuthSession } from '@/lib/auth-session';
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -67,6 +68,7 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { setColorScheme } = useAppTheme();
   const { language, setLanguage, t } = useAppLanguage();
+  const { showTransitionOverlay } = useTransitionOverlay();
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors, insets.top);
@@ -75,6 +77,7 @@ export default function SettingsScreen() {
   const [pushEnabled, setPushEnabled] = useState(true);
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -287,16 +290,20 @@ export default function SettingsScreen() {
 
         <View style={styles.logoutWrap}>
           <Pressable
-            style={styles.logoutButton}
+            style={[styles.logoutButton, signingOut && styles.logoutButtonDisabled]}
+            disabled={signingOut}
             onPress={async () => {
-              await signOut();
-              router.replace('/login');
+              setSigningOut(true);
+              showTransitionOverlay();
+              await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+              router.replace('/logout');
             }}>
             <MaterialCommunityIcons name="logout" size={18} color={colors.danger} />
             <Text style={styles.logoutText}>{t('settings.logout')}</Text>
           </Pressable>
         </View>
       </ScrollView>
+
     </View>
   );
 }
@@ -560,6 +567,9 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: 10,
+    },
+    logoutButtonDisabled: {
+      opacity: 0.72,
     },
     logoutText: {
       color: colors.danger,

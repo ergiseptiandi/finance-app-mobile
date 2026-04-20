@@ -6,26 +6,36 @@ import { clearAllScreenCache } from '@/lib/screen-cache';
 
 const SESSION_STORAGE_KEY = 'finance-go.auth.session';
 let refreshSessionInFlight: Promise<AuthSession | null> | null = null;
+let cachedSession: AuthSession | null | undefined = undefined;
 
 export const saveAuthSession = async (session: AuthSession) => {
+  cachedSession = session;
   await SecureStore.setItemAsync(SESSION_STORAGE_KEY, JSON.stringify(session));
 };
 
 export const getAuthSession = async () => {
+  if (cachedSession !== undefined) {
+    return cachedSession;
+  }
+
   const raw = await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
 
   if (!raw) {
+    cachedSession = null;
     return null;
   }
 
   try {
-    return JSON.parse(raw) as AuthSession;
+    cachedSession = JSON.parse(raw) as AuthSession;
+    return cachedSession;
   } catch {
+    cachedSession = null;
     return null;
   }
 };
 
 export const clearAuthSession = async () => {
+  cachedSession = null;
   await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
   await clearAllScreenCache();
 };
@@ -69,6 +79,7 @@ export const refreshStoredAuthSession = async () => {
 
 export const signOut = async () => {
   const session = await getAuthSession();
+  await clearAuthSession();
 
   try {
     if (session?.token.refresh_token) {
@@ -77,8 +88,6 @@ export const signOut = async () => {
       });
     }
   } catch {
-    // Clear locally even if the server logout request fails.
-  } finally {
-    await clearAuthSession();
+    // Local session is already cleared; ignore server logout failures.
   }
 };

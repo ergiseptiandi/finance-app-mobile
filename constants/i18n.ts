@@ -569,6 +569,7 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'settings.emailAlerts': 'Peringatan Email',
     'settings.emailAlertsMeta': 'Ringkasan mingguan',
     'settings.logout': 'Keluar',
+    'settings.loggingOut': 'Sedang keluar dari akun Anda...',
   },
   'en-US': {
     'tabs.home': 'Home',
@@ -1129,6 +1130,7 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'settings.emailAlerts': 'Email Alerts',
     'settings.emailAlertsMeta': 'Weekly summaries',
     'settings.logout': 'Logout',
+    'settings.loggingOut': 'Signing you out...',
   },
 };
 

@@ -21,6 +21,7 @@ import { ApiRequestError, login } from '@/lib/api/auth';
 import { saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
 
 const DEVICE_NAME = getDeviceName();
 
@@ -30,6 +31,7 @@ export default function LoginScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
+  const { showTransitionOverlay } = useTransitionOverlay();
   const styles = createStyles(colors);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,6 +55,8 @@ export default function LoginScreen() {
         device_name: DEVICE_NAME,
       });
       await saveAuthSession(response.Data);
+      showTransitionOverlay();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       router.replace('/(tabs)');
     } catch (err) {
       if (err instanceof ApiRequestError) {
@@ -229,6 +233,7 @@ export default function LoginScreen() {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+
       </View>
     </SafeAreaView>
   );

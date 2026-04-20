@@ -11,6 +11,7 @@ import { Colors, NavigationThemes } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppThemeProvider, useAppTheme } from '@/providers/theme-provider';
 import { getOnboardingCompleted } from '@/lib/onboarding';
+import { TransitionOverlayProvider, useTransitionOverlay } from '@/providers/transition-overlay-provider';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -21,9 +22,11 @@ export const unstable_settings = {
 export default function RootLayout() {
   return (
     <AppLanguageProvider>
-      <AppThemeProvider>
-        <RootNavigator />
-      </AppThemeProvider>
+      <TransitionOverlayProvider>
+        <AppThemeProvider>
+          <RootNavigator />
+        </AppThemeProvider>
+      </TransitionOverlayProvider>
     </AppLanguageProvider>
   );
 }
@@ -34,6 +37,7 @@ function RootNavigator() {
   const segments = useSegments();
   const { isThemeHydrated } = useAppTheme();
   const { isLanguageHydrated, t } = useAppLanguage();
+  const { hideTransitionOverlay, isTransitionOverlayVisible } = useTransitionOverlay();
   const colors = Colors[colorScheme];
   const [isOnboardingHydrated, setIsOnboardingHydrated] = useState(false);
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
@@ -43,6 +47,26 @@ function RootNavigator() {
       void SplashScreen.hideAsync().catch(() => {});
     }
   }, [isLanguageHydrated, isOnboardingHydrated, isThemeHydrated]);
+
+  useEffect(() => {
+    if (!isTransitionOverlayVisible) {
+      return;
+    }
+
+    let active = true;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (active) {
+          hideTransitionOverlay();
+        }
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [hideTransitionOverlay, isTransitionOverlayVisible, segments]);
 
   useEffect(() => {
     let active = true;
@@ -89,35 +113,49 @@ function RootNavigator() {
 
   return (
     <ThemeProvider value={NavigationThemes[colorScheme]}>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          animation: isDark ? 'none' : 'simple_push',
-          contentStyle: { backgroundColor: colors.background },
-        }}>
-        <Stack.Screen name="index" options={{ animation: 'simple_push' }} />
-        <Stack.Screen name="onboarding" options={{ animation: isDark ? 'none' : 'fade' }} />
-        <Stack.Screen name="login" options={{ animation: isDark ? 'none' : 'simple_push' }} />
-        <Stack.Screen name="forgot-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
-        <Stack.Screen name="reset-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
-        <Stack.Screen name="register" options={{ animation: isDark ? 'none' : 'simple_push' }} />
-        <Stack.Screen name="(tabs)" options={{ animation: isDark ? 'none' : 'fade' }} />
-        <Stack.Screen name="categories" options={{ animation: isDark ? 'none' : 'simple_push' }} />
-        <Stack.Screen name="wallets" options={{ animation: isDark ? 'none' : 'simple_push' }} />
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: 'modal', headerShown: true, title: t('common.modal') }}
-        />
-      </Stack>
+      <View style={styles.navigatorRoot}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            animation: isDark ? 'none' : 'simple_push',
+            contentStyle: { backgroundColor: colors.background },
+          }}>
+          <Stack.Screen name="index" options={{ animation: 'simple_push' }} />
+          <Stack.Screen name="onboarding" options={{ animation: isDark ? 'none' : 'fade' }} />
+          <Stack.Screen name="logout" options={{ animation: 'none' }} />
+          <Stack.Screen name="login" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+          <Stack.Screen name="forgot-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+          <Stack.Screen name="reset-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+          <Stack.Screen name="register" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+          <Stack.Screen name="(tabs)" options={{ animation: isDark ? 'none' : 'fade' }} />
+          <Stack.Screen name="categories" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+          <Stack.Screen name="wallets" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+          <Stack.Screen
+            name="modal"
+            options={{ presentation: 'modal', headerShown: true, title: t('common.modal') }}
+          />
+        </Stack>
+
+        {isTransitionOverlayVisible ? (
+          <View pointerEvents="none" style={[styles.transitionOverlay, { backgroundColor: colors.background }]} />
+        ) : null}
+      </View>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  navigatorRoot: {
+    flex: 1,
+  },
   loadingGate: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  transitionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 60,
   },
 });
