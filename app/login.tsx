@@ -68,7 +68,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
+      <StatusBar animated barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       <View style={styles.screen}>
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />

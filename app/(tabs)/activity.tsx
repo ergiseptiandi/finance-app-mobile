@@ -1802,7 +1802,7 @@ export default function ActivityScreen() {
                           ) : (
                             <View style={styles.emptyCategoryBox}>
                               <Text style={styles.emptyCategoryText}>{t('activity.transactions.categoryFromSettings')}</Text>
-                            <Pressable onPress={() => router.replace('/categories')} style={styles.emptyCategoryButton}>
+                            <Pressable onPress={() => router.push('/categories')} style={styles.emptyCategoryButton}>
                                 <Text style={styles.emptyCategoryButtonText}>{t('activity.transactions.openCategories')}</Text>
                               </Pressable>
                             </View>

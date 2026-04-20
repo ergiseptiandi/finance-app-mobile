@@ -750,7 +750,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar animated style={colorScheme === 'dark' ? 'light' : 'dark'} />
       <ScrollView
         style={styles.screen}
         contentContainerStyle={styles.content}
@@ -970,7 +970,7 @@ export default function DashboardScreen() {
 
               <Pressable
                 onPress={() => {
-                  router.replace('/debt');
+                  router.navigate('/debt');
                 }}
                 style={styles.secondaryAction}>
                 <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
@@ -984,7 +984,7 @@ export default function DashboardScreen() {
                 <Pressable
                   hitSlop={10}
                   onPress={() => {
-                    router.replace('/activity');
+                    router.navigate('/activity');
                   }}>
                   <Text style={styles.linkText}>{t('dashboard.viewLedger')}</Text>
                 </Pressable>
@@ -1033,7 +1033,7 @@ export default function DashboardScreen() {
               <Text style={styles.insightText}>{insightBody}</Text>
               <Pressable
                 onPress={() => {
-                  router.replace('/reports');
+                  router.navigate('/reports');
                 }}
                 style={styles.primaryAction}>
                 <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>

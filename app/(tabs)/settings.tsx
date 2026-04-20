@@ -110,7 +110,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar animated style={colorScheme === 'dark' ? 'light' : 'dark'} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroGrid}>

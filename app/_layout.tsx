@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { useAppLanguage, AppLanguageProvider } from '@/providers/language-provider';
-import { NavigationThemes } from '@/constants/theme';
+import { Colors, NavigationThemes } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppThemeProvider } from '@/providers/theme-provider';
 
@@ -24,11 +24,17 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
 
   return (
     <ThemeProvider value={NavigationThemes[colorScheme]}>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'fade',
+          contentStyle: { backgroundColor: colors.background },
+        }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
         <Stack.Screen name="forgot-password" />
@@ -41,7 +47,7 @@ function RootNavigator() {
           options={{ presentation: 'modal', headerShown: true, title: t('common.modal') }}
         />
       </Stack>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar animated style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
   );
 }
