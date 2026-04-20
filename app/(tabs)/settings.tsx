@@ -233,7 +233,7 @@ export default function SettingsScreen() {
               icon="shape-outline"
               title={t('settings.categories')}
               subtitle={t('settings.categoriesMeta')}
-              onPress={() => router.replace('/categories')}
+              onPress={() => router.push('/categories')}
               rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
               style={styles.preferenceRow}
             />
@@ -246,7 +246,7 @@ export default function SettingsScreen() {
               title={t('settings.wallets')}
               subtitle={t('settings.walletsMeta')}
               iconTone="primary"
-              onPress={() => router.replace('/wallets')}
+              onPress={() => router.push('/wallets')}
               rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
               style={styles.preferenceRow}
             />
