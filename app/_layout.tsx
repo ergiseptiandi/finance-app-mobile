@@ -1,12 +1,17 @@
+import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
 
 import { useAppLanguage, AppLanguageProvider } from '@/providers/language-provider';
 import { Colors, NavigationThemes } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { AppThemeProvider } from '@/providers/theme-provider';
+import { AppThemeProvider, useAppTheme } from '@/providers/theme-provider';
+
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export const unstable_settings = {
   anchor: 'login',
@@ -24,8 +29,23 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const colorScheme = useColorScheme() ?? 'light';
+  const { isThemeHydrated } = useAppTheme();
   const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
+
+  useEffect(() => {
+    if (isThemeHydrated) {
+      void SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [isThemeHydrated]);
+
+  if (!isThemeHydrated) {
+    return (
+      <View style={[styles.loadingGate, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <ThemeProvider value={NavigationThemes[colorScheme]}>
@@ -51,3 +71,11 @@ function RootNavigator() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingGate: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
