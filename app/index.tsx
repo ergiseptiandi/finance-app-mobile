@@ -5,17 +5,24 @@ import { Redirect } from 'expo-router';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAuthSession } from '@/lib/auth-session';
+import { getOnboardingCompleted } from '@/lib/onboarding';
 
 export default function Index() {
   const colors = Colors[useColorScheme() ?? 'light'];
-  const [target, setTarget] = useState<'loading' | '/login' | '/(tabs)'>('loading');
+  const [target, setTarget] = useState<'loading' | '/onboarding' | '/login' | '/(tabs)'>('loading');
 
   useEffect(() => {
     let active = true;
 
     const resolveTarget = async () => {
-      const session = await getAuthSession();
+      const [completed, session] = await Promise.all([getOnboardingCompleted(), getAuthSession()]);
+
       if (!active) {
+        return;
+      }
+
+      if (!completed) {
+        setTarget('/onboarding');
         return;
       }
 
