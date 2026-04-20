@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  Platform,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -29,12 +32,16 @@ import {
   type ExpenseByCategoryItem,
   type HighestSpendingCategoryData,
   type RemainingBalanceData,
+  type ReportsPeriodParams,
+  type ReportsPeriodData,
   type SpendingTrendItem,
 } from '@/lib/api/reports';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 
 type TrendMode = 'trend' | 'categories';
+type ReportsFilterMode = 'month' | 'year' | 'custom';
 type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger';
+type ReportsDateTarget = 'startDate' | 'endDate' | null;
 
 type ReportsCacheState = {
   expenseByCategory: ExpenseByCategoryItem[];
@@ -43,6 +50,68 @@ type ReportsCacheState = {
   averageDaily: AverageDailySpendingData | null;
   remainingBalance: RemainingBalanceData | null;
 };
+
+type ReportsFilters = {
+  mode: ReportsFilterMode;
+  month: string;
+  year: string;
+  startDate: string;
+  endDate: string;
+};
+
+type MonthPickerState = {
+  year: number;
+  monthIndex: number;
+};
+
+const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
+
+const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
+const getCurrentYearInputValue = () => String(new Date().getFullYear());
+
+const createDefaultReportsFilters = (): ReportsFilters => ({
+  mode: 'month',
+  month: getCurrentMonthInputValue(),
+  year: getCurrentYearInputValue(),
+  startDate: '',
+  endDate: '',
+});
+
+const getMonthPickerStateFromInput = (value: string): MonthPickerState => {
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-').map(Number);
+    return {
+      year: Number.isFinite(year) ? year : new Date().getFullYear(),
+      monthIndex: Number.isFinite(month) ? Math.min(11, Math.max(0, month - 1)) : new Date().getMonth(),
+    };
+  }
+
+  const now = new Date();
+  return {
+    year: now.getFullYear(),
+    monthIndex: now.getMonth(),
+  };
+};
+
+const buildReportsQueryParams = (filters: ReportsFilters): ReportsPeriodParams => {
+  if (filters.mode === 'year') {
+    return { year: filters.year };
+  }
+
+  if (filters.mode === 'custom') {
+    return {
+      start_date: filters.startDate,
+      end_date: filters.endDate,
+    };
+  }
+
+  return {
+    month: filters.month,
+  };
+};
+
+const createReportsCacheSuffix = (filters: ReportsFilters) =>
+  [filters.mode, filters.month, filters.year, filters.startDate, filters.endDate].join('|');
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
 
@@ -97,10 +166,44 @@ const toLongMonth = (value: string, fallback: string, locale: string) => {
   }).format(date);
 };
 
-const getTrendLabel = (item: SpendingTrendItem, index: number, locale: string) =>
-  toShortMonth(String(item.date ?? item.month ?? item.label ?? ''), `M${index + 1}`, locale);
+const getReportsPeriodLabel = (period?: ReportsPeriodData | null, locale: string) => {
+  if (!period) {
+    return '';
+  }
 
-const getTrendValue = (item: SpendingTrendItem) => toNumber(item.amount);
+  if (period.mode === 'year' && period.year) {
+    return String(period.year);
+  }
+
+  if (period.mode === 'custom' && period.start_date && period.end_date) {
+    return `${toLongMonth(period.start_date, period.start_date, locale)} - ${toLongMonth(period.end_date, period.end_date, locale)}`;
+  }
+
+  if (period.month) {
+    return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(
+      new Date(`${period.month}-01T00:00:00`)
+    );
+  }
+
+  return period.mode ? String(period.mode) : '';
+};
+
+const getTrendLabel = (item: SpendingTrendItem, index: number, locale: string) => {
+  const base = String(item.period ?? item.date ?? item.month ?? item.label ?? '');
+  if (base && /^\d{4}-\d{2}$/.test(base)) {
+    return toShortMonth(base, `M${index + 1}`, locale);
+  }
+
+  if (base && /^\d{4}-\d{2}-\d{2}$/.test(base)) {
+    return new Intl.DateTimeFormat(locale, { day: '2-digit' }).format(parseDateValue(base) ?? new Date());
+  }
+
+  return toShortMonth(base, `M${index + 1}`, locale);
+};
+
+const getIncomeTrendValue = (item: SpendingTrendItem) => toNumber(item.income);
+const getExpenseTrendValue = (item: SpendingTrendItem) => toNumber(item.expense ?? item.amount);
+const getNetCashflowTrendValue = (item: SpendingTrendItem) => toNumber(item.net_cashflow);
 
 const getCategoryShare = (item: ExpenseByCategoryItem, total: number) =>
   total > 0 ? Math.max(0, Math.min(100, (toNumber(item.amount) / total) * 100)) : 0;
@@ -113,6 +216,7 @@ export default function ReportsScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const compact = width < 380;
+  const isDark = colorScheme === 'dark';
   const styles = createStyles(colors, compact, insets.top);
 
   const [trendMode, setTrendMode] = useState<TrendMode>('categories');
@@ -124,9 +228,23 @@ export default function ReportsScreen() {
   const [highestCategory, setHighestCategory] = useState<HighestSpendingCategoryData | null>(null);
   const [averageDaily, setAverageDaily] = useState<AverageDailySpendingData | null>(null);
   const [remainingBalance, setRemainingBalance] = useState<RemainingBalanceData | null>(null);
+  const [filters, setFilters] = useState<ReportsFilters>(createDefaultReportsFilters);
+  const [draftFilters, setDraftFilters] = useState<ReportsFilters>(createDefaultReportsFilters);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [filterError, setFilterError] = useState('');
+  const [monthPickerState, setMonthPickerState] = useState<MonthPickerState>(() =>
+    getMonthPickerStateFromInput(createDefaultReportsFilters().month)
+  );
+  const [iosCustomDatePickerVisible, setIosCustomDatePickerVisible] = useState(false);
+  const [customDateTarget, setCustomDateTarget] = useState<ReportsDateTarget>(null);
+  const filtersRef = useRef<ReportsFilters>(createDefaultReportsFilters());
   const hasReportsSnapshot = Boolean(
     expenseByCategory.length || spendingTrends.length || highestCategory || averageDaily || remainingBalance
   );
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   useEffect(() => {
     let active = true;
@@ -139,7 +257,7 @@ export default function ReportsScreen() {
       }
 
       const cached = await readScreenCache<ReportsCacheState>(
-        buildScreenCacheKey('reports', session.user.id)
+        buildScreenCacheKey('reports', session.user.id, createReportsCacheSuffix(filtersRef.current))
       );
 
       if (!cached || !active) {
@@ -187,9 +305,63 @@ export default function ReportsScreen() {
     }
   }, []);
 
+  const openFilterModal = useCallback(() => {
+    setDraftFilters(filters);
+    setFilterError('');
+    setCustomDateTarget(null);
+    setMonthPickerState(getMonthPickerStateFromInput(filters.month));
+    setIosCustomDatePickerVisible(false);
+    setFilterModalVisible(true);
+  }, [filters]);
+
+  const closeFilterModal = useCallback(() => {
+    setFilterModalVisible(false);
+    setFilterError('');
+    setCustomDateTarget(null);
+    setIosCustomDatePickerVisible(false);
+  }, []);
+
+  const handleCustomDateChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === 'android' && event.type === 'dismissed') {
+        return;
+      }
+
+      if (!selectedDate || !customDateTarget) {
+        return;
+      }
+
+      setDraftFilters((current) => ({
+        ...current,
+        [customDateTarget]: selectedDate.toISOString().slice(0, 10),
+      }));
+    },
+    [customDateTarget]
+  );
+
+  const openCustomDatePicker = useCallback(
+    (target: 'startDate' | 'endDate') => {
+      const current = target === 'startDate' ? draftFilters.startDate : draftFilters.endDate;
+      const currentDate = parseDateValue(current) ?? new Date();
+      setCustomDateTarget(target);
+
+      if (Platform.OS === 'android') {
+        DateTimePickerAndroid.open({
+          value: currentDate,
+          mode: 'date',
+          onChange: handleCustomDateChange,
+        });
+        return;
+      }
+
+      setIosCustomDatePickerVisible(true);
+    },
+    [draftFilters.endDate, draftFilters.startDate, handleCustomDateChange]
+  );
+
   const loadReports = useCallback(
-    async (isRefresh = false) => {
-      const shouldShowSkeleton = !isRefresh && !hasReportsSnapshot;
+    async (isRefresh = false, appliedFilters: ReportsFilters = filtersRef.current, forceLoading = false) => {
+      const shouldShowSkeleton = forceLoading || (!isRefresh && !hasReportsSnapshot);
 
       if (isRefresh) {
         setRefreshing(true);
@@ -200,21 +372,22 @@ export default function ReportsScreen() {
       setError('');
 
       try {
+        const queryParams = buildReportsQueryParams(appliedFilters);
         const results = await withAuthorizedRequest((accessToken) =>
           Promise.allSettled([
-            getExpenseByCategory(accessToken),
-            getSpendingTrends(accessToken),
-            getHighestSpendingCategory(accessToken),
-            getAverageDailySpending(accessToken),
-            getRemainingBalance(accessToken),
+            getExpenseByCategory(accessToken, queryParams),
+            getSpendingTrends(accessToken, queryParams),
+            getHighestSpendingCategory(accessToken, queryParams),
+            getAverageDailySpending(accessToken, queryParams),
+            getRemainingBalance(accessToken, queryParams),
           ])
         );
 
         const [categoryResult, trendResult, highestResult, averageResult, balanceResult] = results;
         const nextExpenseByCategory =
-          categoryResult.status === 'fulfilled' ? categoryResult.value.Data ?? [] : expenseByCategory;
+          categoryResult.status === 'fulfilled' ? categoryResult.value.Data?.items ?? [] : expenseByCategory;
         const nextSpendingTrends =
-          trendResult.status === 'fulfilled' ? trendResult.value.Data ?? [] : spendingTrends;
+          trendResult.status === 'fulfilled' ? trendResult.value.Data?.items ?? [] : spendingTrends;
         const nextHighestCategory =
           highestResult.status === 'fulfilled' ? highestResult.value.Data ?? null : highestCategory;
         const nextAverageDaily =
@@ -244,7 +417,7 @@ export default function ReportsScreen() {
 
         const session = await getAuthSession();
         if (session) {
-          await writeScreenCache(buildScreenCacheKey('reports', session.user.id), {
+          await writeScreenCache(buildScreenCacheKey('reports', session.user.id, createReportsCacheSuffix(appliedFilters)), {
             expenseByCategory: nextExpenseByCategory,
             spendingTrends: nextSpendingTrends,
             highestCategory: nextHighestCategory,
@@ -277,9 +450,76 @@ export default function ReportsScreen() {
     ]
   );
 
+  const applyFilterDraft = useCallback(() => {
+    if (draftFilters.mode === 'month') {
+      const selectedMonth = `${monthPickerState.year}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`;
+      if (!/^\d{4}-\d{2}$/.test(selectedMonth)) {
+        setFilterError(t('reports.filter.monthInvalid'));
+        return;
+      }
+    } else if (draftFilters.mode === 'year') {
+      if (!/^\d{4}$/.test(draftFilters.year)) {
+        setFilterError(t('reports.filter.yearInvalid'));
+        return;
+      }
+    } else {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(draftFilters.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(draftFilters.endDate)) {
+        setFilterError(t('reports.filter.rangeRequired'));
+        return;
+      }
+
+      const start = parseDateValue(draftFilters.startDate);
+      const end = parseDateValue(draftFilters.endDate);
+      if (!start || !end || start.getTime() > end.getTime()) {
+        setFilterError(t('reports.filter.rangeInvalid'));
+        return;
+      }
+
+      const diffYears = end.getFullYear() - start.getFullYear();
+      const diffMonths = end.getMonth() - start.getMonth();
+      const spanMonths = diffYears * 12 + diffMonths;
+      if (spanMonths > 12) {
+        setFilterError(t('reports.filter.rangeTooLong'));
+        return;
+      }
+    }
+
+    const nextFilters: ReportsFilters = {
+      ...draftFilters,
+      month:
+        draftFilters.mode === 'month'
+          ? `${monthPickerState.year}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`
+          : '',
+      year: draftFilters.mode === 'year' ? draftFilters.year : '',
+      startDate: draftFilters.mode === 'custom' ? draftFilters.startDate : '',
+      endDate: draftFilters.mode === 'custom' ? draftFilters.endDate : '',
+    };
+
+    setFilters(nextFilters);
+    filtersRef.current = nextFilters;
+    setFilterError('');
+    setCustomDateTarget(null);
+    setIosCustomDatePickerVisible(false);
+    setFilterModalVisible(false);
+    void loadReports(false, nextFilters, true);
+  }, [draftFilters, loadReports, monthPickerState.monthIndex, monthPickerState.year, t]);
+
+  const resetFilters = useCallback(() => {
+    const nextFilters = createDefaultReportsFilters();
+    setDraftFilters(nextFilters);
+    setFilters(nextFilters);
+    filtersRef.current = nextFilters;
+    setFilterError('');
+    setCustomDateTarget(null);
+    setIosCustomDatePickerVisible(false);
+    setFilterModalVisible(false);
+    setMonthPickerState(getMonthPickerStateFromInput(nextFilters.month));
+    void loadReports(false, nextFilters, true);
+  }, [loadReports]);
+
   useFocusEffect(
     useCallback(() => {
-      loadReports();
+      loadReports(false, filtersRef.current);
     }, [loadReports])
   );
 
@@ -287,7 +527,7 @@ export default function ReportsScreen() {
   const totalExpense = toNumber(remainingBalance?.total_expense);
   const remaining = toNumber(remainingBalance?.remaining_balance);
   const averageValue = toNumber(averageDaily?.average_daily_spending);
-  const elapsedDays = toNumber(averageDaily?.elapsed_days);
+  const elapsedDays = toNumber(averageDaily?.days_count ?? averageDaily?.elapsed_days);
 
   const categoryTotal = useMemo(
     () => expenseByCategory.reduce((sum, item) => sum + toNumber(item.amount), 0),
@@ -298,14 +538,39 @@ export default function ReportsScreen() {
     [expenseByCategory]
   );
   const topCategory = highestCategory ?? sortedCategories[0] ?? null;
-  const currentMonthLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date());
+  const activePeriodLabel = useMemo(() => {
+    if (filters.mode === 'year') {
+      return filters.year || t('reports.currentPeriod');
+    }
+
+    if (filters.mode === 'custom' && filters.startDate && filters.endDate) {
+      return `${toLongMonth(filters.startDate, filters.startDate, locale)} - ${toLongMonth(
+        filters.endDate,
+        filters.endDate,
+        locale
+      )}`;
+    }
+
+    return toLongMonth(`${filters.month}-01`, filters.month, locale);
+  }, [filters.endDate, filters.mode, filters.month, filters.startDate, filters.year, locale, t]);
   const trendPoints = useMemo(
-    () => spendingTrends.slice(-12).map((item, index) => ({ ...item, label: getTrendLabel(item, index, locale) })),
+    () =>
+      spendingTrends.slice(-12).map((item, index) => ({
+        ...item,
+        label: getTrendLabel(item, index, locale),
+        expenseValue: getExpenseTrendValue(item),
+        incomeValue: getIncomeTrendValue(item),
+        netCashflowValue: getNetCashflowTrendValue(item),
+      })),
     [locale, spendingTrends]
   );
-  const trendMax = Math.max(...trendPoints.map(getTrendValue), 1);
+  const trendMax = Math.max(...trendPoints.map((item) => item.expenseValue), 1);
   const expenseRatio = totalIncome > 0 ? Math.max(0, Math.min(100, (totalExpense / totalIncome) * 100)) : 0;
   const remainingRatio = totalIncome > 0 ? Math.max(0, Math.min(100, (remaining / totalIncome) * 100)) : 0;
+  const periodSummaryText = getReportsPeriodLabel(
+    remainingBalance?.period ?? highestCategory?.period ?? averageDaily?.period ?? null,
+    locale
+  );
   const isEmpty =
     !loading && !expenseByCategory.length && !spendingTrends.length && !remainingBalance && !averageDaily && !highestCategory;
 
@@ -314,28 +579,28 @@ export default function ReportsScreen() {
       icon: 'cash-multiple',
       label: t('reports.totalIncome'),
       value: formatCompactCurrency(totalIncome, locale),
-      meta: `${t('reports.currentMonth')} - ${Math.round(remainingRatio)}%`,
+      meta: `${activePeriodLabel} - ${Math.round(remainingRatio)}%`,
       tone: 'primary' as MetricTone,
     },
     {
       icon: 'credit-card-outline',
       label: t('reports.totalExpense'),
       value: formatCompactCurrency(totalExpense, locale),
-      meta: `${t('reports.currentMonth')} - ${Math.round(expenseRatio)}%`,
+      meta: `${activePeriodLabel} - ${Math.round(expenseRatio)}%`,
       tone: 'danger' as MetricTone,
     },
     {
       icon: 'wallet-outline',
       label: t('reports.remainingBalance'),
       value: formatCompactCurrency(remaining, locale),
-      meta: t('reports.currentMonth'),
+      meta: activePeriodLabel,
       tone: 'secondary' as MetricTone,
     },
     {
       icon: 'calendar-clock',
       label: t('reports.avgDailySpending'),
       value: formatCurrency(averageValue, locale),
-      meta: elapsedDays > 0 ? t('reports.elapsedDays', { count: elapsedDays }) : t('reports.currentMonth'),
+      meta: elapsedDays > 0 ? t('reports.elapsedDays', { count: elapsedDays }) : activePeriodLabel,
       tone: 'warning' as MetricTone,
     },
   ];
@@ -366,11 +631,27 @@ export default function ReportsScreen() {
           </View>
         ) : (
           <>
+            <View style={styles.filterCard}>
+              <View style={styles.filterCardHeader}>
+                <View style={styles.filterCardCopy}>
+                  <Text style={styles.filterCardKicker}>{t('reports.filter.kicker')}</Text>
+                  <Text numberOfLines={1} style={styles.filterCardTitle}>
+                    {activePeriodLabel}
+                  </Text>
+                  <Text style={styles.filterCardMeta}>{periodSummaryText || t('reports.filter.helper')}</Text>
+                </View>
+                <Pressable onPress={openFilterModal} style={styles.filterCardAction}>
+                  <MaterialCommunityIcons name="tune-variant" size={16} color={colors.onPrimary} />
+                  <Text style={styles.filterCardActionText}>{t('reports.filter.action')}</Text>
+                </Pressable>
+              </View>
+            </View>
+
             <View style={styles.heroCard}>
               <View style={styles.heroTop}>
                 <View style={styles.heroBadge}>
                   <MaterialCommunityIcons name="chart-pie" size={14} color={colors.secondaryAccent} />
-                  <Text style={styles.heroBadgeText}>{currentMonthLabel}</Text>
+                  <Text style={styles.heroBadgeText}>{activePeriodLabel}</Text>
                 </View>
                 <Text style={styles.heroNumberLabel}>{t('reports.remainingBalance')}</Text>
               </View>
@@ -482,7 +763,7 @@ export default function ReportsScreen() {
                 <View style={styles.trendChart}>
                   {trendPoints.length ? (
                     trendPoints.map((item, index, items) => {
-                      const value = getTrendValue(item);
+                      const value = item.expenseValue;
                       const active = index === items.length - 1;
                       return (
                         <View key={`${item.date ?? item.month ?? item.label ?? index}`} style={styles.trendItem}>
@@ -507,19 +788,28 @@ export default function ReportsScreen() {
                 <View style={styles.trendTable}>
                   {trendPoints.length ? (
                     trendPoints.slice(-6).map((item, index) => {
-                      const value = getTrendValue(item);
-                      const share = totalExpense > 0 ? Math.max(0, Math.min(100, (value / totalExpense) * 100)) : 0;
+                      const expenseShare = totalExpense > 0 ? Math.max(0, Math.min(100, (item.expenseValue / totalExpense) * 100)) : 0;
                       return (
                         <View key={`${item.label}-${index}`} style={styles.trendRow}>
                           <View style={styles.trendRowCopy}>
                             <Text style={styles.trendRowLabel}>{item.label}</Text>
                             <Text style={styles.trendRowMeta}>
-                              {toLongMonth(String(item.date ?? item.month ?? ''), item.label, locale)}
+                              {toLongMonth(String(item.period ?? item.date ?? item.month ?? ''), item.label, locale)}
                             </Text>
                           </View>
-                          <Text style={styles.trendRowValue}>{formatCompactCurrency(value, locale)}</Text>
+                          <View style={styles.trendRowMetrics}>
+                            <Text style={styles.trendRowMetricText}>
+                              {t('reports.totalIncome')}: {formatCompactCurrency(item.incomeValue, locale)}
+                            </Text>
+                            <Text style={styles.trendRowMetricText}>
+                              {t('reports.totalExpense')}: {formatCompactCurrency(item.expenseValue, locale)}
+                            </Text>
+                            <Text style={styles.trendRowMetricText}>
+                              {t('reports.remainingBalance')}: {formatCompactCurrency(item.netCashflowValue, locale)}
+                            </Text>
+                          </View>
                           <View style={styles.trendRowTrack}>
-                            <View style={[styles.trendRowFill, { width: `${Math.max(8, share)}%` }]} />
+                            <View style={[styles.trendRowFill, { width: `${Math.max(8, expenseShare)}%` }]} />
                           </View>
                         </View>
                       );
@@ -554,6 +844,258 @@ export default function ReportsScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={filterModalVisible}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={closeFilterModal}>
+        <View style={styles.filterModalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeFilterModal} />
+          <View style={styles.filterModalSheet}>
+            <View style={styles.filterModalHandle} />
+            <View style={styles.filterModalBody}>
+              <View style={styles.filterModalHeader}>
+                <View style={styles.filterModalHeaderCopy}>
+                  <Text style={styles.filterModalKicker}>{t('reports.filter.kicker')}</Text>
+                  <Text style={styles.filterModalTitle}>{t('reports.filter.title')}</Text>
+                  <Text style={styles.filterModalSubtitle}>{t('reports.filter.helper')}</Text>
+                </View>
+                <Pressable onPress={closeFilterModal} style={styles.filterModalClose}>
+                  <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
+                </Pressable>
+              </View>
+
+              <ScrollView
+                style={styles.filterModalScroll}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.filterModalContent}>
+                <View style={styles.filterSectionCard}>
+                  <View style={styles.filterModeRow}>
+                    {(['month', 'year', 'custom'] as ReportsFilterMode[]).map((mode) => {
+                      const active = draftFilters.mode === mode;
+                      return (
+                        <Pressable
+                          key={mode}
+                          onPress={() =>
+                            setDraftFilters((current) => ({
+                              ...current,
+                              mode,
+                              month: mode === 'month' ? current.month || getCurrentMonthInputValue() : current.month,
+                              year: mode === 'year' ? current.year || getCurrentYearInputValue() : current.year,
+                              startDate: mode === 'custom' ? current.startDate : '',
+                              endDate: mode === 'custom' ? current.endDate : '',
+                            }))
+                          }
+                          style={[
+                            styles.filterModeButton,
+                            active && {
+                              backgroundColor: alpha(colors.primary, isDark ? 0.18 : 0.1),
+                              borderColor: alpha(colors.primary, isDark ? 0.38 : 0.28),
+                            },
+                          ]}>
+                          <View
+                            style={[
+                              styles.filterModeIcon,
+                              { backgroundColor: active ? alpha(colors.primary, 0.16) : colors.shellCardMuted },
+                            ]}>
+                            <MaterialCommunityIcons
+                              name={
+                                mode === 'month'
+                                  ? 'calendar-month-outline'
+                                  : mode === 'year'
+                                    ? 'calendar-range-outline'
+                                    : 'calendar-start-outline'
+                              }
+                              size={16}
+                              color={active ? colors.primary : colors.shellTextMuted}
+                            />
+                          </View>
+                          <Text style={[styles.filterModeLabel, active && { color: colors.primary }]}>
+                            {mode === 'month'
+                              ? t('reports.filter.modeMonth')
+                              : mode === 'year'
+                                ? t('reports.filter.modeYear')
+                                : t('reports.filter.modeCustom')}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {draftFilters.mode === 'month' ? (
+                    <>
+                      <View style={styles.filterYearRow}>
+                        <Pressable
+                          onPress={() =>
+                            setMonthPickerState((current) => ({
+                              ...current,
+                              year: current.year - 1,
+                            }))
+                          }
+                          style={styles.filterYearButton}>
+                          <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
+                        </Pressable>
+                        <Text style={styles.filterYearText}>{monthPickerState.year}</Text>
+                        <Pressable
+                          onPress={() =>
+                            setMonthPickerState((current) => ({
+                              ...current,
+                              year: current.year + 1,
+                            }))
+                          }
+                          style={styles.filterYearButton}>
+                          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
+                        </Pressable>
+                      </View>
+
+                      <View style={styles.filterMonthGrid}>
+                        {MONTH_INDEXES.map((monthIndex) => {
+                          const selected = monthPickerState.monthIndex === monthIndex;
+                          const monthLabel = new Intl.DateTimeFormat(locale, { month: 'short' })
+                            .format(new Date(2020, monthIndex, 1))
+                            .replace(/\.$/, '');
+
+                          return (
+                            <Pressable
+                              key={monthIndex}
+                              onPress={() =>
+                                setMonthPickerState((current) => ({
+                                  ...current,
+                                  monthIndex,
+                                }))
+                              }
+                              style={[
+                                styles.filterMonthChip,
+                                selected && {
+                                  backgroundColor: alpha(colors.primary, isDark ? 0.22 : 0.12),
+                                  borderColor: alpha(colors.primary, isDark ? 0.42 : 0.28),
+                                },
+                              ]}>
+                              <Text style={[styles.filterMonthChipText, selected && { color: colors.primary }]}>
+                                {monthLabel}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </>
+                  ) : draftFilters.mode === 'year' ? (
+                    <>
+                      <View style={styles.filterYearRow}>
+                        <Pressable
+                          onPress={() =>
+                            setDraftFilters((current) => ({
+                              ...current,
+                              year: String(Math.max(2000, Number(current.year || getCurrentYearInputValue()) - 1)),
+                            }))
+                          }
+                          style={styles.filterYearButton}>
+                          <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
+                        </Pressable>
+                        <Text style={styles.filterYearText}>{draftFilters.year || getCurrentYearInputValue()}</Text>
+                        <Pressable
+                          onPress={() =>
+                            setDraftFilters((current) => ({
+                              ...current,
+                              year: String(Number(current.year || getCurrentYearInputValue()) + 1),
+                            }))
+                          }
+                          style={styles.filterYearButton}>
+                          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
+                        </Pressable>
+                      </View>
+                      <Text style={styles.filterSectionSubtitle}>{t('reports.filter.yearHelper')}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.filterFieldGroup}>
+                        <Text style={styles.filterFieldLabel}>{t('reports.filter.startDate')}</Text>
+                        <Pressable
+                          onPress={() => openCustomDatePicker('startDate')}
+                          style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
+                          <View style={styles.filterPickerIcon}>
+                            <MaterialCommunityIcons name="calendar-start" size={18} color={colors.primary} />
+                          </View>
+                          <View style={styles.filterPickerCopy}>
+                            <Text style={styles.filterPickerValue}>
+                              {draftFilters.startDate
+                                ? new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(
+                                    parseDateValue(draftFilters.startDate) ?? new Date()
+                                  )
+                                : t('reports.filter.startDatePlaceholder')}
+                            </Text>
+                            <Text style={styles.filterPickerMeta}>{t('reports.filter.dateHelper')}</Text>
+                          </View>
+                          <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                        </Pressable>
+                      </View>
+
+                      <View style={styles.filterFieldGroup}>
+                        <Text style={styles.filterFieldLabel}>{t('reports.filter.endDate')}</Text>
+                        <Pressable
+                          onPress={() => openCustomDatePicker('endDate')}
+                          style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
+                          <View style={styles.filterPickerIcon}>
+                            <MaterialCommunityIcons name="calendar-end" size={18} color={colors.primary} />
+                          </View>
+                          <View style={styles.filterPickerCopy}>
+                            <Text style={styles.filterPickerValue}>
+                              {draftFilters.endDate
+                                ? new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(
+                                    parseDateValue(draftFilters.endDate) ?? new Date()
+                                  )
+                                : t('reports.filter.endDatePlaceholder')}
+                            </Text>
+                            <Text style={styles.filterPickerMeta}>{t('reports.filter.dateHelper')}</Text>
+                          </View>
+                          <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                        </Pressable>
+                      </View>
+
+                      {Platform.OS === 'ios' && iosCustomDatePickerVisible && customDateTarget ? (
+                        <View style={styles.filterDatePickerCard}>
+                          <DateTimePicker
+                            value={
+                              parseDateValue(
+                                customDateTarget === 'startDate' ? draftFilters.startDate : draftFilters.endDate
+                              ) ?? new Date()
+                            }
+                            mode="date"
+                            display="spinner"
+                            onChange={handleCustomDateChange}
+                            accentColor={colors.primary}
+                            themeVariant={isDark ? 'dark' : 'light'}
+                          />
+                        </View>
+                      ) : null}
+                    </>
+                  )}
+                </View>
+
+                {!!filterError ? (
+                  <View style={styles.filterErrorCard}>
+                    <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.danger} />
+                    <Text style={styles.filterErrorText}>{filterError}</Text>
+                  </View>
+                ) : null}
+              </ScrollView>
+
+              <View style={styles.filterModalFooter}>
+                <View style={styles.filterModalActions}>
+                  <Pressable onPress={resetFilters} style={styles.filterSecondaryButton}>
+                    <Text style={styles.filterSecondaryButtonText}>{t('reports.filter.reset')}</Text>
+                  </Pressable>
+                  <Pressable onPress={applyFilterDraft} style={styles.filterPrimaryButton}>
+                    <Text style={styles.filterPrimaryButtonText}>{t('reports.filter.apply')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -634,6 +1176,360 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       flex: 1,
       minWidth: 0,
       gap: 8,
+    },
+    filterCard: {
+      borderRadius: 22,
+      backgroundColor: colors.shellCard,
+      padding: compact ? 16 : 18,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      gap: 4,
+    },
+    filterCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    filterCardCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 3,
+    },
+    filterCardKicker: {
+      color: colors.secondary,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 2.2,
+      textTransform: 'uppercase',
+    },
+    filterCardTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 17 : 19,
+      lineHeight: compact ? 23 : 25,
+      fontWeight: '800',
+      letterSpacing: -0.6,
+    },
+    filterCardMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+    filterCardAction: {
+      flexShrink: 0,
+      minHeight: 40,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: colors.primary,
+    },
+    filterCardActionText: {
+      color: colors.onPrimary,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+    filterSectionCard: {
+      borderRadius: 24,
+      backgroundColor: colors.shellCard,
+      padding: 16,
+      gap: 16,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterSectionSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+    filterModeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    filterModeButton: {
+      flexGrow: 1,
+      flexBasis: compact ? '100%' : '31%',
+      minHeight: 58,
+      borderRadius: 18,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterModeIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCard,
+    },
+    filterModeLabel: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.shellTextSecondary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+    filterYearRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    filterYearButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterYearText: {
+      flex: 1,
+      textAlign: 'center',
+      color: colors.shellTextPrimary,
+      fontSize: 20,
+      lineHeight: 26,
+      fontWeight: '900',
+      letterSpacing: -0.7,
+    },
+    filterMonthGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    filterMonthChip: {
+      flexGrow: 1,
+      flexBasis: compact ? '30%' : '22%',
+      minWidth: 70,
+      minHeight: 44,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterMonthChipText: {
+      color: colors.shellTextSecondary,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+    filterFieldGroup: {
+      gap: 8,
+    },
+    filterFieldLabel: {
+      color: colors.shellTextSecondary,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+    filterFieldHelper: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    filterPickerShell: {
+      minHeight: 56,
+      borderRadius: 18,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterPickerPressed: {
+      opacity: 0.92,
+      transform: [{ scale: 0.99 }],
+    },
+    filterPickerIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCard,
+    },
+    filterPickerCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    filterPickerValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '800',
+    },
+    filterPickerMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    filterDatePickerCard: {
+      borderRadius: 20,
+      backgroundColor: colors.shellCardMuted,
+      padding: 8,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterErrorCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 16,
+      backgroundColor: alpha(colors.danger, 0.08),
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, 0.16),
+    },
+    filterErrorText: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    filterModalOverlay: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: alpha(colors.shellBackground, 0.56),
+    },
+    filterModalSheet: {
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      backgroundColor: colors.shellBackground,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderColor: colors.shellBorder,
+      maxHeight: '92%',
+    },
+    filterModalHandle: {
+      alignSelf: 'center',
+      width: 48,
+      height: 5,
+      borderRadius: 999,
+      backgroundColor: colors.shellBorder,
+      marginBottom: 14,
+    },
+    filterModalBody: {
+      paddingHorizontal: compact ? 16 : 18,
+      paddingBottom: Math.max(18, 16 + topInset),
+      gap: 14,
+    },
+    filterModalHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    filterModalHeaderCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    filterModalKicker: {
+      color: colors.secondary,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 2.2,
+      textTransform: 'uppercase',
+    },
+    filterModalTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 22 : 24,
+      lineHeight: compact ? 28 : 30,
+      fontWeight: '900',
+      letterSpacing: -0.8,
+    },
+    filterModalSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+    filterModalClose: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterModalScroll: {
+      maxHeight: '72%',
+    },
+    filterModalContent: {
+      gap: 14,
+      paddingBottom: 4,
+    },
+    filterModalFooter: {
+      paddingTop: 4,
+    },
+    filterModalActions: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    filterSecondaryButton: {
+      flex: 1,
+      minHeight: 48,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 14,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterSecondaryButtonText: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+    filterPrimaryButton: {
+      flex: 1,
+      minHeight: 48,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 14,
+      backgroundColor: colors.primary,
+    },
+    filterPrimaryButtonText: {
+      color: colors.onPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+      letterSpacing: 0.2,
     },
     kicker: {
       color: colors.secondary,
@@ -933,10 +1829,16 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       fontSize: 11,
       fontWeight: '600',
     },
-    trendRowValue: {
-      color: colors.shellTextPrimary,
-      fontSize: 13,
-      fontWeight: '900',
+    trendRowMetrics: {
+      gap: 4,
+      alignItems: 'flex-end',
+    },
+    trendRowMetricText: {
+      color: colors.shellTextSecondary,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '600',
+      textAlign: 'right',
     },
     trendRowTrack: {
       height: 8,
