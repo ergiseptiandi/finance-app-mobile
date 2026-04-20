@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -22,6 +23,7 @@ import {
   markNotificationAsRead,
   type NotificationRecord,
 } from '@/lib/api/notifications';
+import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
@@ -99,6 +101,7 @@ export default function NotificationsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { language, t } = useAppLanguage();
+  const { showTransitionOverlay } = useTransitionOverlay();
   const insets = useSafeAreaInsets();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const styles = createStyles(colors, insets.top, insets.bottom);
@@ -212,6 +215,23 @@ export default function NotificationsScreen() {
     }
   }, [loading, notifications, savingAll, unreadCount, withAuthorizedRequest]);
 
+  const goBack = useCallback(async () => {
+    showTransitionOverlay();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    router.back();
+  }, [showTransitionOverlay]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        void goBack();
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [goBack])
+  );
+
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -220,7 +240,7 @@ export default function NotificationsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadNotifications(true)} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Pressable onPress={() => void goBack()} style={styles.backButton}>
             <MaterialCommunityIcons name="chevron-left" size={24} color={colors.shellTextPrimary} />
           </Pressable>
           <View style={styles.topBarCopy}>
