@@ -14,12 +14,21 @@ export type BiometricState = {
 const getEnabledFlag = async () => (await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY)) === 'true';
 
 export const getBiometricState = async (): Promise<BiometricState> => {
-  const [hasHardware, enrolledLevel, enabled, refreshToken] = await Promise.all([
-    LocalAuthentication.hasHardwareAsync(),
-    LocalAuthentication.getEnrolledLevelAsync(),
+  const hasHardware = await LocalAuthentication.hasHardwareAsync();
+  const [enabled, refreshToken] = await Promise.all([
     getEnabledFlag(),
     SecureStore.getItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY),
   ]);
+
+  let enrolledLevel = LocalAuthentication.SecurityLevel.NONE;
+
+  if (hasHardware) {
+    try {
+      enrolledLevel = await LocalAuthentication.getEnrolledLevelAsync();
+    } catch {
+      enrolledLevel = LocalAuthentication.SecurityLevel.NONE;
+    }
+  }
 
   const isEnrolled = enrolledLevel !== LocalAuthentication.SecurityLevel.NONE;
 
@@ -41,8 +50,8 @@ export const getBiometricRefreshToken = async () => {
 };
 
 export const saveBiometricCredentials = async (refreshToken: string) => {
-  await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, 'true');
   await SecureStore.setItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY, refreshToken);
+  await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, 'true');
 };
 
 export const syncBiometricCredentials = async (refreshToken: string) => {

@@ -29,8 +29,8 @@ import {
   updateNotificationSettings,
   type NotificationSettingsData,
 } from '@/lib/api/notifications';
-import { ApiRequestError, login } from '@/lib/api/auth';
-import { getAuthSession } from '@/lib/auth-session';
+import { login } from '@/lib/api/auth';
+import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
 import { getDevicePushToken } from '@/lib/push-notifications';
 
@@ -304,7 +304,7 @@ export default function SettingsScreen() {
 
     try {
       const response = await login({
-        email: session.user.email,
+        email: session.user.email.trim(),
         password: biometricPassword,
         device_name: DEVICE_NAME,
       });
@@ -315,11 +315,8 @@ export default function SettingsScreen() {
       setBiometricSetupOpen(false);
       setBiometricPassword('');
     } catch (error) {
-      if (error instanceof ApiRequestError) {
-        setBiometricError(error.message);
-      } else {
-        setBiometricError(t('settings.biometricsSaveError'));
-      }
+      const message = error instanceof Error ? error.message : String(error);
+      setBiometricError(message || t('settings.biometricsSaveError'));
     } finally {
       setBiometricSaving(false);
     }
