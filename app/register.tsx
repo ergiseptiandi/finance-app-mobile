@@ -20,13 +20,10 @@ import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError, register } from '@/lib/api/auth';
 import { saveAuthSession } from '@/lib/auth-session';
+import { getDeviceName } from '@/lib/device-name';
 import { useAppLanguage } from '@/providers/language-provider';
 
-const DEVICE_NAME =
-  Platform.select({
-    android: 'Finance-GO Android',
-    default: 'Finance-GO Android',
-  }) ?? 'Finance-GO Android';
+const DEVICE_NAME = getDeviceName();
 
 export default function RegisterScreen() {
   const { width } = useWindowDimensions();
