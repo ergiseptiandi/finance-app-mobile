@@ -28,13 +28,11 @@ import {
   DashboardComparisonData,
   DashboardSummaryData,
   DailySpendingItem,
-  ExpenseVsSalaryData,
   MonthlySpendingItem,
   type DashboardPeriodParams,
   getComparison,
   getDailySpending,
   getDashboardSummary,
-  getExpenseVsSalary,
   getMonthlySpending,
 } from '@/lib/api/dashboard';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
@@ -69,7 +67,6 @@ type DashboardCacheState = {
   dailySpending: DailySpendingItem[];
   monthlySpending: MonthlySpendingItem[];
   comparison: DashboardComparisonData | null;
-  expenseVsSalary: ExpenseVsSalaryData | null;
   displayName: string;
 };
 
@@ -126,7 +123,12 @@ const formatSignedCurrency = (value: number, locale: string) => {
   return `${value >= 0 ? '+' : '-'}${formatted}`;
 };
 
-const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
+const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
+
+const toNumber = (value: unknown) => {
+  const nextValue = typeof value === 'number' ? value : Number(value ?? 0);
+  return Number.isFinite(nextValue) ? nextValue : 0;
+};
 
 const parseDateValue = (value: string) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -271,6 +273,8 @@ const formatExpenseCurrency = (value: number, locale: string) => {
   return formatSignedCurrency(-Math.abs(value), locale);
 };
 
+const formatPercentValue = (value: number) => `${Math.round(value)}%`;
+
 export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const isDark = colorScheme === 'dark';
@@ -288,7 +292,6 @@ export default function DashboardScreen() {
   const [dailySpending, setDailySpending] = useState<DailySpendingItem[]>([]);
   const [monthlySpending, setMonthlySpending] = useState<MonthlySpendingItem[]>([]);
   const [comparison, setComparison] = useState<DashboardComparisonData | null>(null);
-  const [expenseVsSalary, setExpenseVsSalary] = useState<ExpenseVsSalaryData | null>(null);
   const [displayName, setDisplayName] = useState('Kinetic Pulse');
   const [filters, setFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
   const [draftFilters, setDraftFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
@@ -297,9 +300,7 @@ export default function DashboardScreen() {
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
   const [filterDateTarget, setFilterDateTarget] = useState<'month' | 'startDate' | 'endDate' | null>(null);
   const filtersRef = useRef<DashboardFilters>(createDefaultDashboardFilters());
-  const hasDashboardSnapshot = Boolean(
-    summary || comparison || expenseVsSalary || dailySpending.length || monthlySpending.length
-  );
+  const hasDashboardSnapshot = Boolean(summary || comparison || dailySpending.length || monthlySpending.length);
 
   useEffect(() => {
     filtersRef.current = filters;
@@ -330,7 +331,6 @@ export default function DashboardScreen() {
       setDailySpending(cached.data.dailySpending);
       setMonthlySpending(cached.data.monthlySpending);
       setComparison(cached.data.comparison);
-      setExpenseVsSalary(cached.data.expenseVsSalary);
       setDisplayName(cached.data.displayName || nextDisplayName);
       setLoading(false);
     };
@@ -377,7 +377,6 @@ export default function DashboardScreen() {
             getDailySpending(accessToken, dashboardParams),
             getMonthlySpending(accessToken, dashboardParams),
             getComparison(accessToken),
-            getExpenseVsSalary(accessToken),
           ]);
 
         let results = await fetchBundle(session.token.access_token);
@@ -396,7 +395,7 @@ export default function DashboardScreen() {
           }
         }
 
-        const [summaryResult, dailyResult, monthlyResult, comparisonResult, ratioResult] = results;
+        const [summaryResult, dailyResult, monthlyResult, comparisonResult] = results;
         const nextSummary = summaryResult.status === 'fulfilled' ? summaryResult.value.Data : summary;
         const nextDailySpending =
           dailyResult.status === 'fulfilled' ? dailyResult.value.Data : dailySpending;
@@ -404,8 +403,6 @@ export default function DashboardScreen() {
           monthlyResult.status === 'fulfilled' ? monthlyResult.value.Data : monthlySpending;
         const nextComparison =
           comparisonResult.status === 'fulfilled' ? comparisonResult.value.Data : comparison;
-        const nextExpenseVsSalary =
-          ratioResult.status === 'fulfilled' ? ratioResult.value.Data : expenseVsSalary;
 
         if (summaryResult.status === 'fulfilled') {
           setSummary(nextSummary);
@@ -423,16 +420,11 @@ export default function DashboardScreen() {
           setComparison(nextComparison);
         }
 
-        if (ratioResult.status === 'fulfilled') {
-          setExpenseVsSalary(nextExpenseVsSalary);
-        }
-
         await writeScreenCache(buildScreenCacheKey('dashboard', session.user.id, cacheSuffix), {
           summary: nextSummary,
           dailySpending: nextDailySpending,
           monthlySpending: nextMonthlySpending,
           comparison: nextComparison,
-          expenseVsSalary: nextExpenseVsSalary,
           displayName: nextDisplayName,
         });
 
@@ -457,7 +449,7 @@ export default function DashboardScreen() {
         setRefreshing(false);
       }
     },
-    [comparison, dailySpending, expenseVsSalary, hasDashboardSnapshot, monthlySpending, summary, t]
+    [comparison, dailySpending, hasDashboardSnapshot, monthlySpending, summary, t]
   );
 
   useFocusEffect(
@@ -583,7 +575,25 @@ export default function DashboardScreen() {
   const currentBalance = toNumber(summary?.total_balance);
   const monthlyIncome = toNumber(summary?.monthly_income);
   const monthlyExpense = toNumber(summary?.monthly_expense);
-  const liquidCashFlow = monthlyIncome - monthlyExpense;
+  const netCashflow = toNumber(summary?.net_cashflow ?? monthlyIncome - monthlyExpense);
+  const savingsRate = toNumber(
+    summary?.savings_rate ?? (monthlyIncome > 0 ? (netCashflow / monthlyIncome) * 100 : 0)
+  );
+  const expenseRatio = toNumber(
+    summary?.expense_ratio ?? (monthlyIncome > 0 ? (monthlyExpense / monthlyIncome) * 100 : 0)
+  );
+  const dashboardDebt = summary?.debt ?? null;
+  const remainingDebt = toNumber(dashboardDebt?.remaining_debt);
+  const totalDebt = toNumber(dashboardDebt?.total_debt);
+  const debtToIncome = toNumber(
+    dashboardDebt?.debt_to_income_ratio ??
+      (monthlyIncome > 0 ? (remainingDebt / monthlyIncome) * 100 : 0)
+  );
+  const debtToBalance = toNumber(
+    dashboardDebt?.debt_to_balance_ratio ??
+      (currentBalance > 0 ? (remainingDebt / currentBalance) * 100 : 0)
+  );
+  const debtCompletion = toNumber(dashboardDebt?.completion_rate);
   const todayExpense = extractComparisonValue(comparison, ['today_expense', 'today', 'todayAmount']);
   const yesterdayExpense = extractComparisonValue(comparison, [
     'yesterday_expense',
@@ -601,14 +611,6 @@ export default function DashboardScreen() {
     'last_month',
   ]);
 
-  const salaryAmount = toNumber(expenseVsSalary?.salary_amount ?? expenseVsSalary?.salary);
-  const expenseAmount = toNumber(expenseVsSalary?.expense_amount ?? expenseVsSalary?.expense);
-  const debtRatioRaw =
-    toNumber(expenseVsSalary?.percentage) ||
-    (salaryAmount > 0 ? (expenseAmount / salaryAmount) * 100 : 0);
-  const debtRatio = Math.max(0, Math.min(100, Math.round(debtRatioRaw)));
-  const leverageRatio = Math.max(0.08, Math.min(0.99, debtRatio / 100));
-
   const monthlyMomentum =
     lastMonthExpense > 0
       ? ((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100
@@ -620,6 +622,7 @@ export default function DashboardScreen() {
   const activePeriodLabel = getDashboardFilterLabel(filters, locale) || t('dashboard.filter.currentPeriod');
   const filterModeLabel =
     filters.dateMode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode');
+  const dashboardAlert = summary?.alerts?.[0] ?? null;
 
   const trendPoints = useMemo<TrendPoint[]>(() => {
     if (trendMode === 'daily' && dailySpending.length > 0) {
@@ -638,20 +641,20 @@ export default function DashboardScreen() {
       }));
     }
 
-    return [
-      { label: 'JAN', value: 40 },
-      { label: 'FEB', value: 58 },
-      { label: 'MAR', value: 49 },
-      { label: 'APR', value: 72 },
-      { label: 'MAY', value: 44 },
-      { label: 'JUN', value: 92, active: true },
-      { label: 'JUL', value: 61 },
-    ];
+    return [];
   }, [dailySpending, locale, monthlySpending, trendMode]);
 
   const trendPeak = Math.max(...trendPoints.map((item) => item.value), 1);
-  const liquidProgress = Math.max(12, Math.min(100, debtRatio > 0 ? 100 - debtRatio : 72));
-  const projectedWorth = Math.max(0, currentBalance + Math.max(liquidCashFlow, 0) * 6);
+  const liquidProgress = clampPercent(savingsRate > 0 ? savingsRate : 12);
+
+  const insightTitle = dashboardAlert?.title ?? t('dashboard.summaryInsightTitle');
+  const insightBody =
+    dashboardAlert?.message ??
+    (summary
+      ? `Cashflow bersih ${formatSignedCurrency(netCashflow, locale)} dengan expense ratio ${formatPercentValue(
+          Math.max(0, expenseRatio)
+        )}.`
+      : t('dashboard.summaryInsightBody'));
 
   const activityItems = useMemo<ActivityItem[]>(
     () => [
@@ -678,6 +681,32 @@ export default function DashboardScreen() {
       },
     ],
     [activePeriodLabel, locale, monthlyExpense, t, todayExpense, yesterdayExpense]
+  );
+
+  const summaryHighlights = useMemo(
+    () => [
+      {
+        label: t('dashboard.summary.balance'),
+        value: formatCompactCurrency(currentBalance, locale),
+        meta: t('dashboard.summary.balanceMeta'),
+      },
+      {
+        label: t('dashboard.summary.income'),
+        value: formatCompactCurrency(monthlyIncome, locale),
+        meta: t('dashboard.summary.incomeMeta'),
+      },
+      {
+        label: t('dashboard.summary.expense'),
+        value: formatCompactCurrency(monthlyExpense, locale),
+        meta: t('dashboard.summary.expenseMeta'),
+      },
+      {
+        label: t('dashboard.summary.cashflow'),
+        value: formatSignedCurrency(netCashflow, locale),
+        meta: t('dashboard.summary.cashflowMeta'),
+      },
+    ],
+    [currentBalance, locale, monthlyExpense, monthlyIncome, netCashflow, t]
   );
 
   return (
@@ -740,6 +769,49 @@ export default function DashboardScreen() {
               </View>
             </View>
 
+            <View style={styles.summaryCard}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardHeaderCopy}>
+                  <Text style={styles.cardEyebrow}>{t('dashboard.summary.title')}</Text>
+                  <Text style={styles.cardTitle}>{activePeriodLabel}</Text>
+                </View>
+                <View style={styles.summaryBadge}>
+                  <Text style={styles.summaryBadgeLabel}>{t('dashboard.filter.currentPeriod')}</Text>
+                </View>
+              </View>
+
+              <View style={styles.summaryGrid}>
+                {summaryHighlights.map((item) => (
+                  <View key={item.label} style={styles.summaryMetric}>
+                    <Text numberOfLines={1} style={styles.summaryMetricLabel}>
+                      {item.label}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.72}
+                      style={styles.summaryMetricValue}>
+                      {item.value}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.summaryMetricMeta}>
+                      {item.meta}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.summaryStatsRow}>
+                <View style={styles.summaryStatPill}>
+                  <Text style={styles.summaryStatLabel}>{t('dashboard.summary.savingsRate')}</Text>
+                  <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, savingsRate))}</Text>
+                </View>
+                <View style={styles.summaryStatPill}>
+                  <Text style={styles.summaryStatLabel}>{t('dashboard.summary.debtLoad')}</Text>
+                  <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
+                </View>
+              </View>
+            </View>
+
             <View style={styles.filterCard}>
               <View style={styles.filterCardHeader}>
                 <View style={styles.filterCardCopy}>
@@ -766,7 +838,7 @@ export default function DashboardScreen() {
                     adjustsFontSizeToFit
                     minimumFontScale={0.75}
                     style={styles.liquidAmount}>
-                    {formatSignedCurrency(liquidCashFlow, locale)}
+                    {formatSignedCurrency(netCashflow, locale)}
                   </Text>
                 </View>
                 <View style={styles.cardIconShell}>
@@ -783,7 +855,7 @@ export default function DashboardScreen() {
                   {t('dashboard.opEx')}: {formatCompactCurrency(monthlyExpense, locale)}
                 </Text>
                 <Text numberOfLines={1} style={styles.cardMeta}>
-                  {t('dashboard.burn')}: {debtRatio}%
+                  {t('dashboard.burn')}: {formatPercentValue(Math.max(0, expenseRatio))}
                 </Text>
               </View>
             </View>
@@ -810,20 +882,28 @@ export default function DashboardScreen() {
               </View>
 
               <View style={styles.trendChart}>
-                {trendPoints.map((point) => (
-                  <View key={`${point.label}-${point.value}`} style={styles.trendItem}>
-                    <View
-                      style={[
-                        styles.trendBar,
-                        { height: `${Math.max(26, (point.value / trendPeak) * 100)}%` },
-                        point.active && styles.trendBarActive,
-                      ]}
-                    />
-                    <Text numberOfLines={1} style={styles.trendLabel}>
-                      {point.label}
-                    </Text>
+                {trendPoints.length > 0 ? (
+                  trendPoints.map((point) => (
+                    <View key={`${point.label}-${point.value}`} style={styles.trendItem}>
+                      <View
+                        style={[
+                          styles.trendBar,
+                          { height: `${Math.max(26, (point.value / trendPeak) * 100)}%` },
+                          point.active && styles.trendBarActive,
+                        ]}
+                      />
+                      <Text numberOfLines={1} style={styles.trendLabel}>
+                        {point.label}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.trendEmpty}>
+                    <MaterialCommunityIcons name="chart-timeline-variant" size={22} color={colors.shellTextMuted} />
+                    <Text style={styles.trendEmptyTitle}>{t('dashboard.noTrendData')}</Text>
+                    <Text style={styles.trendEmptyMeta}>{t('dashboard.noTrendDataBody')}</Text>
                   </View>
-                ))}
+                )}
               </View>
             </View>
 
@@ -833,15 +913,26 @@ export default function DashboardScreen() {
               </View>
               <Text style={styles.cardTitle}>{t('dashboard.debtHealth')}</Text>
               <Text style={styles.cardDescription}>
-                {t('dashboard.debtHealthBody', { percent: Math.max(8, debtRatio) })}
+                {dashboardDebt
+                  ? t('dashboard.debtHealthBody', {
+                      remaining: formatCompactCurrency(remainingDebt, locale),
+                      total: formatCompactCurrency(totalDebt, locale),
+                      percent: formatPercentValue(Math.max(0, debtCompletion || debtToIncome)),
+                    })
+                  : t('dashboard.noDebtData')}
               </Text>
 
               <View style={styles.metricCard}>
                 <Text style={styles.cardEyebrow}>{t('dashboard.leverageRatio')}</Text>
-                <Text style={styles.metricValue}>{leverageRatio.toFixed(2)}</Text>
+                <Text style={styles.metricValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
+                <Text style={styles.metricMeta}>{t('dashboard.debtBalanceRatio', { percent: formatPercentValue(Math.max(0, debtToBalance)) })}</Text>
               </View>
 
-              <Pressable style={styles.secondaryAction}>
+              <Pressable
+                onPress={() => {
+                  router.push('/debt');
+                }}
+                style={styles.secondaryAction}>
                 <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
               </Pressable>
@@ -850,7 +941,11 @@ export default function DashboardScreen() {
             <View style={styles.card}>
               <View style={styles.rowBetween}>
                 <Text style={styles.cardTitle}>{t('dashboard.kineticActivity')}</Text>
-                <Pressable hitSlop={10}>
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => {
+                    router.push('/activity');
+                  }}>
                   <Text style={styles.linkText}>{t('dashboard.viewLedger')}</Text>
                 </Pressable>
               </View>
@@ -894,13 +989,13 @@ export default function DashboardScreen() {
 
             <View style={styles.insightCard}>
               <Text style={styles.insightBadge}>{t('dashboard.pulseInsight')}</Text>
-              <Text style={styles.insightTitle}>{t('dashboard.wealthAccelerating')}</Text>
-              <Text style={styles.insightText}>
-                {t('dashboard.insightBody', {
-                  amount: formatCompactCurrency(projectedWorth, locale),
-                })}
-              </Text>
-              <Pressable style={styles.primaryAction}>
+              <Text style={styles.insightTitle}>{insightTitle}</Text>
+              <Text style={styles.insightText}>{insightBody}</Text>
+              <Pressable
+                onPress={() => {
+                  router.push('/reports');
+                }}
+                style={styles.primaryAction}>
                 <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>
               </Pressable>
             </View>
@@ -1281,6 +1376,14 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
+    summaryCard: {
+      borderRadius: 28,
+      backgroundColor: alpha(colors.primary, isDark ? 0.14 : 0.08),
+      padding: compact ? 18 : 20,
+      gap: 18,
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, isDark ? 0.24 : 0.16),
+    },
     liquidCard: {
       borderRadius: 24,
       backgroundColor: colors.shellCardStrong,
@@ -1362,6 +1465,83 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '800',
       letterSpacing: -1.1,
     },
+    cardHeaderCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    summaryBadge: {
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      backgroundColor: alpha(colors.shellTextPrimary, isDark ? 0.12 : 0.08),
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    summaryBadgeLabel: {
+      color: colors.shellTextPrimary,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    summaryGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    summaryMetric: {
+      width: '48%',
+      borderRadius: 20,
+      backgroundColor: colors.shellCard,
+      padding: 14,
+      gap: 6,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    summaryMetricLabel: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1.1,
+      textTransform: 'uppercase',
+    },
+    summaryMetricValue: {
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 18 : 20,
+      lineHeight: compact ? 24 : 26,
+      fontWeight: '900',
+      letterSpacing: -0.7,
+    },
+    summaryMetricMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '600',
+    },
+    summaryStatsRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    summaryStatPill: {
+      flex: 1,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardMuted,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      gap: 4,
+    },
+    summaryStatLabel: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    summaryStatValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '900',
+    },
     segmentedControl: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1432,6 +1612,26 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '800',
       letterSpacing: 1.4,
     },
+    trendEmpty: {
+      flex: 1,
+      minHeight: 160,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingHorizontal: 20,
+    },
+    trendEmptyTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    trendEmptyMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
     debtIconWrap: {
       width: 40,
       height: 40,
@@ -1458,6 +1658,12 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontSize: 18,
       fontWeight: '900',
       letterSpacing: -0.6,
+    },
+    metricMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '600',
     },
     secondaryAction: {
       minHeight: 54,
