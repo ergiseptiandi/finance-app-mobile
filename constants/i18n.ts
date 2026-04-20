@@ -79,7 +79,7 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'register.quoteText':
       '"The Ledger mengubah pelaporan institusional kami dari pekerjaan mingguan menjadi pulse strategis real-time."',
     'register.title': 'Buat Akun',
-    'register.subtitle': 'Selamat datang di inner circle Kinetic Pulse.',
+    'register.subtitle': 'Selamat datang di Finance-GO.',
     'register.fullName': 'Nama Lengkap',
     'register.confirmPassword': 'Konfirmasi Password',
     'register.helperDeviceTracking': 'Pelacakan perangkat dikirim otomatis sebagai {device}.',
@@ -640,7 +640,7 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'register.quoteText':
       '"The Ledger transformed our institutional reporting from a weekly chore into a real-time strategic pulse."',
     'register.title': 'Create Account',
-    'register.subtitle': 'Welcome to the inner circle of Kinetic Pulse.',
+    'register.subtitle': 'Welcome to Finance-GO.',
     'register.fullName': 'Full Name',
     'register.confirmPassword': 'Confirm Password',
     'register.helperDeviceTracking': 'Device tracking is sent automatically as {device}.',
