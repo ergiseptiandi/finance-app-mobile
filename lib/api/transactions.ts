@@ -59,6 +59,8 @@ export type ListTransactionsParams = {
   per_page?: number;
 };
 
+export type TransactionSummaryParams = Pick<ListTransactionsParams, 'month' | 'start_date' | 'end_date'>;
+
 const buildTransactionsUrl = (path = '') => buildApiUrl(`transactions${path ? `/${path}` : ''}`);
 
 const withQueryParams = (url: string, params: ListTransactionsParams) => {
@@ -89,8 +91,8 @@ export const listTransactions = (accessToken: string, params: ListTransactionsPa
     token: accessToken,
   });
 
-export const getTransactionSummary = (accessToken: string) =>
-  request<ApiEnvelope<TransactionSummaryData>>(buildTransactionsUrl('summary'), {
+export const getTransactionSummary = (accessToken: string, params: TransactionSummaryParams = {}) =>
+  request<ApiEnvelope<TransactionSummaryData>>(withQueryParams(buildTransactionsUrl('summary'), params), {
     method: 'GET',
     token: accessToken,
   });

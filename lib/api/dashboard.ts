@@ -11,6 +11,7 @@ type NumericLike = number | string | null;
 
 export type DashboardSummaryData = {
   total_balance: NumericLike;
+  period_balance?: NumericLike;
   monthly_income: NumericLike;
   monthly_expense: NumericLike;
   net_cashflow?: NumericLike;
@@ -98,7 +99,16 @@ export type MonthlySpendingItem = {
   amount: NumericLike;
 };
 
+export type DashboardComparisonWindowData = {
+  current?: NumericLike;
+  previous?: NumericLike;
+  difference?: NumericLike;
+  percentage_change?: NumericLike;
+};
+
 export type DashboardComparisonData = {
+  today_vs_yesterday?: DashboardComparisonWindowData;
+  this_month_vs_last_month?: DashboardComparisonWindowData;
   today_expense?: NumericLike;
   yesterday_expense?: NumericLike;
   this_month_expense?: NumericLike;

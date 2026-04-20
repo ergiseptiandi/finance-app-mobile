@@ -35,6 +35,7 @@ import {
   listTransactions,
   updateTransaction,
   type TransactionRecord,
+  type TransactionSummaryParams,
   type TransactionSummaryData,
   type TransactionType,
 } from '@/lib/api/transactions';
@@ -134,6 +135,12 @@ const createTransactionListParams = (filters: ActivityListFilters, page: number,
   wallet_id: filters.walletId ?? undefined,
   type: filters.type === 'all' ? undefined : filters.type,
   category: filters.category || undefined,
+  month: filters.dateMode === 'month' ? filters.month : undefined,
+  start_date: filters.dateMode === 'range' ? filters.startDate : undefined,
+  end_date: filters.dateMode === 'range' ? filters.endDate : undefined,
+});
+
+const createTransactionSummaryParams = (filters: ActivityListFilters): TransactionSummaryParams => ({
   month: filters.dateMode === 'month' ? filters.month : undefined,
   start_date: filters.dateMode === 'range' ? filters.startDate : undefined,
   end_date: filters.dateMode === 'range' ? filters.endDate : undefined,
@@ -608,7 +615,7 @@ export default function ActivityScreen() {
 
         const [summaryResponse, transactionResponse, categoryResponse, walletResponse] = await withAuthorizedRequest((accessToken) =>
           Promise.allSettled([
-            getTransactionSummary(accessToken),
+            getTransactionSummary(accessToken, createTransactionSummaryParams(filters)),
             listTransactions(accessToken, createTransactionListParams(filters, 1, 10)),
             listCategories(accessToken),
             listWallets(accessToken),

@@ -288,6 +288,15 @@ const extractComparisonValue = (data: DashboardComparisonData | null, keys: stri
   return 0;
 };
 
+const extractComparisonWindowValue = (
+  data: DashboardComparisonData | null,
+  windowKey: keyof Pick<DashboardComparisonData, 'today_vs_yesterday' | 'this_month_vs_last_month'>,
+  field: keyof NonNullable<DashboardComparisonData['today_vs_yesterday']>
+) => {
+  const windowData = data?.[windowKey];
+  return toNumber(windowData?.[field]);
+};
+
 const formatExpenseCurrency = (value: number, locale: string) => {
   if (value <= 0) {
     return formatDetailCurrency(0, locale);
@@ -611,7 +620,8 @@ export default function DashboardScreen() {
     void loadDashboard(false, nextFilters, true);
   }, [draftFilters, loadDashboard, t]);
 
-  const currentBalance = toNumber(summary?.total_balance);
+  const totalBalance = toNumber(summary?.total_balance);
+  const periodBalance = toNumber(summary?.period_balance);
   const monthlyIncome = toNumber(summary?.monthly_income);
   const monthlyExpense = toNumber(summary?.monthly_expense);
   const netCashflow = toNumber(summary?.net_cashflow ?? monthlyIncome - monthlyExpense);
@@ -630,32 +640,25 @@ export default function DashboardScreen() {
   );
   const debtToBalance = toNumber(
     dashboardDebt?.debt_to_balance_ratio ??
-    (currentBalance > 0 ? (remainingDebt / currentBalance) * 100 : 0)
+    (totalBalance > 0 ? (remainingDebt / totalBalance) * 100 : 0)
   );
   const debtCompletion = toNumber(dashboardDebt?.completion_rate);
-  const todayExpense = extractComparisonValue(comparison, ['today_expense', 'today', 'todayAmount']);
-  const yesterdayExpense = extractComparisonValue(comparison, [
-    'yesterday_expense',
-    'yesterday',
-    'yesterdayAmount',
-  ]);
-  const thisMonthExpense = extractComparisonValue(comparison, [
-    'this_month_expense',
-    'thisMonth',
-    'this_month',
-  ]);
-  const lastMonthExpense = extractComparisonValue(comparison, [
-    'last_month_expense',
-    'lastMonth',
-    'last_month',
-  ]);
+  const todayExpense = extractComparisonWindowValue(comparison, 'today_vs_yesterday', 'current') ||
+    extractComparisonValue(comparison, ['today_expense', 'today', 'todayAmount']);
+  const yesterdayExpense = extractComparisonWindowValue(comparison, 'today_vs_yesterday', 'previous') ||
+    extractComparisonValue(comparison, ['yesterday_expense', 'yesterday', 'yesterdayAmount']);
+  const thisMonthExpense = extractComparisonWindowValue(comparison, 'this_month_vs_last_month', 'current') ||
+    extractComparisonValue(comparison, ['this_month_expense', 'thisMonth', 'this_month']);
+  const lastMonthExpense = extractComparisonWindowValue(comparison, 'this_month_vs_last_month', 'previous') ||
+    extractComparisonValue(comparison, ['last_month_expense', 'lastMonth', 'last_month']);
 
   const monthlyMomentum =
-    lastMonthExpense > 0
+    toNumber(comparison?.this_month_vs_last_month?.percentage_change) ||
+    (lastMonthExpense > 0
       ? ((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100
       : thisMonthExpense > 0
         ? 100
-        : 0;
+        : 0);
   const momentumPrefix = monthlyMomentum > 0 ? '+' : '';
   const momentumIcon = monthlyMomentum >= 0 ? 'trending-up' : 'trending-down';
   const activePeriodLabel = getDashboardFilterLabel(filters, locale) || t('dashboard.filter.currentPeriod');
@@ -725,9 +728,14 @@ export default function DashboardScreen() {
   const summaryHighlights = useMemo(
     () => [
       {
-        label: t('dashboard.summary.balance'),
-        value: formatCompactCurrency(currentBalance, locale),
-        meta: t('dashboard.summary.balanceMeta'),
+        label: t('dashboard.summary.totalBalance'),
+        value: formatCompactCurrency(totalBalance, locale),
+        meta: t('dashboard.summary.totalBalanceMeta'),
+      },
+      {
+        label: t('dashboard.summary.periodBalance'),
+        value: formatCompactCurrency(periodBalance, locale),
+        meta: t('dashboard.summary.periodBalanceMeta'),
       },
       {
         label: t('dashboard.summary.income'),
@@ -745,7 +753,7 @@ export default function DashboardScreen() {
         meta: t('dashboard.summary.cashflowMeta'),
       },
     ],
-    [currentBalance, locale, monthlyExpense, monthlyIncome, netCashflow, t]
+    [locale, monthlyExpense, monthlyIncome, netCashflow, periodBalance, t, totalBalance]
   );
 
   return (
@@ -790,7 +798,7 @@ export default function DashboardScreen() {
                 adjustsFontSizeToFit
                 minimumFontScale={0.62}
                 style={styles.heroAmount}>
-                {formatCompactCurrency(currentBalance, locale)}
+                {formatCompactCurrency(totalBalance, locale)}
               </Text>
 
               <View style={styles.momentumRow}>
