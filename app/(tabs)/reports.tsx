@@ -910,15 +910,24 @@ export default function ReportsScreen() {
                               }
                               size={16}
                               color={active ? colors.primary : colors.shellTextMuted}
-                            />
+                              />
+                            </View>
+                          <View style={styles.filterModeCopy}>
+                            <Text style={[styles.filterModeLabel, active && { color: colors.primary }]}>
+                              {mode === 'month'
+                                ? t('reports.filter.modeMonth')
+                                : mode === 'year'
+                                  ? t('reports.filter.modeYear')
+                                  : t('reports.filter.modeCustom')}
+                            </Text>
+                            <Text style={[styles.filterModeNote, active && { color: colors.primary }]}>
+                              {mode === 'month'
+                                ? t('reports.filter.modeMonthHelper')
+                                : mode === 'year'
+                                  ? t('reports.filter.modeYearHelper')
+                                  : t('reports.filter.modeCustomHelper')}
+                            </Text>
                           </View>
-                          <Text style={[styles.filterModeLabel, active && { color: colors.primary }]}>
-                            {mode === 'month'
-                              ? t('reports.filter.modeMonth')
-                              : mode === 'year'
-                                ? t('reports.filter.modeYear')
-                                : t('reports.filter.modeCustom')}
-                          </Text>
                         </Pressable>
                       );
                     })}
@@ -1255,13 +1264,14 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
     filterModeButton: {
       flexGrow: 1,
       flexBasis: compact ? '100%' : '31%',
-      minHeight: 58,
-      borderRadius: 18,
+      minHeight: compact ? 88 : 96,
+      borderRadius: 20,
       paddingHorizontal: 12,
-      paddingVertical: 10,
-      flexDirection: 'row',
+      paddingVertical: 12,
+      flexDirection: 'column',
       alignItems: 'center',
-      gap: 10,
+      justifyContent: 'center',
+      gap: 8,
       backgroundColor: colors.shellCardMuted,
       borderWidth: 1,
       borderColor: colors.shellBorder,
@@ -1276,12 +1286,26 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
     },
     filterModeLabel: {
       flex: 1,
-      minWidth: 0,
+      width: '100%',
+      textAlign: 'center',
       color: colors.shellTextSecondary,
       fontSize: 12,
-      lineHeight: 18,
+      lineHeight: 16,
       fontWeight: '800',
       letterSpacing: 0.2,
+    },
+    filterModeCopy: {
+      width: '100%',
+      gap: 2,
+      alignItems: 'center',
+    },
+    filterModeNote: {
+      width: '100%',
+      textAlign: 'center',
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      lineHeight: 14,
+      fontWeight: '500',
     },
     filterYearRow: {
       flexDirection: 'row',
