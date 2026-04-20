@@ -163,7 +163,7 @@ export default function ForgotPasswordScreen() {
                         <Text style={styles.tokenValue}>{sentToken}</Text>
                         <Pressable
                           onPress={() =>
-                            router.push({
+                            router.replace({
                               pathname: '/reset-password',
                               params: { token: sentToken },
                             })
@@ -203,7 +203,7 @@ export default function ForgotPasswordScreen() {
 
                     <View style={styles.footerRow}>
                       <Text style={styles.footerText}>{t('forgot.rememberPassword')}</Text>
-                      <Pressable onPress={() => router.push('/login')}>
+                      <Pressable onPress={() => router.replace('/login')}>
                         <Text style={styles.footerLink}>{t('forgot.backToLogin')}</Text>
                       </Pressable>
                     </View>

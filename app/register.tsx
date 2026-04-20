@@ -273,7 +273,7 @@ export default function RegisterScreen() {
 
                     <View style={styles.footerRow}>
                       <Text style={styles.footerText}>{t('register.alreadyMember')}</Text>
-                      <Pressable onPress={() => router.push('/login')}>
+                      <Pressable onPress={() => router.replace('/login')}>
                         <Text style={styles.footerLink}>{t('register.signIn')}</Text>
                       </Pressable>
                     </View>

@@ -970,7 +970,7 @@ export default function DashboardScreen() {
 
               <Pressable
                 onPress={() => {
-                  router.push('/debt');
+                  router.replace('/debt');
                 }}
                 style={styles.secondaryAction}>
                 <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
@@ -984,7 +984,7 @@ export default function DashboardScreen() {
                 <Pressable
                   hitSlop={10}
                   onPress={() => {
-                    router.push('/activity');
+                    router.replace('/activity');
                   }}>
                   <Text style={styles.linkText}>{t('dashboard.viewLedger')}</Text>
                 </Pressable>
@@ -1033,7 +1033,7 @@ export default function DashboardScreen() {
               <Text style={styles.insightText}>{insightBody}</Text>
               <Pressable
                 onPress={() => {
-                  router.push('/reports');
+                  router.replace('/reports');
                 }}
                 style={styles.primaryAction}>
                 <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>

@@ -156,7 +156,7 @@ export default function LoginScreen() {
                     <View style={styles.fieldGroup}>
                       <View style={styles.labelRow}>
                         <Text style={styles.fieldLabel}>{t('login.password')}</Text>
-                        <Pressable onPress={() => router.push('/forgot-password')} hitSlop={12}>
+                        <Pressable onPress={() => router.replace('/forgot-password')} hitSlop={12}>
                           <Text style={styles.linkText}>{t('login.forgotPassword')}</Text>
                         </Pressable>
                       </View>
@@ -221,7 +221,7 @@ export default function LoginScreen() {
 
                     <View style={styles.footerRow}>
                       <Text style={styles.footerText}>{t('login.noAccount')}</Text>
-                      <Pressable onPress={() => router.push('/register')}>
+                      <Pressable onPress={() => router.replace('/register')}>
                         <Text style={styles.footerLink}>{t('login.joinNow')}</Text>
                       </Pressable>
                     </View>
