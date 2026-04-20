@@ -68,6 +68,9 @@ type TransactionSection = {
   key: string;
   title: string;
   items: TransactionRecord[];
+  incomeTotal: number;
+  expenseTotal: number;
+  netTotal: number;
 };
 
 type ActivityListFilters = {
@@ -406,6 +409,75 @@ function SummaryStat({
         ]}>
         {meta}
       </Text>
+    </View>
+  );
+}
+
+function TransactionDaySummary({
+  colors,
+  locale,
+  income,
+  expense,
+  net,
+  incomeLabel,
+  expenseLabel,
+  netLabel,
+}: {
+  colors: AppColorTheme;
+  locale: string;
+  income: number;
+  expense: number;
+  net: number;
+  incomeLabel: string;
+  expenseLabel: string;
+  netLabel: string;
+}) {
+  const isLight = colors === Colors.light;
+  const incomeTone = isLight ? LIGHT_INCOME_ACCENT : colors.secondaryAccent;
+  const expenseTone = isLight ? LIGHT_EXPENSE_ACCENT : colors.primaryContainer;
+  const netTone = net >= 0 ? incomeTone : expenseTone;
+
+  return (
+    <View style={daySummaryStyles(colors).card}>
+      <View style={daySummaryStyles(colors).row}>
+        <Text style={daySummaryStyles(colors).label}>{incomeLabel}</Text>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+          style={[daySummaryStyles(colors).value, { color: incomeTone }]}
+        >
+          {toCurrency(income, locale)}
+        </Text>
+      </View>
+
+      <View style={daySummaryStyles(colors).divider} />
+
+      <View style={daySummaryStyles(colors).row}>
+        <Text style={daySummaryStyles(colors).label}>{expenseLabel}</Text>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+          style={[daySummaryStyles(colors).value, { color: expenseTone }]}
+        >
+          {toCurrency(expense, locale)}
+        </Text>
+      </View>
+
+      <View style={daySummaryStyles(colors).divider} />
+
+      <View style={daySummaryStyles(colors).row}>
+        <Text style={daySummaryStyles(colors).label}>{netLabel}</Text>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+          style={[daySummaryStyles(colors).value, { color: netTone }]}
+        >
+          {toSignedCurrency(net, locale)}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -993,16 +1065,34 @@ export default function ActivityScreen() {
         if (right === 'yesterday') return 1;
         return right.localeCompare(left);
       })
-      .map(([key, items]) => ({
-        key,
-        title:
-          key === 'today'
-            ? t('activity.transactions.today')
-            : key === 'yesterday'
-              ? t('activity.transactions.yesterday')
-              : toDateHeading(items[0]?.date ?? key, locale),
-        items,
-      }));
+      .map(([key, items]) => {
+        const totals = items.reduce(
+          (acc, record) => {
+            if (record.type === 'income') {
+              acc.incomeTotal += record.amount;
+            } else {
+              acc.expenseTotal += record.amount;
+            }
+
+            return acc;
+          },
+          { incomeTotal: 0, expenseTotal: 0 }
+        );
+
+        return {
+          key,
+          title:
+            key === 'today'
+              ? t('activity.transactions.today')
+              : key === 'yesterday'
+                ? t('activity.transactions.yesterday')
+                : toDateHeading(items[0]?.date ?? key, locale),
+          items,
+          incomeTotal: totals.incomeTotal,
+          expenseTotal: totals.expenseTotal,
+          netTotal: totals.incomeTotal - totals.expenseTotal,
+        };
+      });
   }, [locale, t, visibleTransactions]);
 
   const totalMovement = summary.total_income + summary.total_expense;
@@ -1197,6 +1287,19 @@ export default function ActivityScreen() {
                   <View style={styles.groupHeader}>
                     <Text style={styles.groupTitle}>{section.title}</Text>
                     <View style={styles.groupLine} />
+                  </View>
+
+                  <View style={styles.groupSummaryRow}>
+                    <TransactionDaySummary
+                      colors={colors}
+                      locale={locale}
+                      income={section.incomeTotal}
+                      expense={section.expenseTotal}
+                      net={section.netTotal}
+                      incomeLabel={t('activity.transactions.income')}
+                      expenseLabel={t('activity.transactions.expense')}
+                      netLabel={t('activity.transactions.netVolume')}
+                    />
                   </View>
 
                   <View style={styles.groupList}>
@@ -2008,6 +2111,47 @@ const summaryStyles = (colors: AppColorTheme) =>
     },
   });
 
+const daySummaryStyles = (colors: AppColorTheme) =>
+  StyleSheet.create({
+    card: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    label: {
+      flexShrink: 1,
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+    value: {
+      flexShrink: 0,
+      fontSize: 14,
+      lineHeight: 18,
+      fontWeight: '900',
+      letterSpacing: -0.2,
+      includeFontPadding: false,
+      textAlign: 'right',
+    },
+    divider: {
+      height: 1,
+      backgroundColor: alpha(colors.surfaceContainerHighest, 0.2),
+      marginVertical: 10,
+    },
+  });
+
 const rowStyles = (colors: AppColorTheme) =>
   StyleSheet.create({
     card: {
@@ -2345,6 +2489,9 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
+    },
+    groupSummaryRow: {
+      marginTop: -2,
     },
     groupTitle: {
       color: colors.shellTextSoft,
