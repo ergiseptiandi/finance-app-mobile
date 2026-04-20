@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,7 +18,13 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
+import {
+  getNotificationSettings,
+  updateNotificationSettings,
+  type NotificationSettingsData,
+} from '@/lib/api/notifications';
 import { getAuthSession } from '@/lib/auth-session';
+import { getDevicePushToken } from '@/lib/push-notifications';
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -29,6 +36,16 @@ type SettingsRowProps = {
   rightSlot?: React.ReactNode;
   style?: ViewStyle;
   onPress?: () => void;
+};
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsData = {
+  enabled: false,
+  daily_expense_reminder_enabled: false,
+  daily_expense_reminder_time: '20:00',
+  debt_payment_reminder_enabled: false,
+  debt_payment_reminder_time: '09:00',
+  debt_payment_reminder_days_before: 3,
+  push_token: '',
 };
 
 function SettingsRow({
@@ -74,8 +91,17 @@ export default function SettingsScreen() {
   const styles = createStyles(colors, insets.top);
   const [displayName, setDisplayName] = useState('Alex Sterling');
   const [email, setEmail] = useState('alex.sterling@ledger.io');
-  const [pushEnabled, setPushEnabled] = useState(true);
-  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [dailyExpenseReminderEnabled, setDailyExpenseReminderEnabled] = useState(false);
+  const [debtPaymentReminderEnabled, setDebtPaymentReminderEnabled] = useState(false);
+  const [dailyExpenseReminderTime, setDailyExpenseReminderTime] = useState('20:00');
+  const [debtPaymentReminderTime, setDebtPaymentReminderTime] = useState('09:00');
+  const [debtPaymentReminderDaysBefore, setDebtPaymentReminderDaysBefore] = useState(3);
+  const [pushToken, setPushToken] = useState('');
+  const [notificationLoading, setNotificationLoading] = useState(true);
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const [notificationError, setNotificationError] = useState('');
+  const [notificationStatus, setNotificationStatus] = useState('');
   const [biometricEnabled, setBiometricEnabled] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -83,23 +109,150 @@ export default function SettingsScreen() {
     useCallback(() => {
       let active = true;
 
-      const loadSession = async () => {
+      const loadSessionAndNotifications = async () => {
         const session = await getAuthSession();
         if (!session || !active) {
+          setNotificationLoading(false);
           return;
         }
 
         setDisplayName(session.user.name || 'Alex Sterling');
         setEmail(session.user.email || 'alex.sterling@ledger.io');
+
+        setNotificationLoading(true);
+        setNotificationError('');
+
+        try {
+          const response = await getNotificationSettings(session.token.access_token);
+          if (!active) {
+            return;
+          }
+
+          const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
+          setPushEnabled(Boolean(data.enabled));
+          setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
+          setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_time ?? '20:00');
+          setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
+          setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_time ?? '09:00');
+          setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
+          setPushToken(data.push_token ?? '');
+        } catch {
+          if (active) {
+            setNotificationError(t('settings.notificationsLoadError'));
+          }
+        } finally {
+          if (active) {
+            setNotificationLoading(false);
+          }
+        }
       };
 
-      loadSession();
+      void loadSessionAndNotifications();
 
       return () => {
         active = false;
       };
-    }, [])
+    }, [t])
   );
+
+  const persistNotificationSettings = useCallback(
+    async (nextState: {
+      enabled?: boolean;
+      dailyExpenseReminderEnabled?: boolean;
+      dailyExpenseReminderTime?: string;
+      debtPaymentReminderEnabled?: boolean;
+      debtPaymentReminderTime?: string;
+      debtPaymentReminderDaysBefore?: number;
+      pushToken?: string;
+    }) => {
+      const session = await getAuthSession();
+
+      if (!session) {
+        return false;
+      }
+
+      setNotificationSaving(true);
+      setNotificationError('');
+      setNotificationStatus('');
+
+      const payload = {
+        enabled: nextState.enabled ?? pushEnabled,
+        daily_expense_reminder_enabled: nextState.dailyExpenseReminderEnabled ?? dailyExpenseReminderEnabled,
+        daily_expense_reminder_time: nextState.dailyExpenseReminderTime ?? dailyExpenseReminderTime,
+        debt_payment_reminder_enabled: nextState.debtPaymentReminderEnabled ?? debtPaymentReminderEnabled,
+        debt_payment_reminder_time: nextState.debtPaymentReminderTime ?? debtPaymentReminderTime,
+        debt_payment_reminder_days_before:
+          nextState.debtPaymentReminderDaysBefore ?? debtPaymentReminderDaysBefore,
+        push_token: nextState.pushToken ?? pushToken,
+      };
+
+      try {
+        const response = await updateNotificationSettings(session.token.access_token, payload);
+        const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
+
+        setPushEnabled(Boolean(data.enabled));
+        setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
+        setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? '20:00');
+        setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
+        setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? '09:00');
+        setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
+        setPushToken(data.push_token ?? '');
+        setNotificationStatus(t('settings.notificationsSaved'));
+        return true;
+      } catch {
+        setNotificationError(t('settings.notificationsSaveError'));
+        return false;
+      } finally {
+        setNotificationSaving(false);
+      }
+    },
+    [
+      dailyExpenseReminderEnabled,
+      dailyExpenseReminderTime,
+      debtPaymentReminderDaysBefore,
+      debtPaymentReminderEnabled,
+      debtPaymentReminderTime,
+      pushEnabled,
+      pushToken,
+      t,
+    ]
+  );
+
+  const handlePushToggle = useCallback(async () => {
+    if (notificationLoading || notificationSaving) {
+      return;
+    }
+
+    if (pushEnabled) {
+      await persistNotificationSettings({ enabled: false, pushToken: '' });
+      return;
+    }
+
+    const token = await getDevicePushToken();
+
+    if (!token) {
+      setNotificationError(t('settings.pushTokenUnavailable'));
+      return;
+    }
+
+    await persistNotificationSettings({ enabled: true, pushToken: token });
+  }, [notificationLoading, notificationSaving, persistNotificationSettings, pushEnabled, t]);
+
+  const handleDailyReminderToggle = useCallback(async () => {
+    if (notificationLoading || notificationSaving) {
+      return;
+    }
+
+    await persistNotificationSettings({ dailyExpenseReminderEnabled: !dailyExpenseReminderEnabled });
+  }, [dailyExpenseReminderEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleDebtReminderToggle = useCallback(async () => {
+    if (notificationLoading || notificationSaving) {
+      return;
+    }
+
+    await persistNotificationSettings({ debtPaymentReminderEnabled: !debtPaymentReminderEnabled });
+  }, [debtPaymentReminderEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
 
   const initials = useMemo(() => {
     return displayName
@@ -265,8 +418,13 @@ export default function SettingsScreen() {
               accent
               rightSlot={
                 <Pressable
-                  onPress={() => setPushEnabled((value) => !value)}
-                  style={[styles.switchTrack, pushEnabled && styles.switchTrackPrimary]}>
+                  onPress={() => void handlePushToggle()}
+                  disabled={notificationLoading || notificationSaving}
+                  style={[
+                    styles.switchTrack,
+                    pushEnabled && styles.switchTrackPrimary,
+                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                  ]}>
                   <View style={[styles.switchThumb, pushEnabled && styles.switchThumbPrimary]} />
                 </Pressable>
               }
@@ -274,17 +432,71 @@ export default function SettingsScreen() {
 
             <SettingsRow
               colors={colors}
-              icon="email-outline"
-              title={t('settings.emailAlerts')}
-              subtitle={t('settings.emailAlertsMeta')}
+              icon="cash-fast"
+              title={t('settings.dailyExpenseReminder')}
+              subtitle={t('settings.dailyExpenseReminderMeta')}
               rightSlot={
                 <Pressable
-                  onPress={() => setEmailAlertsEnabled((value) => !value)}
-                  style={[styles.switchTrack, emailAlertsEnabled && styles.switchTrackActive]}>
-                  <View style={[styles.switchThumb, emailAlertsEnabled && styles.switchThumbActive]} />
+                  onPress={() => void handleDailyReminderToggle()}
+                  disabled={notificationLoading || notificationSaving}
+                  style={[
+                    styles.switchTrack,
+                    dailyExpenseReminderEnabled && styles.switchTrackActive,
+                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                  ]}>
+                  <View style={[styles.switchThumb, dailyExpenseReminderEnabled && styles.switchThumbActive]} />
                 </Pressable>
               }
             />
+
+            <SettingsRow
+              colors={colors}
+              icon="calendar-clock"
+              title={t('settings.debtPaymentReminder')}
+              subtitle={t('settings.debtPaymentReminderMeta')}
+              iconTone="secondary"
+              rightSlot={
+                <Pressable
+                  onPress={() => void handleDebtReminderToggle()}
+                  disabled={notificationLoading || notificationSaving}
+                  style={[
+                    styles.switchTrack,
+                    debtPaymentReminderEnabled && styles.switchTrackPrimary,
+                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                  ]}>
+                  <View style={[styles.switchThumb, debtPaymentReminderEnabled && styles.switchThumbPrimary]} />
+                </Pressable>
+              }
+            />
+          </View>
+
+          <View style={styles.notificationInfoCard}>
+            {notificationLoading ? (
+              <View style={styles.notificationStatusRow}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.notificationInfoText}>{t('settings.notificationsLoading')}</Text>
+              </View>
+            ) : null}
+
+            {notificationStatus ? <Text style={styles.notificationSuccessText}>{notificationStatus}</Text> : null}
+            {notificationError ? <Text style={styles.notificationErrorText}>{notificationError}</Text> : null}
+
+            <View style={styles.notificationMetaRow}>
+              <Text style={styles.notificationMetaLabel}>{t('settings.dailyExpenseReminderTime')}</Text>
+              <Text style={styles.notificationMetaValue}>{dailyExpenseReminderTime}</Text>
+            </View>
+            <View style={styles.notificationMetaRow}>
+              <Text style={styles.notificationMetaLabel}>{t('settings.debtPaymentReminderTime')}</Text>
+              <Text style={styles.notificationMetaValue}>
+                {debtPaymentReminderTime} · {t('settings.beforeDays', { count: debtPaymentReminderDaysBefore })}
+              </Text>
+            </View>
+            <View style={styles.notificationMetaRow}>
+              <Text style={styles.notificationMetaLabel}>{t('settings.pushToken')}</Text>
+              <Text numberOfLines={1} style={styles.notificationMetaValue}>
+                {pushToken ? t('settings.pushTokenReady') : t('settings.pushTokenMissing')}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -538,6 +750,9 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     switchTrackPrimary: {
       backgroundColor: alpha(colors.primary, 0.28),
     },
+    switchTrackDisabled: {
+      opacity: 0.5,
+    },
     switchThumb: {
       width: 18,
       height: 18,
@@ -551,6 +766,59 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     switchThumbPrimary: {
       alignSelf: 'flex-end',
       backgroundColor: colors.primaryContainer,
+    },
+    notificationInfoCard: {
+      marginTop: 12,
+      borderRadius: 20,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 14,
+      gap: 10,
+    },
+    notificationStatusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    notificationInfoText: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    notificationSuccessText: {
+      color: colors.secondary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    notificationErrorText: {
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    notificationMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    notificationMetaLabel: {
+      flexShrink: 1,
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    notificationMetaValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '800',
+      textAlign: 'right',
+      flexShrink: 0,
     },
     logoutWrap: {
       paddingTop: 8,

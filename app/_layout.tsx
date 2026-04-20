@@ -1,6 +1,7 @@
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
+import { router, Redirect, Stack, useSegments } from 'expo-router';
 import { ThemeProvider } from '@react-navigation/native';
-import { Redirect, Stack, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
@@ -12,8 +13,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppThemeProvider, useAppTheme } from '@/providers/theme-provider';
 import { getOnboardingCompleted } from '@/lib/onboarding';
 import { TransitionOverlayProvider, useTransitionOverlay } from '@/providers/transition-overlay-provider';
+import { registerNotificationHandler, resolveNotificationRoute } from '@/lib/push-notifications';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
+registerNotificationHandler();
 
 export const unstable_settings = {
   anchor: 'login',
@@ -67,6 +70,15 @@ function RootNavigator() {
       active = false;
     };
   }, [hideTransitionOverlay, isTransitionOverlayVisible, segments]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const route = resolveNotificationRoute(response.notification.request.content.data as Record<string, unknown> | undefined);
+      router.push(route as never);
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     let active = true;
