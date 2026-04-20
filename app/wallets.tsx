@@ -199,6 +199,10 @@ export default function WalletsScreen() {
 
   const resolvedWallets = useMemo(() => sortWallets(extractWallets(summary, wallets)), [summary, wallets]);
   const resolvedTransfers = useMemo(() => sortTransfers(transfers), [transfers]);
+  const walletNameById = useMemo(
+    () => new Map(resolvedWallets.map((wallet) => [wallet.id, wallet.name])),
+    [resolvedWallets]
+  );
   const totalBalance = useMemo(() => extractTotalBalance(summary, resolvedWallets), [resolvedWallets, summary]);
   const hasWalletSnapshot = resolvedWallets.length > 0 || resolvedTransfers.length > 0 || totalBalance > 0;
 
@@ -773,8 +777,10 @@ export default function WalletsScreen() {
           <View style={styles.transferList}>
             {resolvedTransfers.map((transfer) => {
               const amount = formatCurrency(toNumber(transfer.amount), locale);
-              const fromLabel = transfer.from_wallet_name || String(transfer.from_wallet_id ?? '—');
-              const toLabel = transfer.to_wallet_name || String(transfer.to_wallet_id ?? '—');
+              const fromLabel =
+                transfer.from_wallet_name || walletNameById.get(Number(transfer.from_wallet_id ?? NaN)) || '—';
+              const toLabel =
+                transfer.to_wallet_name || walletNameById.get(Number(transfer.to_wallet_id ?? NaN)) || '—';
               const dateLabel = toDateLabel(transfer.transfer_date ?? transfer.created_at ?? getTodayInputValue(), locale);
 
               return (
