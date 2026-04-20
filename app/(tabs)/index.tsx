@@ -693,9 +693,9 @@ export default function DashboardScreen() {
   const insightBody =
     dashboardAlert?.message ??
     (summary
-      ? `Cashflow bersih ${formatSignedCurrency(netCashflow, locale)} dengan expense ratio ${formatPercentValue(
-        Math.max(0, expenseRatio)
-      )}.`
+      ? t('dashboard.insightBody', {
+          amount: formatDetailCurrency(totalBalance, locale),
+        })
       : t('dashboard.summaryInsightBody'));
 
   const activityItems = useMemo<ActivityItem[]>(
