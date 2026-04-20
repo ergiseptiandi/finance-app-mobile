@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Pressable,
+  TextInput,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,12 +20,21 @@ import { useAppLanguage } from '@/providers/language-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
 import {
+  clearBiometricCredentials,
+  getBiometricState,
+  saveBiometricCredentials,
+} from '@/lib/biometric-auth';
+import {
   getNotificationSettings,
   updateNotificationSettings,
   type NotificationSettingsData,
 } from '@/lib/api/notifications';
+import { ApiRequestError, login } from '@/lib/api/auth';
 import { getAuthSession } from '@/lib/auth-session';
+import { getDeviceName } from '@/lib/device-name';
 import { getDevicePushToken } from '@/lib/push-notifications';
+
+const DEVICE_NAME = getDeviceName();
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -112,7 +122,13 @@ export default function SettingsScreen() {
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [notificationSaving, setNotificationSaving] = useState(false);
   const [notificationError, setNotificationError] = useState('');
-  const [biometricEnabled, setBiometricEnabled] = useState(true);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(true);
+  const [biometricSaving, setBiometricSaving] = useState(false);
+  const [biometricError, setBiometricError] = useState('');
+  const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
+  const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
 
   useFocusEffect(
@@ -123,6 +139,7 @@ export default function SettingsScreen() {
         const session = await getAuthSession();
         if (!session || !active) {
           setNotificationLoading(false);
+          setBiometricLoading(false);
           return;
         }
 
@@ -131,6 +148,8 @@ export default function SettingsScreen() {
 
         setNotificationLoading(true);
         setNotificationError('');
+        setBiometricLoading(true);
+        setBiometricError('');
 
         try {
           const response = await getNotificationSettings(session.token.access_token);
@@ -153,6 +172,25 @@ export default function SettingsScreen() {
         } finally {
           if (active) {
             setNotificationLoading(false);
+          }
+        }
+
+        try {
+          const biometricState = await getBiometricState();
+
+          if (!active) {
+            return;
+          }
+
+          setBiometricEnabled(biometricState.enabled);
+          setBiometricAvailable(biometricState.available);
+        } catch {
+          if (active) {
+            setBiometricError(t('settings.biometricsLoadError'));
+          }
+        } finally {
+          if (active) {
+            setBiometricLoading(false);
           }
         }
       };
@@ -225,6 +263,88 @@ export default function SettingsScreen() {
       t,
     ]
   );
+
+  const handleDisableBiometric = useCallback(async () => {
+    if (biometricSaving || biometricLoading) {
+      return;
+    }
+
+    setBiometricSaving(true);
+    setBiometricError('');
+
+    try {
+      await clearBiometricCredentials();
+      setBiometricEnabled(false);
+      setBiometricSetupOpen(false);
+      setBiometricPassword('');
+    } finally {
+      setBiometricSaving(false);
+    }
+  }, [biometricLoading, biometricSaving]);
+
+  const handleEnableBiometric = useCallback(async () => {
+    if (biometricSaving || biometricLoading) {
+      return;
+    }
+
+    const session = await getAuthSession();
+
+    if (!session?.user.email) {
+      setBiometricError(t('settings.biometricsSessionMissing'));
+      return;
+    }
+
+    if (!biometricPassword.trim()) {
+      setBiometricError(t('settings.biometricsPasswordRequired'));
+      return;
+    }
+
+    setBiometricSaving(true);
+    setBiometricError('');
+
+    try {
+      const response = await login({
+        email: session.user.email,
+        password: biometricPassword,
+        device_name: DEVICE_NAME,
+      });
+
+      await saveAuthSession(response.Data);
+      await saveBiometricCredentials(response.Data.token.refresh_token);
+      setBiometricEnabled(true);
+      setBiometricSetupOpen(false);
+      setBiometricPassword('');
+    } catch (error) {
+      if (error instanceof ApiRequestError) {
+        setBiometricError(error.message);
+      } else {
+        setBiometricError(t('settings.biometricsSaveError'));
+      }
+    } finally {
+      setBiometricSaving(false);
+    }
+  }, [biometricLoading, biometricPassword, biometricSaving, t]);
+
+  const handleToggleBiometric = useCallback(async () => {
+    if (biometricLoading || biometricSaving) {
+      return;
+    }
+
+    setBiometricError('');
+
+    if (biometricEnabled) {
+      await handleDisableBiometric();
+      return;
+    }
+
+    if (!biometricAvailable) {
+      setBiometricError(t('settings.biometricsUnavailable'));
+      return;
+    }
+
+    setBiometricSetupOpen(true);
+    setBiometricPassword('');
+  }, [biometricAvailable, biometricEnabled, biometricLoading, biometricSaving, handleDisableBiometric, t]);
 
   const handlePushToggle = useCallback(async () => {
     if (notificationLoading || notificationSaving) {
@@ -352,16 +472,60 @@ export default function SettingsScreen() {
               colors={colors}
               icon="fingerprint"
               title={t('settings.biometrics')}
-              subtitle={t('settings.biometricsMeta')}
+              subtitle={biometricAvailable ? t('settings.biometricsMeta') : t('settings.biometricsUnavailable')}
               iconTone="secondary"
               rightSlot={
                 <Pressable
-                  onPress={() => setBiometricEnabled((value) => !value)}
-                  style={[styles.switchTrack, biometricEnabled && styles.switchTrackActive]}>
+                  onPress={() => void handleToggleBiometric()}
+                  disabled={biometricLoading || biometricSaving}
+                  style={[
+                    styles.switchTrack,
+                    biometricEnabled && styles.switchTrackActive,
+                    (biometricLoading || biometricSaving) && styles.switchTrackDisabled,
+                  ]}>
                   <View style={[styles.switchThumb, biometricEnabled && styles.switchThumbActive]} />
                 </Pressable>
               }
             />
+            {biometricSetupOpen ? (
+              <View style={styles.biometricSetupCard}>
+                <Text style={styles.biometricSetupTitle}>{t('settings.biometricsSetupTitle')}</Text>
+                <Text style={styles.biometricSetupBody}>{t('settings.biometricsSetupBody')}</Text>
+                <View style={styles.biometricInputShell}>
+                  <MaterialCommunityIcons name="lock-outline" size={18} color={colors.icon} />
+                  <TextInput
+                    value={biometricPassword}
+                    onChangeText={setBiometricPassword}
+                    placeholder={t('settings.biometricsPassword')}
+                    placeholderTextColor={colors.shellTextMuted}
+                    secureTextEntry
+                    style={styles.biometricInput}
+                  />
+                </View>
+                {!!biometricError ? <Text style={styles.biometricErrorText}>{biometricError}</Text> : null}
+                <View style={styles.biometricActions}>
+                  <Pressable
+                    onPress={() => {
+                      setBiometricSetupOpen(false);
+                      setBiometricPassword('');
+                      setBiometricError('');
+                    }}
+                    style={styles.biometricSecondaryButton}>
+                    <Text style={styles.biometricSecondaryButtonText}>{t('settings.biometricsCancel')}</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void handleEnableBiometric()}
+                    disabled={biometricSaving}
+                    style={({ pressed }) => [
+                      styles.biometricPrimaryButton,
+                      pressed && !biometricSaving && styles.biometricPrimaryButtonPressed,
+                      biometricSaving && styles.biometricPrimaryButtonDisabled,
+                    ]}>
+                    <Text style={styles.biometricPrimaryButtonText}>{t('settings.biometricsEnable')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -798,6 +962,86 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     switchThumbPrimary: {
       alignSelf: 'flex-end',
       backgroundColor: colors.primaryContainer,
+    },
+    biometricSetupCard: {
+      marginTop: 12,
+      borderRadius: 22,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 16,
+      gap: 12,
+    },
+    biometricSetupTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    biometricSetupBody: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    biometricInputShell: {
+      minHeight: 52,
+      borderRadius: 16,
+      backgroundColor: colors.shellCardMuted,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    biometricInput: {
+      flex: 1,
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+      paddingVertical: 0,
+    },
+    biometricErrorText: {
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    biometricActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 10,
+    },
+    biometricSecondaryButton: {
+      minHeight: 44,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    biometricSecondaryButtonText: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    biometricPrimaryButton: {
+      minHeight: 44,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    biometricPrimaryButtonPressed: {
+      opacity: 0.92,
+    },
+    biometricPrimaryButtonDisabled: {
+      opacity: 0.7,
+    },
+    biometricPrimaryButtonText: {
+      color: colors.onPrimary,
+      fontSize: 13,
+      fontWeight: '800',
     },
     notificationInfoCard: {
       marginTop: 12,
