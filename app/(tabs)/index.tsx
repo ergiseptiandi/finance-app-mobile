@@ -62,6 +62,11 @@ type DashboardFilters = {
   endDate: string;
 };
 
+type MonthPickerState = {
+  year: number;
+  monthIndex: number;
+};
+
 type DashboardCacheState = {
   summary: DashboardSummaryData | null;
   dailySpending: DailySpendingItem[];
@@ -74,6 +79,22 @@ const MONTH_INPUT_PATTERN = /^\d{4}-\d{2}$/;
 const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
+
+const getMonthPickerStateFromInput = (value: string): MonthPickerState => {
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-').map(Number);
+    return {
+      year: Number.isFinite(year) ? year : new Date().getFullYear(),
+      monthIndex: Number.isFinite(month) ? Math.min(11, Math.max(0, month - 1)) : new Date().getMonth(),
+    };
+  }
+
+  const now = new Date();
+  return {
+    year: now.getFullYear(),
+    monthIndex: now.getMonth(),
+  };
+};
 
 const createDefaultDashboardFilters = (): DashboardFilters => ({
   dateMode: 'month',
@@ -183,6 +204,8 @@ const toMonthInputLabel = (value: string, locale: string) => {
     year: 'numeric',
   }).format(parsed);
 };
+
+const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
 
 const getFilterRangeMonths = (startDate: string, endDate: string) => {
   const start = parseDateValue(startDate);
@@ -297,8 +320,12 @@ export default function DashboardScreen() {
   const [draftFilters, setDraftFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filterError, setFilterError] = useState('');
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
+  const [monthPickerState, setMonthPickerState] = useState<MonthPickerState>(() =>
+    getMonthPickerStateFromInput(createDefaultDashboardFilters().month)
+  );
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
-  const [filterDateTarget, setFilterDateTarget] = useState<'month' | 'startDate' | 'endDate' | null>(null);
+  const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const filtersRef = useRef<DashboardFilters>(createDefaultDashboardFilters());
   const hasDashboardSnapshot = Boolean(summary || comparison || dailySpending.length || monthlySpending.length);
 
@@ -470,8 +497,27 @@ export default function DashboardScreen() {
     setFilterModalVisible(false);
     setFilterError('');
     setFilterDateTarget(null);
+    setMonthPickerVisible(false);
     setIosFilterDatePickerVisible(false);
   }, []);
+
+  const openMonthPicker = useCallback(() => {
+    setMonthPickerState(getMonthPickerStateFromInput(draftFilters.month));
+    setMonthPickerVisible(true);
+  }, [draftFilters.month]);
+
+  const closeMonthPicker = useCallback(() => {
+    setMonthPickerVisible(false);
+  }, []);
+
+  const applyMonthPicker = useCallback(() => {
+    const nextMonth = `${String(monthPickerState.year).padStart(4, '0')}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`;
+    setDraftFilters((current) => ({
+      ...current,
+      month: nextMonth,
+    }));
+    setMonthPickerVisible(false);
+  }, [monthPickerState.monthIndex, monthPickerState.year]);
 
   const handleFilterDateChange = useCallback(
     (event: DateTimePickerEvent, selectedDate?: Date) => {
@@ -480,14 +526,6 @@ export default function DashboardScreen() {
       }
 
       if (!selectedDate || !filterDateTarget) {
-        return;
-      }
-
-      if (filterDateTarget === 'month') {
-        setDraftFilters((current) => ({
-          ...current,
-          month: selectedDate.toISOString().slice(0, 7),
-        }));
         return;
       }
 
@@ -500,7 +538,7 @@ export default function DashboardScreen() {
   );
 
   const openFilterDatePicker = useCallback(
-    (target: 'month' | 'startDate' | 'endDate') => {
+    (target: 'startDate' | 'endDate') => {
       const currentDate = toDashboardFilterPickerValue(draftFilters, target);
       setFilterDateTarget(target);
 
@@ -525,6 +563,7 @@ export default function DashboardScreen() {
     filtersRef.current = nextFilters;
     setFilterError('');
     setFilterDateTarget(null);
+    setMonthPickerVisible(false);
     setIosFilterDatePickerVisible(false);
     setFilterModalVisible(false);
     void loadDashboard(false, nextFilters, true);
@@ -799,7 +838,7 @@ export default function DashboardScreen() {
                   </Text>
                 </View>
                 <View style={styles.cardIconShell}>
-                  <MaterialCommunityIcons name="wallet-plus-outline" size={18} color={colors.secondaryAccent} />
+                  <MaterialCommunityIcons name="wallet-plus-outline" size={18} color={isDark ? colors.secondaryAccent : colors.warning} />
                 </View>
               </View>
 
@@ -1094,7 +1133,7 @@ export default function DashboardScreen() {
                       <View style={styles.filterFieldGroup}>
                         <Text style={styles.filterFieldLabel}>{t('dashboard.filter.monthLabel')}</Text>
                         <Pressable
-                          onPress={() => openFilterDatePicker('month')}
+                          onPress={openMonthPicker}
                           style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
                           <View style={styles.filterPickerIcon}>
                             <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.primary} />
@@ -1187,6 +1226,94 @@ export default function DashboardScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={monthPickerVisible}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={closeMonthPicker}>
+        <View style={styles.monthPickerOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeMonthPicker} />
+          <View style={styles.monthPickerSheet}>
+            <View style={styles.monthPickerHandle} />
+            <View style={styles.monthPickerHeader}>
+              <View style={styles.monthPickerHeaderCopy}>
+                <Text style={styles.monthPickerKicker}>{t('dashboard.filter.monthMode')}</Text>
+                <Text style={styles.monthPickerTitle}>{t('dashboard.filter.monthLabel')}</Text>
+                <Text style={styles.monthPickerSubtitle}>{t('dashboard.filter.monthHelper')}</Text>
+              </View>
+              <Pressable onPress={closeMonthPicker} style={styles.monthPickerClose}>
+                <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
+              </Pressable>
+            </View>
+
+            <View style={styles.monthPickerYearRow}>
+              <Pressable
+                onPress={() =>
+                  setMonthPickerState((current) => ({
+                    ...current,
+                    year: current.year - 1,
+                  }))
+                }
+                style={styles.monthPickerYearButton}>
+                <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
+              </Pressable>
+              <Text style={styles.monthPickerYearText}>{monthPickerState.year}</Text>
+              <Pressable
+                onPress={() =>
+                  setMonthPickerState((current) => ({
+                    ...current,
+                    year: current.year + 1,
+                  }))
+                }
+                style={styles.monthPickerYearButton}>
+                <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
+              </Pressable>
+            </View>
+
+            <View style={styles.monthPickerGrid}>
+              {MONTH_INDEXES.map((monthIndex) => {
+                const selected = monthPickerState.monthIndex === monthIndex;
+                const monthLabel = new Intl.DateTimeFormat(locale, { month: 'short' })
+                  .format(new Date(2020, monthIndex, 1))
+                  .replace(/\.$/, '');
+
+                return (
+                  <Pressable
+                    key={monthIndex}
+                    onPress={() =>
+                      setMonthPickerState((current) => ({
+                        ...current,
+                        monthIndex,
+                      }))
+                    }
+                    style={[
+                      styles.monthPickerChip,
+                      selected && {
+                        backgroundColor: alpha(colors.primary, isDark ? 0.22 : 0.12),
+                        borderColor: alpha(colors.primary, isDark ? 0.42 : 0.28),
+                      },
+                    ]}>
+                    <Text style={[styles.monthPickerChipText, selected && { color: colors.primary }]}>
+                      {monthLabel}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.monthPickerActions}>
+              <Pressable onPress={closeMonthPicker} style={styles.monthPickerSecondaryButton}>
+                <Text style={styles.monthPickerSecondaryButtonText}>{t('dashboard.filter.reset')}</Text>
+              </Pressable>
+              <Pressable onPress={applyMonthPicker} style={styles.monthPickerPrimaryButton}>
+                <Text style={styles.monthPickerPrimaryButtonText}>{t('dashboard.filter.apply')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Pressable style={styles.fab}>
@@ -1425,7 +1552,14 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: alpha(colors.secondary, isDark ? 0.22 : 0.14),
+      backgroundColor: isDark ? alpha(colors.secondary, 0.22) : colors.warningSoft,
+      borderWidth: 1,
+      borderColor: isDark ? alpha(colors.secondary, 0.18) : alpha(colors.warning, 0.2),
+      shadowColor: isDark ? colors.background : colors.warningSoft,
+      shadowOpacity: isDark ? 0 : 0,
+      shadowRadius: 0,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 0,
     },
     progressTrack: {
       height: 4,
@@ -2093,6 +2227,149 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       backgroundColor: colors.primary,
     },
     filterPrimaryButtonText: {
+      color: colors.onPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    monthPickerOverlay: {
+      flex: 1,
+      justifyContent: 'center',
+      paddingHorizontal: compact ? 16 : 20,
+      backgroundColor: alpha(colors.inverseSurface, isDark ? 0.7 : 0.36),
+    },
+    monthPickerSheet: {
+      borderRadius: 28,
+      backgroundColor: colors.shellBackground,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: compact ? 16 : 18,
+      gap: 16,
+      overflow: 'hidden',
+    },
+    monthPickerHandle: {
+      alignSelf: 'center',
+      width: 42,
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardMuted,
+    },
+    monthPickerHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    monthPickerHeaderCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    monthPickerKicker: {
+      color: colors.secondary,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 2,
+      textTransform: 'uppercase',
+    },
+    monthPickerTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 21 : 23,
+      lineHeight: compact ? 27 : 29,
+      fontWeight: '900',
+      letterSpacing: -0.9,
+    },
+    monthPickerSubtitle: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+    monthPickerClose: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    monthPickerYearRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardMuted,
+      padding: 10,
+    },
+    monthPickerYearButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    monthPickerYearText: {
+      color: colors.shellTextPrimary,
+      fontSize: 18,
+      lineHeight: 22,
+      fontWeight: '900',
+      letterSpacing: -0.6,
+    },
+    monthPickerGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    monthPickerChip: {
+      width: '31%',
+      minHeight: 44,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    monthPickerChipText: {
+      color: colors.shellTextSecondary,
+      fontSize: 12,
+      fontWeight: '800',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    monthPickerActions: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    monthPickerSecondaryButton: {
+      flex: 1,
+      minHeight: 50,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    monthPickerSecondaryButtonText: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    monthPickerPrimaryButton: {
+      flex: 1,
+      minHeight: 50,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+    },
+    monthPickerPrimaryButtonText: {
       color: colors.onPrimary,
       fontSize: 13,
       fontWeight: '800',
