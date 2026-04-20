@@ -1,14 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -33,6 +34,21 @@ export default function ForgotPasswordScreen() {
   const [error, setError] = useState('');
   const [sentToken, setSentToken] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') {
+        return undefined;
+      }
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        router.navigate('/login');
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [])
+  );
 
   const handleSubmit = async () => {
     if (!email.trim()) {
@@ -66,7 +82,6 @@ export default function ForgotPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar animated barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       <View style={styles.screen}>
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
@@ -163,7 +178,7 @@ export default function ForgotPasswordScreen() {
                         <Text style={styles.tokenValue}>{sentToken}</Text>
                         <Pressable
                           onPress={() =>
-                            router.replace({
+                            router.navigate({
                               pathname: '/reset-password',
                               params: { token: sentToken },
                             })
@@ -203,7 +218,7 @@ export default function ForgotPasswordScreen() {
 
                     <View style={styles.footerRow}>
                       <Text style={styles.footerText}>{t('forgot.rememberPassword')}</Text>
-                      <Pressable onPress={() => router.replace('/login')}>
+                      <Pressable onPress={() => router.navigate('/login')}>
                         <Text style={styles.footerLink}>{t('forgot.backToLogin')}</Text>
                       </Pressable>
                     </View>

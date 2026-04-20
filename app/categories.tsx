@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -86,6 +89,25 @@ export default function CategoriesScreen() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<CategoryDraft>(createEmptyCategoryDraft());
+
+  const navigateToSettings = useCallback(() => {
+    router.navigate('/(tabs)/settings');
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') {
+        return undefined;
+      }
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigateToSettings();
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [navigateToSettings])
+  );
 
   const withAuthorizedRequest = useCallback(
     async <T,>(task: (accessToken: string) => Promise<T>) => {
@@ -213,7 +235,7 @@ export default function CategoriesScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.topRow}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Pressable onPress={navigateToSettings} style={styles.backButton}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={colors.shellTextPrimary} />
         </Pressable>
         <Text numberOfLines={1} style={styles.topTitle}>

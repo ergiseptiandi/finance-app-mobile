@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -41,6 +42,21 @@ export default function ResetPasswordScreen() {
     }
   }, [params.token]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') {
+        return undefined;
+      }
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        router.navigate('/forgot-password');
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [])
+  );
+
   const handleSubmit = async () => {
     if (!token.trim() || !newPassword.trim()) {
       setError(t('reset.error.required'));
@@ -70,7 +86,6 @@ export default function ResetPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar animated barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       <View style={styles.screen}>
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
@@ -194,7 +209,7 @@ export default function ResetPasswordScreen() {
 
                     <View style={styles.footerRow}>
                       <Text style={styles.footerText}>{t('reset.backToLoginQuestion')}</Text>
-                      <Pressable onPress={() => router.replace('/login')}>
+                      <Pressable onPress={() => router.navigate('/login')}>
                         <Text style={styles.footerLink}>{t('reset.signIn')}</Text>
                       </Pressable>
                     </View>

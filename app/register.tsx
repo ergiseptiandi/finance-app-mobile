@@ -1,14 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -39,6 +40,21 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') {
+        return undefined;
+      }
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        router.navigate('/login');
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [])
+  );
 
   const passwordMismatch = useMemo(() => {
     return Boolean(password && confirmPassword && password !== confirmPassword);
@@ -80,7 +96,6 @@ export default function RegisterScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar animated barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       <View style={styles.screen}>
         <View style={styles.glowTop} />
         <View style={styles.glowRight} />
@@ -273,7 +288,7 @@ export default function RegisterScreen() {
 
                     <View style={styles.footerRow}>
                       <Text style={styles.footerText}>{t('register.alreadyMember')}</Text>
-                      <Pressable onPress={() => router.replace('/login')}>
+                      <Pressable onPress={() => router.navigate('/login')}>
                         <Text style={styles.footerLink}>{t('register.signIn')}</Text>
                       </Pressable>
                     </View>

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -191,6 +192,10 @@ export default function WalletsScreen() {
   const [transferSubmitting, setTransferSubmitting] = useState(false);
   const [transferError, setTransferError] = useState('');
   const [iosTransferDatePickerVisible, setIosTransferDatePickerVisible] = useState(false);
+
+  const navigateToSettings = useCallback(() => {
+    router.navigate('/(tabs)/settings');
+  }, []);
 
   const resolvedWallets = useMemo(() => sortWallets(extractWallets(summary, wallets)), [summary, wallets]);
   const resolvedTransfers = useMemo(() => sortTransfers(transfers), [transfers]);
@@ -465,6 +470,26 @@ export default function WalletsScreen() {
     setIosTransferDatePickerVisible(false);
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') {
+        return undefined;
+      }
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (transferModalVisible) {
+          closeTransferModal();
+          return true;
+        }
+
+        navigateToSettings();
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [closeTransferModal, navigateToSettings, transferModalVisible])
+  );
+
   const handleTransferDateChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
     if (Platform.OS === 'android' && event.type === 'dismissed') {
       return;
@@ -552,7 +577,7 @@ export default function WalletsScreen() {
         }
         showsVerticalScrollIndicator={false}>
         <View style={styles.topRow}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Pressable onPress={navigateToSettings} style={styles.backButton}>
             <MaterialCommunityIcons name="arrow-left" size={20} color={colors.shellTextPrimary} />
           </Pressable>
           <View style={styles.topRowCopy}>

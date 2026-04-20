@@ -29,6 +29,7 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const colorScheme = useColorScheme() ?? 'light';
+  const isDark = colorScheme === 'dark';
   const { isThemeHydrated } = useAppTheme();
   const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
@@ -52,22 +53,23 @@ function RootNavigator() {
       <Stack
         screenOptions={{
           headerShown: false,
-          animation: 'fade',
+          animation: isDark ? 'none' : 'simple_push',
           contentStyle: { backgroundColor: colors.background },
         }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="forgot-password" />
-        <Stack.Screen name="reset-password" />
-        <Stack.Screen name="register" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="wallets" />
+        <Stack.Screen name="index" options={{ animation: 'simple_push' }} />
+        <Stack.Screen name="login" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+        <Stack.Screen name="forgot-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+        <Stack.Screen name="reset-password" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+        <Stack.Screen name="register" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+        <Stack.Screen name="(tabs)" options={{ animation: isDark ? 'none' : 'fade' }} />
+        <Stack.Screen name="categories" options={{ animation: isDark ? 'none' : 'simple_push' }} />
+        <Stack.Screen name="wallets" options={{ animation: isDark ? 'none' : 'simple_push' }} />
         <Stack.Screen
           name="modal"
           options={{ presentation: 'modal', headerShown: true, title: t('common.modal') }}
         />
       </Stack>
-      <StatusBar animated style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
   );
 }

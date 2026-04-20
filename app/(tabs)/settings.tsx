@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
@@ -110,8 +109,6 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar animated style={colorScheme === 'dark' ? 'light' : 'dark'} />
-
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroGrid}>
           <View style={styles.profileCard}>
