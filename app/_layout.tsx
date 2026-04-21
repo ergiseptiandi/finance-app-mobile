@@ -24,6 +24,7 @@ import { getAuthSession } from '@/lib/auth-session';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 registerNotificationHandler();
+const PUSH_DEBUG_ENABLED = true;
 
 export const unstable_settings = {
   anchor: 'login',
@@ -121,11 +122,13 @@ function RootNavigator() {
 
   useEffect(() => {
     const receivedSubscription = registerNotificationReceivedListener((notification) => {
-      if (__DEV__) {
+      if (PUSH_DEBUG_ENABLED) {
         console.log('[push-debug] received', {
           identifier: notification.request.identifier,
           title: notification.request.content.title ?? null,
           body: notification.request.content.body ?? null,
+          channelId: notification.request.content.android?.channelId ?? null,
+          triggerType: notification.request.trigger?.type ?? null,
           data: notification.request.content.data ?? null,
         });
       }

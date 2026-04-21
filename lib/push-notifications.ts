@@ -23,9 +23,10 @@ type SyncPushTokenResult = {
 const DEFAULT_NOTIFICATION_CHANNEL_ID = 'finance-go-default';
 let pushTokenSyncInFlight: Promise<SyncPushTokenResult> | null = null;
 const normalizePushToken = (value?: string | null) => value?.trim() ?? '';
+const PUSH_DEBUG_ENABLED = true;
 
 const debugPush = (...args: unknown[]) => {
-  if (__DEV__) {
+  if (PUSH_DEBUG_ENABLED) {
     console.log('[push-debug]', ...args);
   }
 };
@@ -219,6 +220,11 @@ export const hasGrantedNotificationPermission = async () => {
   }
 
   const permission = await Notifications.getPermissionsAsync();
+  debugPush('permission', {
+    status: permission.status,
+    granted: permission.status === 'granted',
+    canAskAgain: permission.canAskAgain ?? null,
+  });
   return permission.status === 'granted';
 };
 
@@ -227,6 +233,12 @@ export const loadNotificationSettings = async (accessToken: string) => {
     (tokenValue) => getNotificationSettings(tokenValue),
     accessToken
   );
+
+  debugPush('settings-load', {
+    enabled: response.Data?.enabled ?? null,
+    backendToken: normalizePushToken(response.Data?.push_token) || null,
+    hasBackendToken: Boolean(normalizePushToken(response.Data?.push_token)),
+  });
 
   return response.Data ?? null;
 };
@@ -272,6 +284,7 @@ export const syncDevicePushToken = async (
           status: 'noop',
           token,
           backendToken: normalizePushToken(settings?.push_token) || null,
+          tokenMatchesBackend: normalizePushToken(settings?.push_token) === token,
         });
         return {
           token,
@@ -322,6 +335,8 @@ export const syncDevicePushToken = async (
       status: result.synced ? 'updated' : 'completed',
       token: result.token,
       backendToken: normalizePushToken(result.settings?.push_token) || null,
+      tokenMatchesBackend:
+        Boolean(result.token) && normalizePushToken(result.settings?.push_token) === normalizePushToken(result.token),
       synced: result.synced,
     });
     return result;

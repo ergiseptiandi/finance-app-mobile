@@ -39,6 +39,12 @@ import {
 } from '@/lib/push-notifications';
 
 const DEVICE_NAME = getDeviceName();
+const PUSH_DEBUG_ENABLED = true;
+const debugNotificationSettings = (...args: unknown[]) => {
+  if (PUSH_DEBUG_ENABLED) {
+    console.log('[push-debug][settings]', ...args);
+  }
+};
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -277,6 +283,13 @@ export default function SettingsScreen() {
             return;
           }
 
+          debugNotificationSettings('load', {
+            permissionGranted,
+            backendEnabled: settings?.enabled ?? null,
+            backendToken: settings?.push_token ?? null,
+            hasBackendToken: Boolean(settings?.push_token),
+          });
+
           applyNotificationSettings(settings);
         } catch {
           if (active) {
@@ -512,6 +525,14 @@ export default function SettingsScreen() {
       return;
     }
 
+    debugNotificationSettings('toggle-start', {
+      pushEnabled,
+      notificationPermissionGranted,
+      pushToken,
+      pushTokenReady,
+      pushToggleActive,
+    });
+
     if (pushToggleActive) {
       await persistNotificationSettings({ enabled: false });
       return;
@@ -526,6 +547,12 @@ export default function SettingsScreen() {
     const permissionGranted = await hasGrantedNotificationPermission();
     setNotificationPermissionGranted(permissionGranted);
 
+    debugNotificationSettings('toggle-request-result', {
+      permissionGranted,
+      token,
+      hasToken: Boolean(token),
+    });
+
     if (!token) {
       setNotificationError(t('settings.pushTokenUnavailable'));
       return;
@@ -537,6 +564,8 @@ export default function SettingsScreen() {
     notificationPermissionGranted,
     notificationSaving,
     persistNotificationSettings,
+    pushEnabled,
+    pushToken,
     pushToggleActive,
     pushTokenReady,
     t,
