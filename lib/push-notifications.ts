@@ -1,9 +1,12 @@
 import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 type NotificationData = Record<string, unknown> | undefined;
 
-type NotificationsModule = typeof import('expo-notifications');
+type NotificationsModule = typeof Notifications;
+
+const DEFAULT_NOTIFICATION_CHANNEL_ID = 'finance-go-default';
 
 const isExpoGo =
   Constants.appOwnership === 'expo' ||
@@ -14,7 +17,7 @@ const getNotificationsModule = () => {
     return null;
   }
 
-  return require('expo-notifications') as NotificationsModule;
+  return Notifications;
 };
 
 export const registerNotificationHandler = () => {
@@ -24,13 +27,27 @@ export const registerNotificationHandler = () => {
     return;
   }
 
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
+  if (Platform.OS === 'android') {
+    void Notifications.setNotificationChannelAsync(DEFAULT_NOTIFICATION_CHANNEL_ID, {
+      name: 'Finance GO Alerts',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
+      enableVibrate: true,
+      vibrationPattern: [0, 250, 250, 250],
+      showBadge: true,
+    }).catch(() => {});
+  }
+
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+      }),
+    });
 };
 
 export const resolveNotificationRoute = (data: NotificationData) => {
