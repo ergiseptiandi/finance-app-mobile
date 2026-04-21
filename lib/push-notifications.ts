@@ -52,6 +52,18 @@ export const registerNotificationHandler = () => {
 
 export const resolveNotificationRoute = (data: NotificationData) => {
   if (typeof data?.route === 'string' && data.route) {
+    if (data.route === '/activity') {
+      return '/activity?compose=expense';
+    }
+
+    if (data.route === '/debts') {
+      return '/debt';
+    }
+
+    if (data.route === '/transactions?type=income') {
+      return '/activity?compose=income';
+    }
+
     return data.route;
   }
 

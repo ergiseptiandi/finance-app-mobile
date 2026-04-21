@@ -55,6 +55,10 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsData = {
   debt_payment_reminder_enabled: false,
   debt_payment_reminder_time: '09:00',
   debt_payment_reminder_days_before: 3,
+  salary_reminder_enabled: false,
+  salary_reminder_time: '08:00',
+  salary_reminder_days_before: 1,
+  salary_day: 25,
   push_token: '',
 };
 
@@ -68,6 +72,8 @@ const parseTimeValue = (value: string) => {
 
 const formatTimeValue = (date: Date) =>
   `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 function SettingsRow({
   colors,
@@ -115,9 +121,13 @@ export default function SettingsScreen() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [dailyExpenseReminderEnabled, setDailyExpenseReminderEnabled] = useState(false);
   const [debtPaymentReminderEnabled, setDebtPaymentReminderEnabled] = useState(false);
+  const [salaryReminderEnabled, setSalaryReminderEnabled] = useState(false);
   const [dailyExpenseReminderTime, setDailyExpenseReminderTime] = useState('20:00');
   const [debtPaymentReminderTime, setDebtPaymentReminderTime] = useState('09:00');
   const [debtPaymentReminderDaysBefore, setDebtPaymentReminderDaysBefore] = useState(3);
+  const [salaryReminderTime, setSalaryReminderTime] = useState('08:00');
+  const [salaryReminderDaysBefore, setSalaryReminderDaysBefore] = useState(1);
+  const [salaryDay, setSalaryDay] = useState(25);
   const [pushToken, setPushToken] = useState('');
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [notificationSaving, setNotificationSaving] = useState(false);
@@ -165,6 +175,10 @@ export default function SettingsScreen() {
           setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
           setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_time ?? '09:00');
           setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
+          setSalaryReminderEnabled(Boolean(data.salary_reminder_enabled));
+          setSalaryReminderTime(data.salary_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_time ?? '08:00');
+          setSalaryReminderDaysBefore(Number(data.salary_reminder_days_before ?? 1));
+          setSalaryDay(Number(data.salary_day ?? 25));
           setPushToken(data.push_token ?? '');
         } catch {
           if (active) {
@@ -212,6 +226,10 @@ export default function SettingsScreen() {
       debtPaymentReminderEnabled?: boolean;
       debtPaymentReminderTime?: string;
       debtPaymentReminderDaysBefore?: number;
+      salaryReminderEnabled?: boolean;
+      salaryReminderTime?: string;
+      salaryReminderDaysBefore?: number;
+      salaryDay?: number;
       pushToken?: string;
     }) => {
       const session = await getAuthSession();
@@ -231,6 +249,10 @@ export default function SettingsScreen() {
         debt_payment_reminder_time: nextState.debtPaymentReminderTime ?? debtPaymentReminderTime,
         debt_payment_reminder_days_before:
           nextState.debtPaymentReminderDaysBefore ?? debtPaymentReminderDaysBefore,
+        salary_reminder_enabled: nextState.salaryReminderEnabled ?? salaryReminderEnabled,
+        salary_reminder_time: nextState.salaryReminderTime ?? salaryReminderTime,
+        salary_reminder_days_before: nextState.salaryReminderDaysBefore ?? salaryReminderDaysBefore,
+        salary_day: nextState.salaryDay ?? salaryDay,
         push_token: nextState.pushToken ?? pushToken,
       };
 
@@ -239,11 +261,15 @@ export default function SettingsScreen() {
         const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
 
           setPushEnabled(Boolean(data.enabled && data.push_token));
-          setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
-          setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? '20:00');
-          setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
+        setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
+        setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? '20:00');
+        setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
         setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? '09:00');
         setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
+        setSalaryReminderEnabled(Boolean(data.salary_reminder_enabled));
+        setSalaryReminderTime(data.salary_reminder_time ?? '08:00');
+        setSalaryReminderDaysBefore(Number(data.salary_reminder_days_before ?? 1));
+        setSalaryDay(Number(data.salary_day ?? 25));
         setPushToken(data.push_token ?? '');
         return true;
       } catch {
@@ -261,6 +287,10 @@ export default function SettingsScreen() {
       debtPaymentReminderTime,
       pushEnabled,
       pushToken,
+      salaryDay,
+      salaryReminderDaysBefore,
+      salaryReminderEnabled,
+      salaryReminderTime,
       t,
     ]
   );
@@ -380,13 +410,22 @@ export default function SettingsScreen() {
     await persistNotificationSettings({ debtPaymentReminderEnabled: !debtPaymentReminderEnabled });
   }, [debtPaymentReminderEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
 
+  const handleSalaryReminderToggle = useCallback(async () => {
+    if (notificationLoading || notificationSaving) {
+      return;
+    }
+
+    await persistNotificationSettings({ salaryReminderEnabled: !salaryReminderEnabled });
+  }, [notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderEnabled]);
+
   const handlePickReminderTime = useCallback(
-    (kind: 'daily' | 'debt') => {
+    (kind: 'daily' | 'debt' | 'salary') => {
       if (notificationLoading || notificationSaving) {
         return;
       }
 
-      const currentValue = kind === 'daily' ? dailyExpenseReminderTime : debtPaymentReminderTime;
+      const currentValue =
+        kind === 'daily' ? dailyExpenseReminderTime : kind === 'debt' ? debtPaymentReminderTime : salaryReminderTime;
 
       DateTimePickerAndroid.open({
         value: parseTimeValue(currentValue),
@@ -404,6 +443,11 @@ export default function SettingsScreen() {
             return;
           }
 
+          if (kind === 'salary') {
+            await persistNotificationSettings({ salaryReminderTime: nextTime });
+            return;
+          }
+
           await persistNotificationSettings({ debtPaymentReminderTime: nextTime });
         },
       });
@@ -414,7 +458,30 @@ export default function SettingsScreen() {
       notificationLoading,
       notificationSaving,
       persistNotificationSettings,
+      salaryReminderTime,
     ]
+  );
+
+  const handleAdjustSalaryDay = useCallback(
+    async (delta: number) => {
+      if (notificationLoading || notificationSaving) {
+        return;
+      }
+
+      await persistNotificationSettings({ salaryDay: clampNumber(salaryDay + delta, 1, 31) });
+    },
+    [notificationLoading, notificationSaving, persistNotificationSettings, salaryDay]
+  );
+
+  const handleAdjustSalaryDaysBefore = useCallback(
+    async (delta: number) => {
+      if (notificationLoading || notificationSaving) {
+        return;
+      }
+
+      await persistNotificationSettings({ salaryReminderDaysBefore: clampNumber(salaryReminderDaysBefore + delta, 0, 31) });
+    },
+    [notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderDaysBefore]
   );
 
   const initials = useMemo(() => {
@@ -694,6 +761,110 @@ export default function SettingsScreen() {
                 </Pressable>
               }
             />
+
+            <SettingsRow
+              colors={colors}
+              icon="cash-plus"
+              title={t('settings.salaryReminder')}
+              subtitle={t('settings.salaryReminderMeta')}
+              iconTone="secondary"
+              accent={salaryReminderEnabled}
+              onPress={() => void handleSalaryReminderToggle()}
+              rightSlot={
+                <Pressable
+                  onPress={() => void handleSalaryReminderToggle()}
+                  disabled={notificationLoading || notificationSaving}
+                  style={[
+                    styles.switchTrack,
+                    salaryReminderEnabled && styles.switchTrackActive,
+                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                  ]}>
+                  <View style={[styles.switchThumb, salaryReminderEnabled && styles.switchThumbActive]} />
+                </Pressable>
+              }
+            />
+
+            {salaryReminderEnabled ? (
+              <View style={styles.notificationInfoCard}>
+                <View style={styles.notificationStatusRow}>
+                  <MaterialCommunityIcons name="cash-plus" size={16} color={colors.secondary} />
+                  <Text style={styles.notificationSuccessText}>{t('settings.salaryReminderEnabled')}</Text>
+                </View>
+
+                <View style={styles.notificationMetaRow}>
+                  <Text style={styles.notificationMetaLabel}>{t('settings.salaryReminderTime')}</Text>
+                  <Pressable
+                    onPress={() => void handlePickReminderTime('salary')}
+                    disabled={notificationLoading || notificationSaving}
+                    style={({ pressed }) => [
+                      styles.notificationTimeButton,
+                      pressed && !notificationLoading && !notificationSaving && styles.notificationTimeButtonPressed,
+                      (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                    ]}>
+                    <Text style={styles.notificationTimeText}>{salaryReminderTime}</Text>
+                    <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
+                  </Pressable>
+                </View>
+
+                <View style={styles.notificationMetaRow}>
+                  <Text style={styles.notificationMetaLabel}>{t('settings.salaryReminderDay')}</Text>
+                  <View style={styles.notificationCounterGroup}>
+                    <Pressable
+                      onPress={() => void handleAdjustSalaryDay(-1)}
+                      disabled={notificationLoading || notificationSaving}
+                      style={({ pressed }) => [
+                        styles.notificationCounterButton,
+                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
+                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                      ]}>
+                      <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
+                    </Pressable>
+                    <View style={styles.notificationCounterValueWrap}>
+                      <Text style={styles.notificationCounterValue}>{salaryDay}</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => void handleAdjustSalaryDay(1)}
+                      disabled={notificationLoading || notificationSaving}
+                      style={({ pressed }) => [
+                        styles.notificationCounterButton,
+                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
+                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                      ]}>
+                      <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={styles.notificationMetaRow}>
+                  <Text style={styles.notificationMetaLabel}>{t('settings.salaryReminderDaysBefore')}</Text>
+                  <View style={styles.notificationCounterGroup}>
+                    <Pressable
+                      onPress={() => void handleAdjustSalaryDaysBefore(-1)}
+                      disabled={notificationLoading || notificationSaving}
+                      style={({ pressed }) => [
+                        styles.notificationCounterButton,
+                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
+                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                      ]}>
+                      <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
+                    </Pressable>
+                    <View style={styles.notificationCounterValueWrap}>
+                      <Text style={styles.notificationCounterValue}>{t('settings.beforeDays', { count: salaryReminderDaysBefore })}</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => void handleAdjustSalaryDaysBefore(1)}
+                      disabled={notificationLoading || notificationSaving}
+                      style={({ pressed }) => [
+                        styles.notificationCounterButton,
+                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
+                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
+                      ]}>
+                      <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ) : null}
           </View>
 
           {notificationError ? <Text style={styles.notificationErrorText}>{notificationError}</Text> : null}
@@ -1124,6 +1295,42 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontWeight: '800',
       textAlign: 'right',
       flexShrink: 0,
+    },
+    notificationCounterGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    notificationCounterButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    notificationCounterButtonPressed: {
+      opacity: 0.88,
+    },
+    notificationCounterValueWrap: {
+      minWidth: 56,
+      minHeight: 30,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.08),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.16),
+    },
+    notificationCounterValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '800',
+      textAlign: 'center',
     },
     notificationInboxRow: {
       marginBottom: 12,

@@ -14,6 +14,10 @@ export type NotificationSettingsData = {
   debt_payment_reminder_enabled: boolean;
   debt_payment_reminder_time?: string | null;
   debt_payment_reminder_days_before?: number | string | null;
+  salary_reminder_enabled?: boolean;
+  salary_reminder_time?: string | null;
+  salary_reminder_days_before?: number | string | null;
+  salary_day?: number | string | null;
   push_token?: string | null;
 };
 

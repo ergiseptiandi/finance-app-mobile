@@ -80,3 +80,4 @@ Notification endpoints used by the app:
 Backend contract notes:
 
 - `docs/backend-notifications.md`
+- `docs/mobile-firebase-push-setup.md`
