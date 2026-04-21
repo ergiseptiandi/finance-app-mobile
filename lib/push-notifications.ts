@@ -31,6 +31,15 @@ const debugPush = (...args: unknown[]) => {
   }
 };
 
+const debugPushTokenValue = (label: string, token?: string | null) => {
+  if (!PUSH_DEBUG_ENABLED) {
+    return;
+  }
+
+  const normalized = normalizePushToken(token);
+  console.log(`[push-debug] ${label}: ${normalized || 'null'}`);
+};
+
 const isExpoGo =
   Constants.appOwnership === 'expo' ||
   Constants.executionEnvironment === 'storeClient';
@@ -117,11 +126,13 @@ const getGrantedDevicePushToken = async () => {
   if (typeof token === 'string') {
     const normalized = normalizePushToken(token);
     debugPush('token', { granted: true, token: normalized });
+    debugPushTokenValue('app-token', normalized);
     return normalized;
   }
 
   const normalized = normalizePushToken(token.data ?? null);
   debugPush('token', { granted: true, token: normalized || null });
+  debugPushTokenValue('app-token', normalized || null);
   return normalized || null;
 };
 
@@ -239,6 +250,7 @@ export const loadNotificationSettings = async (accessToken: string) => {
     backendToken: normalizePushToken(response.Data?.push_token) || null,
     hasBackendToken: Boolean(normalizePushToken(response.Data?.push_token)),
   });
+  debugPushTokenValue('backend-token', response.Data?.push_token ?? null);
 
   return response.Data ?? null;
 };
@@ -286,6 +298,8 @@ export const syncDevicePushToken = async (
           backendToken: normalizePushToken(settings?.push_token) || null,
           tokenMatchesBackend: normalizePushToken(settings?.push_token) === token,
         });
+        debugPushTokenValue('app-token', token);
+        debugPushTokenValue('backend-token', settings?.push_token ?? null);
         return {
           token,
           settings,
@@ -339,6 +353,8 @@ export const syncDevicePushToken = async (
         Boolean(result.token) && normalizePushToken(result.settings?.push_token) === normalizePushToken(result.token),
       synced: result.synced,
     });
+    debugPushTokenValue('app-token', result.token);
+    debugPushTokenValue('backend-token', result.settings?.push_token ?? null);
     return result;
   } finally {
     pushTokenSyncInFlight = null;
