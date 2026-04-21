@@ -23,7 +23,12 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "finance-go-default"
+        }
+      ],
       [
         "expo-splash-screen",
         {

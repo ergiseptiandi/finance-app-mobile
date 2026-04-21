@@ -23,6 +23,12 @@ type SyncPushTokenResult = {
 const DEFAULT_NOTIFICATION_CHANNEL_ID = 'finance-go-default';
 let pushTokenSyncInFlight: Promise<SyncPushTokenResult> | null = null;
 
+const debugPush = (...args: unknown[]) => {
+  if (__DEV__) {
+    console.log('[push-debug]', ...args);
+  }
+};
+
 const isExpoGo =
   Constants.appOwnership === 'expo' ||
   Constants.executionEnvironment === 'storeClient';
@@ -33,6 +39,40 @@ const getNotificationsModule = () => {
   }
 
   return Notifications;
+};
+
+const ensureAndroidNotificationChannel = async (Notifications: NotificationsModule) => {
+  const existingChannel = await Notifications.getNotificationChannelAsync(DEFAULT_NOTIFICATION_CHANNEL_ID).catch(
+    () => null
+  );
+
+  debugPush('channel', {
+    id: DEFAULT_NOTIFICATION_CHANNEL_ID,
+    existingImportance: existingChannel?.importance ?? null,
+    targetImportance: Notifications.AndroidImportance.MAX,
+  });
+
+  if (existingChannel && existingChannel.importance !== Notifications.AndroidImportance.MAX) {
+    await Notifications.deleteNotificationChannelAsync(DEFAULT_NOTIFICATION_CHANNEL_ID).catch(() => {});
+    debugPush('channel-reset', {
+      id: DEFAULT_NOTIFICATION_CHANNEL_ID,
+      deletedBecauseImportance: existingChannel.importance,
+    });
+  }
+
+  await Notifications.setNotificationChannelAsync(DEFAULT_NOTIFICATION_CHANNEL_ID, {
+    name: 'Finance GO Alerts',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: 'default',
+    enableVibrate: true,
+    vibrationPattern: [0, 250, 250, 250],
+    showBadge: true,
+  }).catch(() => {});
+
+  debugPush('channel-ready', {
+    id: DEFAULT_NOTIFICATION_CHANNEL_ID,
+    importance: Notifications.AndroidImportance.MAX,
+  });
 };
 
 const retryWithRefreshedSession = async <T,>(
@@ -66,15 +106,18 @@ const getGrantedDevicePushToken = async () => {
 
   const permission = await Notifications.getPermissionsAsync();
   if (permission.status !== 'granted') {
+    debugPush('token', { status: permission.status, granted: false });
     return null;
   }
 
   const token = await Notifications.getDevicePushTokenAsync();
 
   if (typeof token === 'string') {
+    debugPush('token', { granted: true, token });
     return token;
   }
 
+  debugPush('token', { granted: true, token: token.data ?? null });
   return token.data ?? null;
 };
 
@@ -86,14 +129,7 @@ export const registerNotificationHandler = () => {
   }
 
   if (Platform.OS === 'android') {
-    void Notifications.setNotificationChannelAsync(DEFAULT_NOTIFICATION_CHANNEL_ID, {
-      name: 'Finance GO Alerts',
-      importance: Notifications.AndroidImportance.MAX,
-      sound: 'default',
-      enableVibrate: true,
-      vibrationPattern: [0, 250, 250, 250],
-      showBadge: true,
-    }).catch(() => {});
+    void ensureAndroidNotificationChannel(Notifications);
   }
 
     Notifications.setNotificationHandler({
@@ -183,6 +219,7 @@ export const syncDevicePushToken = async (
       token = await getGrantedDevicePushToken();
 
       if (!token) {
+        debugPush('sync', { status: 'skipped', reason: 'missing-token' });
         return {
           token: null,
           settings: currentSettings ?? null,
@@ -197,6 +234,11 @@ export const syncDevicePushToken = async (
       const settings = settingsResponse.Data ?? null;
 
       if (!settings || settings.push_token === token) {
+        debugPush('sync', {
+          status: 'noop',
+          token,
+          backendToken: settings?.push_token ?? null,
+        });
         return {
           token,
           settings,
@@ -228,6 +270,10 @@ export const syncDevicePushToken = async (
         synced: true,
       } satisfies SyncPushTokenResult;
     } catch {
+      debugPush('sync', {
+        status: 'failed',
+        token,
+      });
       return {
         token,
         settings: currentSettings ?? null,
@@ -237,7 +283,14 @@ export const syncDevicePushToken = async (
   })();
 
   try {
-    return await pushTokenSyncInFlight;
+    const result = await pushTokenSyncInFlight;
+    debugPush('sync', {
+      status: result.synced ? 'updated' : 'completed',
+      token: result.token,
+      backendToken: result.settings?.push_token ?? null,
+      synced: result.synced,
+    });
+    return result;
   } finally {
     pushTokenSyncInFlight = null;
   }
