@@ -3,8 +3,8 @@ import { router, Redirect, Stack, useSegments } from 'expo-router';
 import { ThemeProvider } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { useEffect, useState } from 'react';
+import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useAppLanguage, AppLanguageProvider } from '@/providers/language-provider';
 import { Colors, NavigationThemes } from '@/constants/theme';
@@ -16,7 +16,9 @@ import {
   registerNotificationHandler,
   registerNotificationResponseListener,
   resolveNotificationRoute,
+  syncDevicePushToken,
 } from '@/lib/push-notifications';
+import { getAuthSession } from '@/lib/auth-session';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 registerNotificationHandler();
@@ -41,12 +43,23 @@ function RootNavigator() {
   const colorScheme = useColorScheme() ?? 'light';
   const isDark = colorScheme === 'dark';
   const segments = useSegments();
+  const firstSegment = segments[0] ?? '';
   const { isThemeHydrated } = useAppTheme();
   const { isLanguageHydrated, t } = useAppLanguage();
   const { hideTransitionOverlay, isTransitionOverlayVisible } = useTransitionOverlay();
   const colors = Colors[colorScheme];
   const [isOnboardingHydrated, setIsOnboardingHydrated] = useState(false);
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
+
+  const syncPushToken = useCallback(async () => {
+    const session = await getAuthSession();
+
+    if (!session) {
+      return;
+    }
+
+    await syncDevicePushToken(session.token.access_token);
+  }, []);
 
   useEffect(() => {
     if (isThemeHydrated && isLanguageHydrated && isOnboardingHydrated) {
@@ -73,6 +86,31 @@ function RootNavigator() {
       active = false;
     };
   }, [hideTransitionOverlay, isTransitionOverlayVisible, segments]);
+
+  useEffect(() => {
+    if (!isThemeHydrated || !isLanguageHydrated || !isOnboardingHydrated) {
+      return undefined;
+    }
+
+    let active = true;
+
+    void (async () => {
+      if (active) {
+        await syncPushToken();
+      }
+    })();
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void syncPushToken();
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [firstSegment, isLanguageHydrated, isOnboardingHydrated, isThemeHydrated, syncPushToken]);
 
   useEffect(() => {
     const subscription = registerNotificationResponseListener((response) => {
@@ -115,8 +153,6 @@ function RootNavigator() {
       </View>
     );
   }
-
-  const firstSegment = segments[0] ?? '';
 
   if (!isOnboardingComplete && firstSegment !== 'onboarding') {
     return <Redirect href="/onboarding" />;

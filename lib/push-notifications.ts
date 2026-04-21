@@ -2,11 +2,24 @@ import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import {
+  getNotificationSettings,
+  updateNotificationSettings,
+  type NotificationSettingsData,
+} from '@/lib/api/notifications';
+
 type NotificationData = Record<string, unknown> | undefined;
 
 type NotificationsModule = typeof Notifications;
 
+type SyncPushTokenResult = {
+  token: string | null;
+  settings: NotificationSettingsData | null;
+  synced: boolean;
+};
+
 const DEFAULT_NOTIFICATION_CHANNEL_ID = 'finance-go-default';
+let pushTokenSyncInFlight: Promise<SyncPushTokenResult> | null = null;
 
 const isExpoGo =
   Constants.appOwnership === 'expo' ||
@@ -18,6 +31,31 @@ const getNotificationsModule = () => {
   }
 
   return Notifications;
+};
+
+const getGrantedDevicePushToken = async () => {
+  if (Platform.OS !== 'android') {
+    return null;
+  }
+
+  const Notifications = getNotificationsModule();
+
+  if (!Notifications) {
+    return null;
+  }
+
+  const permission = await Notifications.getPermissionsAsync();
+  if (permission.status !== 'granted') {
+    return null;
+  }
+
+  const token = await Notifications.getDevicePushTokenAsync();
+
+  if (typeof token === 'string') {
+    return token;
+  }
+
+  return token.data ?? null;
 };
 
 export const registerNotificationHandler = () => {
@@ -107,13 +145,74 @@ export const getDevicePushToken = async () => {
     return null;
   }
 
-  const token = await Notifications.getDevicePushTokenAsync();
+  return getGrantedDevicePushToken();
+};
 
-  if (typeof token === 'string') {
-    return token;
+export const syncDevicePushToken = async (
+  accessToken: string,
+  currentSettings?: NotificationSettingsData | null
+) => {
+  if (pushTokenSyncInFlight) {
+    return pushTokenSyncInFlight;
   }
 
-  return token.data ?? null;
+  pushTokenSyncInFlight = (async () => {
+    let token: string | null = null;
+
+    try {
+      token = await getGrantedDevicePushToken();
+
+      if (!token) {
+        return {
+          token: null,
+          settings: currentSettings ?? null,
+          synced: false,
+        } satisfies SyncPushTokenResult;
+      }
+
+      const settings = currentSettings ?? (await getNotificationSettings(accessToken)).Data ?? null;
+
+      if (!settings || settings.push_token === token) {
+        return {
+          token,
+          settings,
+          synced: false,
+        } satisfies SyncPushTokenResult;
+      }
+
+      const response = await updateNotificationSettings(accessToken, {
+        enabled: settings.enabled,
+        daily_expense_reminder_enabled: settings.daily_expense_reminder_enabled,
+        daily_expense_reminder_time: settings.daily_expense_reminder_time ?? undefined,
+        debt_payment_reminder_enabled: settings.debt_payment_reminder_enabled,
+        debt_payment_reminder_time: settings.debt_payment_reminder_time ?? undefined,
+        debt_payment_reminder_days_before: settings.debt_payment_reminder_days_before ?? undefined,
+        salary_reminder_enabled: settings.salary_reminder_enabled,
+        salary_reminder_time: settings.salary_reminder_time ?? undefined,
+        salary_reminder_days_before: settings.salary_reminder_days_before ?? undefined,
+        salary_day: settings.salary_day ?? undefined,
+        push_token: token,
+      });
+
+      return {
+        token,
+        settings: response.Data ?? settings,
+        synced: true,
+      } satisfies SyncPushTokenResult;
+    } catch {
+      return {
+        token,
+        settings: currentSettings ?? null,
+        synced: false,
+      } satisfies SyncPushTokenResult;
+    }
+  })();
+
+  try {
+    return await pushTokenSyncInFlight;
+  } finally {
+    pushTokenSyncInFlight = null;
+  }
 };
 
 export const registerNotificationResponseListener = (

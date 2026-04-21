@@ -31,7 +31,7 @@ import {
 import { login } from '@/lib/api/auth';
 import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
-import { getDevicePushToken } from '@/lib/push-notifications';
+import { getDevicePushToken, syncDevicePushToken } from '@/lib/push-notifications';
 
 const DEVICE_NAME = getDeviceName();
 
@@ -167,17 +167,26 @@ export default function SettingsScreen() {
           }
 
           const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
-          setPushEnabled(Boolean(data.enabled && data.push_token));
-          setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
-          setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_time ?? '20:00');
-          setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
-          setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_time ?? '09:00');
-          setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
-          setSalaryReminderEnabled(Boolean(data.salary_reminder_enabled));
-          setSalaryReminderTime(data.salary_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_time ?? '08:00');
-          setSalaryReminderDaysBefore(Number(data.salary_reminder_days_before ?? 1));
-          setSalaryDay(Number(data.salary_day ?? 25));
-          setPushToken(data.push_token ?? '');
+          const syncResult = await syncDevicePushToken(session.token.access_token, data);
+          const nextData = syncResult.settings ?? data;
+
+          setPushEnabled(Boolean(nextData.enabled && nextData.push_token));
+          setDailyExpenseReminderEnabled(Boolean(nextData.daily_expense_reminder_enabled));
+          setDailyExpenseReminderTime(
+            nextData.daily_expense_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_time ?? '20:00'
+          );
+          setDebtPaymentReminderEnabled(Boolean(nextData.debt_payment_reminder_enabled));
+          setDebtPaymentReminderTime(
+            nextData.debt_payment_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_time ?? '09:00'
+          );
+          setDebtPaymentReminderDaysBefore(Number(nextData.debt_payment_reminder_days_before ?? 3));
+          setSalaryReminderEnabled(Boolean(nextData.salary_reminder_enabled));
+          setSalaryReminderTime(
+            nextData.salary_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_time ?? '08:00'
+          );
+          setSalaryReminderDaysBefore(Number(nextData.salary_reminder_days_before ?? 1));
+          setSalaryDay(Number(nextData.salary_day ?? 25));
+          setPushToken(nextData.push_token ?? '');
         } catch {
           if (active) {
             setNotificationError(t('settings.notificationsLoadError'));
