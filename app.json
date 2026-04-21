@@ -24,6 +24,7 @@
     "plugins": [
       "expo-router",
       "./plugins/withGradleJvmArgs",
+      "./plugins/withPostNotificationsPermission",
       [
         "expo-notifications",
         {
