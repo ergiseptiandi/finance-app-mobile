@@ -620,7 +620,12 @@ export default function SettingsScreen() {
             title={t('settings.notificationInbox')}
             subtitle={t('settings.notificationInboxMeta')}
             iconTone="primary"
-            onPress={() => router.push('/notifications')}
+            onPress={() => {
+              showTransitionOverlay();
+              requestAnimationFrame(() => {
+                router.push('/notifications');
+              });
+            }}
             rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
             style={styles.notificationInboxRow}
           />

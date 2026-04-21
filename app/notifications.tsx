@@ -154,6 +154,12 @@ export default function NotificationsScreen() {
     [notifications]
   );
 
+  const navigateToSettings = useCallback(async () => {
+    showTransitionOverlay();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    router.navigate('/(tabs)/settings');
+  }, [showTransitionOverlay]);
+
   const withAuthorizedRequest = useCallback(
     async <T,>(task: (accessToken: string) => Promise<T>) => {
       const session = await getAuthSession();
@@ -270,10 +276,8 @@ export default function NotificationsScreen() {
   }, [loading, notifications, savingAll, unreadCount, withAuthorizedRequest]);
 
   const goBack = useCallback(async () => {
-    showTransitionOverlay();
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    router.back();
-  }, [showTransitionOverlay]);
+    await navigateToSettings();
+  }, [navigateToSettings]);
 
   useFocusEffect(
     useCallback(() => {
