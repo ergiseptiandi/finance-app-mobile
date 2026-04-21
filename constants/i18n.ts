@@ -613,6 +613,7 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'notifications.kindFallback': 'notifikasi',
     'notifications.kindDailyExpense': 'Pengingat Pengeluaran',
     'notifications.kindDebtPayment': 'Pengingat Utang',
+    'notifications.kindSalaryReminder': 'Pengingat Gaji',
     'notifications.markAllRead': 'Baca Semua',
   },
   'en-US': {
@@ -1218,6 +1219,7 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'notifications.kindFallback': 'notification',
     'notifications.kindDailyExpense': 'Expense Reminder',
     'notifications.kindDebtPayment': 'Debt Reminder',
+    'notifications.kindSalaryReminder': 'Salary Reminder',
     'notifications.markAllRead': 'Mark All Read',
   },
 };

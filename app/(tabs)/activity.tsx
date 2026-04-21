@@ -4,7 +4,7 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -562,6 +562,7 @@ function TransactionRow({
 }
 
 export default function ActivityScreen() {
+  const searchParams = useLocalSearchParams<{ compose?: string }>();
   const colors = Colors[useColorScheme() ?? 'light'];
   const insets = useSafeAreaInsets();
   const { language, t } = useAppLanguage();
@@ -636,6 +637,23 @@ export default function ActivityScreen() {
       active = false;
     };
   }, [filters]);
+
+  useEffect(() => {
+    const compose = Array.isArray(searchParams.compose) ? searchParams.compose[0] : searchParams.compose;
+
+    if (compose !== 'income' && compose !== 'expense') {
+      return;
+    }
+
+    setTransactionModalVisible(true);
+    setForm((current) => ({
+      ...createEmptyTransactionForm(),
+      type: compose,
+      walletId: compose === 'income' ? null : current.walletId,
+    }));
+
+    router.setParams({ compose: undefined });
+  }, [searchParams.compose]);
 
   const withAuthorizedRequest = useCallback(
     async <T,>(task: (accessToken: string) => Promise<T>) => {

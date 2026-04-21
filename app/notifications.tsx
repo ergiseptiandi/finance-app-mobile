@@ -24,6 +24,7 @@ import {
   markNotificationAsRead,
   type NotificationRecord,
 } from '@/lib/api/notifications';
+import { resolveNotificationRoute } from '@/lib/push-notifications';
 import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -81,6 +82,10 @@ const getNotificationKindLabel = (kind: string | null | undefined, t: (key: stri
 
   if (kind === 'debt_payment') {
     return t('notifications.kindDebtPayment');
+  }
+
+  if (kind === 'salary_reminder') {
+    return t('notifications.kindSalaryReminder');
   }
 
   return kind || t('notifications.kindFallback');
@@ -243,13 +248,25 @@ export default function NotificationsScreen() {
           await withAuthorizedRequest((accessToken) => markNotificationAsRead(accessToken, item.id));
         }
         setNotifications((current) => markReadById(current, item.id));
+
+        const route = resolveNotificationRoute({
+          kind: item.kind ?? undefined,
+          type: item.type ?? undefined,
+          route: typeof item.data?.route === 'string' ? item.data.route : undefined,
+        });
+
+        if (route !== '/') {
+          showTransitionOverlay();
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          router.push(route as never);
+        }
       } catch {
         // keep the UI responsive even if mark-read fails
       } finally {
         setSavingId(null);
       }
     },
-    [withAuthorizedRequest]
+    [showTransitionOverlay, withAuthorizedRequest]
   );
 
   const markAllAsRead = useCallback(async () => {
@@ -361,12 +378,18 @@ export default function NotificationsScreen() {
                     unread && styles.cardUnread,
                     pressed && styles.cardPressed,
                   ]}>
-                  <View style={[styles.iconWrap, unread && styles.iconWrapUnread]}>
-                    <MaterialCommunityIcons
-                      name={item.kind === 'debt_payment' || item.type === 'debt_payment' ? 'calendar-clock' : 'cash-fast'}
-                      size={18}
-                      color={unread ? colors.primary : colors.shellTextMuted}
-                    />
+                    <View style={[styles.iconWrap, unread && styles.iconWrapUnread]}>
+                      <MaterialCommunityIcons
+                        name={
+                          item.kind === 'debt_payment' || item.type === 'debt_payment'
+                            ? 'calendar-clock'
+                            : item.kind === 'salary_reminder' || item.type === 'salary_reminder'
+                              ? 'cash-plus'
+                              : 'cash-fast'
+                        }
+                        size={18}
+                        color={unread ? colors.primary : colors.shellTextMuted}
+                      />
                   </View>
                   <View style={styles.copy}>
                     <View style={styles.cardHeader}>

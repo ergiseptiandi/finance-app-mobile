@@ -34,14 +34,22 @@ export const registerNotificationHandler = () => {
 };
 
 export const resolveNotificationRoute = (data: NotificationData) => {
+  if (typeof data?.route === 'string' && data.route) {
+    return data.route;
+  }
+
   const kind = typeof data?.kind === 'string' ? data.kind : typeof data?.type === 'string' ? data.type : '';
 
   if (kind === 'daily_expense_input') {
-    return '/activity';
+    return '/activity?compose=expense';
   }
 
   if (kind === 'debt_payment') {
     return '/debt';
+  }
+
+  if (kind === 'salary_reminder') {
+    return '/activity?compose=income';
   }
 
   return '/';

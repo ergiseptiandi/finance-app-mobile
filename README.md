@@ -68,3 +68,15 @@ Auth endpoints used by the app:
 - `https://api-finance.paidev.my.id/v1/auth/password`
 - `https://api-finance.paidev.my.id/v1/auth/forgot-password`
 - `https://api-finance.paidev.my.id/v1/auth/reset-password`
+
+Notification endpoints used by the app:
+
+- `GET /v1/notifications/settings`
+- `PATCH /v1/notifications/settings`
+- `POST /v1/notifications/generate`
+- `GET /v1/notifications`
+- `PATCH /v1/notifications/{id}/read`
+
+Backend contract notes:
+
+- `docs/backend-notifications.md`
