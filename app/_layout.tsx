@@ -13,7 +13,9 @@ import { AppThemeProvider, useAppTheme } from '@/providers/theme-provider';
 import { getOnboardingCompleted } from '@/lib/onboarding';
 import { TransitionOverlayProvider, useTransitionOverlay } from '@/providers/transition-overlay-provider';
 import {
+  hasGrantedNotificationPermission,
   registerNotificationHandler,
+  registerNotificationReceivedListener,
   registerNotificationResponseListener,
   resolveNotificationRoute,
   syncDevicePushToken,
@@ -55,6 +57,11 @@ function RootNavigator() {
     const session = await getAuthSession();
 
     if (!session) {
+      return;
+    }
+
+    const permissionGranted = await hasGrantedNotificationPermission();
+    if (!permissionGranted) {
       return;
     }
 
@@ -113,12 +120,26 @@ function RootNavigator() {
   }, [firstSegment, isLanguageHydrated, isOnboardingHydrated, isThemeHydrated, syncPushToken]);
 
   useEffect(() => {
+    const receivedSubscription = registerNotificationReceivedListener((notification) => {
+      if (__DEV__) {
+        console.log('[push-debug] received', {
+          identifier: notification.request.identifier,
+          title: notification.request.content.title ?? null,
+          body: notification.request.content.body ?? null,
+          data: notification.request.content.data ?? null,
+        });
+      }
+    });
+
     const subscription = registerNotificationResponseListener((response) => {
       const route = resolveNotificationRoute(response.notification.request.content.data as Record<string, unknown> | undefined);
       router.push(route as never);
     });
 
-    return () => subscription?.remove();
+    return () => {
+      receivedSubscription?.remove();
+      subscription?.remove();
+    };
   }, []);
 
   useEffect(() => {

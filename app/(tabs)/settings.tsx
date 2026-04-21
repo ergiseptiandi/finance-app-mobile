@@ -31,7 +31,12 @@ import {
 } from '@/lib/api/notifications';
 import { getAuthSession, refreshStoredAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
-import { getDevicePushToken, syncDevicePushToken } from '@/lib/push-notifications';
+import {
+  getDevicePushToken,
+  hasGrantedNotificationPermission,
+  loadNotificationSettings,
+  syncDevicePushToken,
+} from '@/lib/push-notifications';
 
 const DEVICE_NAME = getDeviceName();
 
@@ -170,6 +175,7 @@ export default function SettingsScreen() {
   const [salaryReminderDaysBefore, setSalaryReminderDaysBefore] = useState(1);
   const [salaryDay, setSalaryDay] = useState(25);
   const [pushToken, setPushToken] = useState('');
+  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [notificationSaving, setNotificationSaving] = useState(false);
   const [notificationError, setNotificationError] = useState('');
@@ -182,6 +188,7 @@ export default function SettingsScreen() {
   const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const pushTokenReady = Boolean(pushToken);
+  const pushToggleActive = Boolean(pushEnabled && notificationPermissionGranted);
   const currentNotificationSettings = useMemo(
     () => ({
       enabled: pushEnabled,
@@ -255,12 +262,22 @@ export default function SettingsScreen() {
         setBiometricError('');
 
         try {
-          const syncResult = await syncDevicePushToken(session.token.access_token);
+          const permissionGranted = await hasGrantedNotificationPermission();
           if (!active) {
             return;
           }
 
-          applyNotificationSettings(syncResult.settings);
+          setNotificationPermissionGranted(permissionGranted);
+
+          const settings = permissionGranted
+            ? (await syncDevicePushToken(session.token.access_token)).settings
+            : await loadNotificationSettings(session.token.access_token);
+
+          if (!active) {
+            return;
+          }
+
+          applyNotificationSettings(settings);
         } catch {
           if (active) {
             setNotificationError(t('settings.notificationsLoadError'));
@@ -495,28 +512,35 @@ export default function SettingsScreen() {
       return;
     }
 
-    if (pushEnabled) {
+    if (pushToggleActive) {
       await persistNotificationSettings({ enabled: false });
       return;
     }
 
-    if (pushTokenReady) {
+    if (notificationPermissionGranted && pushTokenReady) {
       await persistNotificationSettings({ enabled: true });
       return;
     }
 
     const token = await getDevicePushToken();
+    const permissionGranted = await hasGrantedNotificationPermission();
+    setNotificationPermissionGranted(permissionGranted);
 
     if (!token) {
-      const saved = await persistNotificationSettings({ enabled: true });
-      if (saved) {
-        setNotificationError(t('settings.pushTokenUnavailable'));
-      }
+      setNotificationError(t('settings.pushTokenUnavailable'));
       return;
     }
 
     await persistNotificationSettings({ enabled: true, pushToken: token });
-  }, [notificationLoading, notificationSaving, persistNotificationSettings, pushEnabled, pushTokenReady, t]);
+  }, [
+    notificationLoading,
+    notificationPermissionGranted,
+    notificationSaving,
+    persistNotificationSettings,
+    pushToggleActive,
+    pushTokenReady,
+    t,
+  ]);
 
   const handleDailyReminderToggle = useCallback(async () => {
     if (notificationLoading || notificationSaving) {
@@ -828,17 +852,17 @@ export default function SettingsScreen() {
               title={t('settings.notificationsLabel')}
               subtitle={t('settings.notificationsLabelMeta')}
               iconTone="primary"
-              accent={pushEnabled}
+              accent={pushToggleActive}
               rightSlot={
                 <Pressable
                   onPress={() => void handlePushToggle()}
                   disabled={notificationLoading || notificationSaving}
                   style={[
                     styles.switchTrack,
-                    pushEnabled && styles.switchTrackPrimary,
+                    pushToggleActive && styles.switchTrackPrimary,
                     (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
                   ]}>
-                  <View style={[styles.switchThumb, pushEnabled && styles.switchThumbPrimary]} />
+                  <View style={[styles.switchThumb, pushToggleActive && styles.switchThumbPrimary]} />
                 </Pressable>
               }
             />

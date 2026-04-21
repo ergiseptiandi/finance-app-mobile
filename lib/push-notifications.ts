@@ -207,6 +207,30 @@ export const getDevicePushToken = async () => {
   return getGrantedDevicePushToken();
 };
 
+export const hasGrantedNotificationPermission = async () => {
+  if (Platform.OS !== 'android') {
+    return false;
+  }
+
+  const Notifications = getNotificationsModule();
+
+  if (!Notifications) {
+    return false;
+  }
+
+  const permission = await Notifications.getPermissionsAsync();
+  return permission.status === 'granted';
+};
+
+export const loadNotificationSettings = async (accessToken: string) => {
+  const response = await retryWithRefreshedSession(
+    (tokenValue) => getNotificationSettings(tokenValue),
+    accessToken
+  );
+
+  return response.Data ?? null;
+};
+
 export const syncDevicePushToken = async (
   accessToken: string,
   currentSettings?: NotificationSettingsData | null
@@ -316,4 +340,16 @@ export const registerNotificationResponseListener = (
   }
 
   return Notifications.addNotificationResponseReceivedListener(handler);
+};
+
+export const registerNotificationReceivedListener = (
+  handler: Parameters<NotificationsModule['addNotificationReceivedListener']>[0]
+) => {
+  const Notifications = getNotificationsModule();
+
+  if (!Notifications) {
+    return null;
+  }
+
+  return Notifications.addNotificationReceivedListener(handler);
 };
