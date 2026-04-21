@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -70,6 +71,9 @@ const isUnreadNotification = (item: NotificationRecord) => {
   return !item.read_at;
 };
 
+const isDeviceNotificationId = (id: NotificationRecord['id']) =>
+  typeof id === 'string' && id.startsWith('device:');
+
 const getNotificationKindLabel = (kind: string | null | undefined, t: (key: string) => string) => {
   if (kind === 'daily_expense_input') {
     return t('notifications.kindDailyExpense');
@@ -88,13 +92,46 @@ const normalizeNotificationList = (data: unknown): NotificationRecord[] => {
   }
 
   if (data && typeof data === 'object') {
-    const items = (data as { data?: unknown }).data;
-    if (Array.isArray(items)) {
-      return items as NotificationRecord[];
+    const source = data as Record<string, unknown>;
+    const keys = ['data', 'notifications', 'items', 'records', 'rows'] as const;
+
+    for (const key of keys) {
+      const items = normalizeNotificationList(source[key]);
+      if (items.length > 0) {
+        return items;
+      }
     }
   }
 
   return [];
+};
+
+const mapPresentedNotification = (notification: Notifications.Notification): NotificationRecord => {
+  const content = notification.request.content;
+  const data = content.data ?? {};
+  const kind =
+    typeof data.kind === 'string' ? data.kind : typeof data.type === 'string' ? data.type : null;
+
+  return {
+    id: `device:${notification.request.identifier}`,
+    kind,
+    type: typeof data.type === 'string' ? data.type : kind,
+    title: content.title,
+    message: content.body,
+    read: false,
+    read_at: null,
+    created_at: new Date(notification.date).toISOString(),
+    data,
+  };
+};
+
+const loadPresentedNotifications = async () => {
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    return presented.map(mapPresentedNotification);
+  } catch {
+    return [];
+  }
 };
 
 export default function NotificationsScreen() {
@@ -157,8 +194,20 @@ export default function NotificationsScreen() {
       setError('');
 
       try {
-        const response = await withAuthorizedRequest((accessToken) => listNotifications(accessToken));
-        setNotifications(normalizeNotificationList(response.Data));
+        const [serverResult, deviceResult] = await Promise.allSettled([
+          withAuthorizedRequest((accessToken) => listNotifications(accessToken)),
+          loadPresentedNotifications(),
+        ]);
+
+        if (serverResult.status === 'rejected' && serverResult.reason instanceof Error && serverResult.reason.message === 'missing_session') {
+          return;
+        }
+
+        const serverNotifications =
+          serverResult.status === 'fulfilled' ? normalizeNotificationList(serverResult.value.Data) : [];
+        const deviceNotifications = deviceResult.status === 'fulfilled' ? deviceResult.value : [];
+
+        setNotifications(serverNotifications.length > 0 ? serverNotifications : deviceNotifications);
       } catch (loadError) {
         if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
           setError(t('notifications.loadError'));
@@ -181,7 +230,12 @@ export default function NotificationsScreen() {
     async (item: NotificationRecord) => {
       setSavingId(item.id);
       try {
-        await withAuthorizedRequest((accessToken) => markNotificationAsRead(accessToken, item.id));
+        if (isDeviceNotificationId(item.id)) {
+          const notificationId = String(item.id).slice('device:'.length);
+          await Notifications.dismissNotificationAsync(notificationId);
+        } else {
+          await withAuthorizedRequest((accessToken) => markNotificationAsRead(accessToken, item.id));
+        }
         setNotifications((current) => markReadById(current, item.id));
       } catch {
         // keep the UI responsive even if mark-read fails
