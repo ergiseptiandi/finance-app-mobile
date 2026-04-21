@@ -1,5 +1,6 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { useEffect } from 'react';
+import { BackHandler } from 'react-native';
+import { Tabs, useSegments } from 'expo-router';
 
 import { KineticTabBar } from '@/components/kinetic-tab-bar';
 import { Colors } from '@/constants/theme';
@@ -10,6 +11,20 @@ export default function TabLayout() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (segments[0] !== '(tabs)') {
+      return undefined;
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      BackHandler.exitApp();
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [segments]);
 
   return (
     <Tabs
