@@ -2,11 +2,13 @@ import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { ApiRequestError } from '@/lib/api/auth';
 import {
   getNotificationSettings,
   updateNotificationSettings,
   type NotificationSettingsData,
 } from '@/lib/api/notifications';
+import { refreshStoredAuthSession } from '@/lib/auth-session';
 
 type NotificationData = Record<string, unknown> | undefined;
 
@@ -31,6 +33,24 @@ const getNotificationsModule = () => {
   }
 
   return Notifications;
+};
+
+const retryWithRefreshedSession = async <T,>(
+  task: (token: string) => Promise<T>,
+  accessToken: string
+) => {
+  try {
+    return await task(accessToken);
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      const refreshed = await refreshStoredAuthSession();
+      if (refreshed) {
+        return task(refreshed.token.access_token);
+      }
+    }
+
+    throw error;
+  }
 };
 
 const getGrantedDevicePushToken = async () => {
@@ -170,7 +190,11 @@ export const syncDevicePushToken = async (
         } satisfies SyncPushTokenResult;
       }
 
-      const settings = currentSettings ?? (await getNotificationSettings(accessToken)).Data ?? null;
+      const settingsResponse = currentSettings
+        ? { Data: currentSettings }
+        : await retryWithRefreshedSession((tokenValue) => getNotificationSettings(tokenValue), accessToken);
+
+      const settings = settingsResponse.Data ?? null;
 
       if (!settings || settings.push_token === token) {
         return {
@@ -180,19 +204,23 @@ export const syncDevicePushToken = async (
         } satisfies SyncPushTokenResult;
       }
 
-      const response = await updateNotificationSettings(accessToken, {
-        enabled: settings.enabled,
-        daily_expense_reminder_enabled: settings.daily_expense_reminder_enabled,
-        daily_expense_reminder_time: settings.daily_expense_reminder_time ?? undefined,
-        debt_payment_reminder_enabled: settings.debt_payment_reminder_enabled,
-        debt_payment_reminder_time: settings.debt_payment_reminder_time ?? undefined,
-        debt_payment_reminder_days_before: settings.debt_payment_reminder_days_before ?? undefined,
-        salary_reminder_enabled: settings.salary_reminder_enabled,
-        salary_reminder_time: settings.salary_reminder_time ?? undefined,
-        salary_reminder_days_before: settings.salary_reminder_days_before ?? undefined,
-        salary_day: settings.salary_day ?? undefined,
-        push_token: token,
-      });
+      const response = await retryWithRefreshedSession(
+        (tokenValue) =>
+          updateNotificationSettings(tokenValue, {
+            enabled: settings.enabled,
+            daily_expense_reminder_enabled: settings.daily_expense_reminder_enabled,
+            daily_expense_reminder_time: settings.daily_expense_reminder_time ?? undefined,
+            debt_payment_reminder_enabled: settings.debt_payment_reminder_enabled,
+            debt_payment_reminder_time: settings.debt_payment_reminder_time ?? undefined,
+            debt_payment_reminder_days_before: settings.debt_payment_reminder_days_before ?? undefined,
+            salary_reminder_enabled: settings.salary_reminder_enabled,
+            salary_reminder_time: settings.salary_reminder_time ?? undefined,
+            salary_reminder_days_before: settings.salary_reminder_days_before ?? undefined,
+            salary_day: settings.salary_day ?? undefined,
+            push_token: token,
+          }),
+        accessToken
+      );
 
       return {
         token,

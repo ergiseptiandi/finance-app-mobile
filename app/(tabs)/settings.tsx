@@ -23,13 +23,12 @@ import {
   getBiometricState,
   saveBiometricCredentials,
 } from '@/lib/biometric-auth';
+import { ApiRequestError, login } from '@/lib/api/auth';
 import {
-  getNotificationSettings,
   updateNotificationSettings,
   type NotificationSettingsData,
 } from '@/lib/api/notifications';
-import { login } from '@/lib/api/auth';
-import { getAuthSession, saveAuthSession } from '@/lib/auth-session';
+import { getAuthSession, refreshStoredAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
 import { getDevicePushToken, syncDevicePushToken } from '@/lib/push-notifications';
 
@@ -161,14 +160,12 @@ export default function SettingsScreen() {
         setBiometricError('');
 
         try {
-          const response = await getNotificationSettings(session.token.access_token);
+          const syncResult = await syncDevicePushToken(session.token.access_token);
           if (!active) {
             return;
           }
 
-          const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
-          const syncResult = await syncDevicePushToken(session.token.access_token, data);
-          const nextData = syncResult.settings ?? data;
+          const nextData = syncResult.settings ?? DEFAULT_NOTIFICATION_SETTINGS;
 
           setPushEnabled(Boolean(nextData.enabled && nextData.push_token));
           setDailyExpenseReminderEnabled(Boolean(nextData.daily_expense_reminder_enabled));
@@ -264,7 +261,23 @@ export default function SettingsScreen() {
       };
 
       try {
-        const response = await updateNotificationSettings(session.token.access_token, payload);
+        let response;
+
+        try {
+          response = await updateNotificationSettings(session.token.access_token, payload);
+        } catch (error) {
+          if (error instanceof ApiRequestError && error.status === 401) {
+            const refreshed = await refreshStoredAuthSession();
+            if (!refreshed) {
+              throw error;
+            }
+
+            response = await updateNotificationSettings(refreshed.token.access_token, payload);
+          } else {
+            throw error;
+          }
+        }
+
         const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
 
           setPushEnabled(Boolean(data.enabled && data.push_token));
