@@ -27,6 +27,7 @@ import { ApiRequestError, login } from '@/lib/api/auth';
 import {
   updateNotificationSettings,
   type NotificationSettingsData,
+  type UpdateNotificationSettingsPayload,
 } from '@/lib/api/notifications';
 import { getAuthSession, refreshStoredAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
@@ -72,6 +73,47 @@ const formatTimeValue = (date: Date) =>
   `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+type NormalizedNotificationSettings = {
+  enabled: boolean;
+  daily_expense_reminder_enabled: boolean;
+  daily_expense_reminder_time: string;
+  debt_payment_reminder_enabled: boolean;
+  debt_payment_reminder_time: string;
+  debt_payment_reminder_days_before: number;
+  salary_reminder_enabled: boolean;
+  salary_reminder_time: string;
+  salary_reminder_days_before: number;
+  salary_day: number;
+  push_token: string;
+};
+
+const normalizeNotificationSettings = (
+  data?: Partial<NotificationSettingsData> | null
+): NormalizedNotificationSettings => ({
+  enabled: Boolean(data?.enabled ?? DEFAULT_NOTIFICATION_SETTINGS.enabled),
+  daily_expense_reminder_enabled: Boolean(
+    data?.daily_expense_reminder_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_enabled
+  ),
+  daily_expense_reminder_time:
+    data?.daily_expense_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_time ?? '20:00',
+  debt_payment_reminder_enabled: Boolean(
+    data?.debt_payment_reminder_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_enabled
+  ),
+  debt_payment_reminder_time:
+    data?.debt_payment_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_time ?? '09:00',
+  debt_payment_reminder_days_before: Number(
+    data?.debt_payment_reminder_days_before ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_days_before ?? 3
+  ),
+  salary_reminder_enabled: Boolean(data?.salary_reminder_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_enabled),
+  salary_reminder_time:
+    data?.salary_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_time ?? '08:00',
+  salary_reminder_days_before: Number(
+    data?.salary_reminder_days_before ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_days_before ?? 1
+  ),
+  salary_day: Number(data?.salary_day ?? DEFAULT_NOTIFICATION_SETTINGS.salary_day ?? 25),
+  push_token: data?.push_token ?? DEFAULT_NOTIFICATION_SETTINGS.push_token ?? '',
+});
 
 function SettingsRow({
   colors,
@@ -138,6 +180,57 @@ export default function SettingsScreen() {
   const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const pushActive = Boolean(pushEnabled && pushToken);
+  const currentNotificationSettings = useMemo(
+    () => ({
+      enabled: pushEnabled,
+      daily_expense_reminder_enabled: dailyExpenseReminderEnabled,
+      daily_expense_reminder_time: dailyExpenseReminderTime,
+      debt_payment_reminder_enabled: debtPaymentReminderEnabled,
+      debt_payment_reminder_time: debtPaymentReminderTime,
+      debt_payment_reminder_days_before: debtPaymentReminderDaysBefore,
+      salary_reminder_enabled: salaryReminderEnabled,
+      salary_reminder_time: salaryReminderTime,
+      salary_reminder_days_before: salaryReminderDaysBefore,
+      salary_day: salaryDay,
+      push_token: pushToken,
+    }),
+    [
+      dailyExpenseReminderEnabled,
+      dailyExpenseReminderTime,
+      debtPaymentReminderDaysBefore,
+      debtPaymentReminderEnabled,
+      debtPaymentReminderTime,
+      pushEnabled,
+      pushToken,
+      salaryDay,
+      salaryReminderDaysBefore,
+      salaryReminderEnabled,
+      salaryReminderTime,
+    ]
+  );
+
+  const applyNotificationSettings = useCallback(
+    (data?: Partial<NotificationSettingsData> | null, base?: Partial<NotificationSettingsData> | null) => {
+      const nextData = normalizeNotificationSettings({
+        ...DEFAULT_NOTIFICATION_SETTINGS,
+        ...(base ?? {}),
+        ...(data ?? {}),
+      });
+
+      setPushEnabled(Boolean(nextData.enabled && nextData.push_token));
+      setDailyExpenseReminderEnabled(nextData.daily_expense_reminder_enabled);
+      setDailyExpenseReminderTime(nextData.daily_expense_reminder_time);
+      setDebtPaymentReminderEnabled(nextData.debt_payment_reminder_enabled);
+      setDebtPaymentReminderTime(nextData.debt_payment_reminder_time);
+      setDebtPaymentReminderDaysBefore(nextData.debt_payment_reminder_days_before);
+      setSalaryReminderEnabled(nextData.salary_reminder_enabled);
+      setSalaryReminderTime(nextData.salary_reminder_time);
+      setSalaryReminderDaysBefore(nextData.salary_reminder_days_before);
+      setSalaryDay(nextData.salary_day);
+      setPushToken(nextData.push_token);
+    },
+    []
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -165,25 +258,7 @@ export default function SettingsScreen() {
             return;
           }
 
-          const nextData = syncResult.settings ?? DEFAULT_NOTIFICATION_SETTINGS;
-
-          setPushEnabled(Boolean(nextData.enabled && nextData.push_token));
-          setDailyExpenseReminderEnabled(Boolean(nextData.daily_expense_reminder_enabled));
-          setDailyExpenseReminderTime(
-            nextData.daily_expense_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_time ?? '20:00'
-          );
-          setDebtPaymentReminderEnabled(Boolean(nextData.debt_payment_reminder_enabled));
-          setDebtPaymentReminderTime(
-            nextData.debt_payment_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_time ?? '09:00'
-          );
-          setDebtPaymentReminderDaysBefore(Number(nextData.debt_payment_reminder_days_before ?? 3));
-          setSalaryReminderEnabled(Boolean(nextData.salary_reminder_enabled));
-          setSalaryReminderTime(
-            nextData.salary_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_time ?? '08:00'
-          );
-          setSalaryReminderDaysBefore(Number(nextData.salary_reminder_days_before ?? 1));
-          setSalaryDay(Number(nextData.salary_day ?? 25));
-          setPushToken(nextData.push_token ?? '');
+          applyNotificationSettings(syncResult.settings);
         } catch {
           if (active) {
             setNotificationError(t('settings.notificationsLoadError'));
@@ -219,7 +294,7 @@ export default function SettingsScreen() {
       return () => {
         active = false;
       };
-    }, [t])
+    }, [applyNotificationSettings, t])
   );
 
   const persistNotificationSettings = useCallback(
@@ -245,20 +320,56 @@ export default function SettingsScreen() {
       setNotificationSaving(true);
       setNotificationError('');
 
-      const payload = {
-        enabled: nextState.enabled ?? pushEnabled,
-        daily_expense_reminder_enabled: nextState.dailyExpenseReminderEnabled ?? dailyExpenseReminderEnabled,
-        daily_expense_reminder_time: nextState.dailyExpenseReminderTime ?? dailyExpenseReminderTime,
-        debt_payment_reminder_enabled: nextState.debtPaymentReminderEnabled ?? debtPaymentReminderEnabled,
-        debt_payment_reminder_time: nextState.debtPaymentReminderTime ?? debtPaymentReminderTime,
-        debt_payment_reminder_days_before:
-          nextState.debtPaymentReminderDaysBefore ?? debtPaymentReminderDaysBefore,
-        salary_reminder_enabled: nextState.salaryReminderEnabled ?? salaryReminderEnabled,
-        salary_reminder_time: nextState.salaryReminderTime ?? salaryReminderTime,
-        salary_reminder_days_before: nextState.salaryReminderDaysBefore ?? salaryReminderDaysBefore,
-        salary_day: nextState.salaryDay ?? salaryDay,
-        push_token: nextState.pushToken ?? pushToken,
-      };
+      const payload: UpdateNotificationSettingsPayload = {};
+
+      if (nextState.enabled !== undefined) {
+        payload.enabled = nextState.enabled;
+      }
+
+      if (nextState.dailyExpenseReminderEnabled !== undefined) {
+        payload.daily_expense_reminder_enabled = nextState.dailyExpenseReminderEnabled;
+      }
+
+      if (nextState.dailyExpenseReminderTime !== undefined) {
+        payload.daily_expense_reminder_time = nextState.dailyExpenseReminderTime;
+      }
+
+      if (nextState.debtPaymentReminderEnabled !== undefined) {
+        payload.debt_payment_reminder_enabled = nextState.debtPaymentReminderEnabled;
+      }
+
+      if (nextState.debtPaymentReminderTime !== undefined) {
+        payload.debt_payment_reminder_time = nextState.debtPaymentReminderTime;
+      }
+
+      if (nextState.debtPaymentReminderDaysBefore !== undefined) {
+        payload.debt_payment_reminder_days_before = nextState.debtPaymentReminderDaysBefore;
+      }
+
+      if (nextState.salaryReminderEnabled !== undefined) {
+        payload.salary_reminder_enabled = nextState.salaryReminderEnabled;
+      }
+
+      if (nextState.salaryReminderTime !== undefined) {
+        payload.salary_reminder_time = nextState.salaryReminderTime;
+      }
+
+      if (nextState.salaryReminderDaysBefore !== undefined) {
+        payload.salary_reminder_days_before = nextState.salaryReminderDaysBefore;
+      }
+
+      if (nextState.salaryDay !== undefined) {
+        payload.salary_day = nextState.salaryDay;
+      }
+
+      if (nextState.pushToken !== undefined) {
+        payload.push_token = nextState.pushToken;
+      }
+
+      if (Object.keys(payload).length === 0) {
+        setNotificationSaving(false);
+        return true;
+      }
 
       try {
         let response;
@@ -278,39 +389,22 @@ export default function SettingsScreen() {
           }
         }
 
-        const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
-
-          setPushEnabled(Boolean(data.enabled && data.push_token));
-        setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
-        setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? '20:00');
-        setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
-        setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? '09:00');
-        setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
-        setSalaryReminderEnabled(Boolean(data.salary_reminder_enabled));
-        setSalaryReminderTime(data.salary_reminder_time ?? '08:00');
-        setSalaryReminderDaysBefore(Number(data.salary_reminder_days_before ?? 1));
-        setSalaryDay(Number(data.salary_day ?? 25));
-        setPushToken(data.push_token ?? '');
+        applyNotificationSettings(response.Data ?? payload, currentNotificationSettings);
         return true;
-      } catch {
-        setNotificationError(t('settings.notificationsSaveError'));
+      } catch (error) {
+        setNotificationError(
+          error instanceof ApiRequestError && error.message
+            ? error.message
+            : t('settings.notificationsSaveError')
+        );
         return false;
       } finally {
         setNotificationSaving(false);
       }
     },
     [
-      dailyExpenseReminderEnabled,
-      dailyExpenseReminderTime,
-      debtPaymentReminderDaysBefore,
-      debtPaymentReminderEnabled,
-      debtPaymentReminderTime,
-      pushEnabled,
-      pushToken,
-      salaryDay,
-      salaryReminderDaysBefore,
-      salaryReminderEnabled,
-      salaryReminderTime,
+      applyNotificationSettings,
+      currentNotificationSettings,
       t,
     ]
   );

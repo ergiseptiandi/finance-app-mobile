@@ -219,10 +219,17 @@ export const syncDevicePushToken = async (
       token = await getGrantedDevicePushToken();
 
       if (!token) {
+        const settingsResponse = currentSettings
+          ? { Data: currentSettings }
+          : await retryWithRefreshedSession((tokenValue) => getNotificationSettings(tokenValue), accessToken).catch(
+              () => null
+            );
+        const settings = settingsResponse?.Data ?? currentSettings ?? null;
+
         debugPush('sync', { status: 'skipped', reason: 'missing-token' });
         return {
           token: null,
-          settings: currentSettings ?? null,
+          settings,
           synced: false,
         } satisfies SyncPushTokenResult;
       }
