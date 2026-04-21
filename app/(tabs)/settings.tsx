@@ -130,6 +130,7 @@ export default function SettingsScreen() {
   const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
+  const pushActive = Boolean(pushEnabled && pushToken);
 
   useFocusEffect(
     useCallback(() => {
@@ -158,7 +159,7 @@ export default function SettingsScreen() {
           }
 
           const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
-          setPushEnabled(Boolean(data.enabled));
+          setPushEnabled(Boolean(data.enabled && data.push_token));
           setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
           setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_time ?? '20:00');
           setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
@@ -237,10 +238,10 @@ export default function SettingsScreen() {
         const response = await updateNotificationSettings(session.token.access_token, payload);
         const data = response.Data ?? DEFAULT_NOTIFICATION_SETTINGS;
 
-        setPushEnabled(Boolean(data.enabled));
-        setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
-        setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? '20:00');
-        setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
+          setPushEnabled(Boolean(data.enabled && data.push_token));
+          setDailyExpenseReminderEnabled(Boolean(data.daily_expense_reminder_enabled));
+          setDailyExpenseReminderTime(data.daily_expense_reminder_time ?? '20:00');
+          setDebtPaymentReminderEnabled(Boolean(data.debt_payment_reminder_enabled));
         setDebtPaymentReminderTime(data.debt_payment_reminder_time ?? '09:00');
         setDebtPaymentReminderDaysBefore(Number(data.debt_payment_reminder_days_before ?? 3));
         setPushToken(data.push_token ?? '');
@@ -348,7 +349,7 @@ export default function SettingsScreen() {
       return;
     }
 
-    if (pushEnabled) {
+    if (pushActive) {
       await persistNotificationSettings({ enabled: false, pushToken: '' });
       return;
     }
@@ -361,7 +362,7 @@ export default function SettingsScreen() {
     }
 
     await persistNotificationSettings({ enabled: true, pushToken: token });
-  }, [notificationLoading, notificationSaving, persistNotificationSettings, pushEnabled, t]);
+  }, [notificationLoading, notificationSaving, persistNotificationSettings, pushActive, t]);
 
   const handleDailyReminderToggle = useCallback(async () => {
     if (notificationLoading || notificationSaving) {
@@ -643,10 +644,10 @@ export default function SettingsScreen() {
                   disabled={notificationLoading || notificationSaving}
                   style={[
                     styles.switchTrack,
-                    pushEnabled && styles.switchTrackPrimary,
+                    pushActive && styles.switchTrackPrimary,
                     (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
                   ]}>
-                  <View style={[styles.switchThumb, pushEnabled && styles.switchThumbPrimary]} />
+                  <View style={[styles.switchThumb, pushActive && styles.switchThumbPrimary]} />
                 </Pressable>
               }
             />
