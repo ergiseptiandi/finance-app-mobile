@@ -22,6 +22,7 @@ type SyncPushTokenResult = {
 
 const DEFAULT_NOTIFICATION_CHANNEL_ID = 'finance-go-default';
 let pushTokenSyncInFlight: Promise<SyncPushTokenResult> | null = null;
+const normalizePushToken = (value?: string | null) => value?.trim() ?? '';
 
 const debugPush = (...args: unknown[]) => {
   if (__DEV__) {
@@ -113,12 +114,14 @@ const getGrantedDevicePushToken = async () => {
   const token = await Notifications.getDevicePushTokenAsync();
 
   if (typeof token === 'string') {
-    debugPush('token', { granted: true, token });
-    return token;
+    const normalized = normalizePushToken(token);
+    debugPush('token', { granted: true, token: normalized });
+    return normalized;
   }
 
-  debugPush('token', { granted: true, token: token.data ?? null });
-  return token.data ?? null;
+  const normalized = normalizePushToken(token.data ?? null);
+  debugPush('token', { granted: true, token: normalized || null });
+  return normalized || null;
 };
 
 export const registerNotificationHandler = () => {
@@ -240,11 +243,11 @@ export const syncDevicePushToken = async (
 
       const settings = settingsResponse.Data ?? null;
 
-      if (!settings || settings.push_token === token) {
+      if (!settings || normalizePushToken(settings.push_token) === token) {
         debugPush('sync', {
           status: 'noop',
           token,
-          backendToken: settings?.push_token ?? null,
+          backendToken: normalizePushToken(settings?.push_token) || null,
         });
         return {
           token,
@@ -266,7 +269,7 @@ export const syncDevicePushToken = async (
             salary_reminder_time: settings.salary_reminder_time ?? undefined,
             salary_reminder_days_before: settings.salary_reminder_days_before ?? undefined,
             salary_day: settings.salary_day ?? undefined,
-            push_token: token,
+            push_token: normalizePushToken(token),
           }),
         accessToken
       );
@@ -294,7 +297,7 @@ export const syncDevicePushToken = async (
     debugPush('sync', {
       status: result.synced ? 'updated' : 'completed',
       token: result.token,
-      backendToken: result.settings?.push_token ?? null,
+      backendToken: normalizePushToken(result.settings?.push_token) || null,
       synced: result.synced,
     });
     return result;

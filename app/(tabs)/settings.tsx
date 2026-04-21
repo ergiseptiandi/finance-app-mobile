@@ -48,13 +48,13 @@ type SettingsRowProps = {
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsData = {
-  enabled: false,
-  daily_expense_reminder_enabled: false,
+  enabled: true,
+  daily_expense_reminder_enabled: true,
   daily_expense_reminder_time: '20:00',
-  debt_payment_reminder_enabled: false,
+  debt_payment_reminder_enabled: true,
   debt_payment_reminder_time: '09:00',
   debt_payment_reminder_days_before: 3,
-  salary_reminder_enabled: false,
+  salary_reminder_enabled: true,
   salary_reminder_time: '08:00',
   salary_reminder_days_before: 1,
   salary_day: 25,
@@ -88,6 +88,8 @@ type NormalizedNotificationSettings = {
   push_token: string;
 };
 
+const normalizePushToken = (value?: string | null) => value?.trim() ?? '';
+
 const normalizeNotificationSettings = (
   data?: Partial<NotificationSettingsData> | null
 ): NormalizedNotificationSettings => ({
@@ -112,7 +114,7 @@ const normalizeNotificationSettings = (
     data?.salary_reminder_days_before ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_days_before ?? 1
   ),
   salary_day: Number(data?.salary_day ?? DEFAULT_NOTIFICATION_SETTINGS.salary_day ?? 25),
-  push_token: data?.push_token ?? DEFAULT_NOTIFICATION_SETTINGS.push_token ?? '',
+  push_token: normalizePushToken(data?.push_token ?? DEFAULT_NOTIFICATION_SETTINGS.push_token ?? ''),
 });
 
 function SettingsRow({
@@ -179,7 +181,7 @@ export default function SettingsScreen() {
   const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
-  const pushActive = Boolean(pushEnabled && pushToken);
+  const pushTokenReady = Boolean(pushToken);
   const currentNotificationSettings = useMemo(
     () => ({
       enabled: pushEnabled,
@@ -217,7 +219,7 @@ export default function SettingsScreen() {
         ...(data ?? {}),
       });
 
-      setPushEnabled(Boolean(nextData.enabled && nextData.push_token));
+      setPushEnabled(Boolean(nextData.enabled));
       setDailyExpenseReminderEnabled(nextData.daily_expense_reminder_enabled);
       setDailyExpenseReminderTime(nextData.daily_expense_reminder_time);
       setDebtPaymentReminderEnabled(nextData.debt_payment_reminder_enabled);
@@ -493,20 +495,28 @@ export default function SettingsScreen() {
       return;
     }
 
-    if (pushActive) {
-      await persistNotificationSettings({ enabled: false, pushToken: '' });
+    if (pushEnabled) {
+      await persistNotificationSettings({ enabled: false });
+      return;
+    }
+
+    if (pushTokenReady) {
+      await persistNotificationSettings({ enabled: true });
       return;
     }
 
     const token = await getDevicePushToken();
 
     if (!token) {
-      setNotificationError(t('settings.pushTokenUnavailable'));
+      const saved = await persistNotificationSettings({ enabled: true });
+      if (saved) {
+        setNotificationError(t('settings.pushTokenUnavailable'));
+      }
       return;
     }
 
     await persistNotificationSettings({ enabled: true, pushToken: token });
-  }, [notificationLoading, notificationSaving, persistNotificationSettings, pushActive, t]);
+  }, [notificationLoading, notificationSaving, persistNotificationSettings, pushEnabled, pushTokenReady, t]);
 
   const handleDailyReminderToggle = useCallback(async () => {
     if (notificationLoading || notificationSaving) {
@@ -818,17 +828,17 @@ export default function SettingsScreen() {
               title={t('settings.notificationsLabel')}
               subtitle={t('settings.notificationsLabelMeta')}
               iconTone="primary"
-              accent
+              accent={pushEnabled}
               rightSlot={
                 <Pressable
                   onPress={() => void handlePushToggle()}
                   disabled={notificationLoading || notificationSaving}
                   style={[
                     styles.switchTrack,
-                    pushActive && styles.switchTrackPrimary,
+                    pushEnabled && styles.switchTrackPrimary,
                     (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
                   ]}>
-                  <View style={[styles.switchThumb, pushActive && styles.switchThumbPrimary]} />
+                  <View style={[styles.switchThumb, pushEnabled && styles.switchThumbPrimary]} />
                 </Pressable>
               }
             />
