@@ -4,11 +4,11 @@ import { Tabs, useSegments } from 'expo-router';
 
 import { KineticTabBar } from '@/components/kinetic-tab-bar';
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useAppTheme } from '@/providers/theme-provider';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const { colorScheme } = useAppTheme();
   const colors = Colors[colorScheme];
   const { t } = useAppLanguage();
   const segments = useSegments();
@@ -29,7 +29,7 @@ export default function TabLayout() {
   return (
     <Tabs
       lazy={false}
-      tabBar={(props) => <KineticTabBar {...props} />}
+      tabBar={(props) => <KineticTabBar {...props} colors={colors} />}
       screenOptions={{
         headerShown: false,
         sceneStyle: {

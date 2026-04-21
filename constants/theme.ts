@@ -143,8 +143,8 @@ const dark = {
   shellTextMuted: alpha('#f6f6ff', 0.56),
   shellTextSoft: alpha('#f6f6ff', 0.36),
   shellTabBar: alpha('#0b1630', 0.96),
-  shellTabActive: 'rgba(14, 44, 96, 0.7)',
-  shellTabIconActive: 'rgba(77, 142, 255, 0.18)',
+  shellTabActive: alpha('#6e9fff', 0.18),
+  shellTabIconActive: alpha('#6e9fff', 0.24),
   shellFab: '#64d98a',
   shellFabIcon: '#06172f',
 };

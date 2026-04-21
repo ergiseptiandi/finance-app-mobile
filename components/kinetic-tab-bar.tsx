@@ -5,8 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { Text, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, alpha } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { alpha, type AppColorTheme } from '@/constants/theme';
 
 const TAB_ICONS: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
   index: 'home',
@@ -16,10 +15,12 @@ const TAB_ICONS: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = 
   settings: 'cog-outline',
 };
 
-export function KineticTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+type KineticTabBarProps = BottomTabBarProps & {
+  colors: AppColorTheme;
+};
+
+export function KineticTabBar({ state, descriptors, navigation, colors }: KineticTabBarProps) {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
   const styles = createStyles(colors);
 
   return (
@@ -91,7 +92,7 @@ export function KineticTabBar({ state, descriptors, navigation }: BottomTabBarPr
   );
 }
 
-const createStyles = (colors: (typeof Colors)['light']) =>
+const createStyles = (colors: AppColorTheme) =>
   StyleSheet.create({
     wrapper: {
       position: 'absolute',
