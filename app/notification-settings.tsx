@@ -6,7 +6,8 @@ import {
   Text,
   View,
   Switch,
-  type ViewStyle,
+  Linking,
+  Platform,
 } from 'react-native';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -40,13 +41,8 @@ const debugNotificationSettings = (...args: unknown[]) => {
   }
 };
 
-// Available notification sounds
-const NOTIFICATION_SOUNDS = [
-  { id: 'default', label: 'Default System', icon: 'cellphone' },
-  { id: 'none', label: 'Silent (No Sound)', icon: 'volume-off' },
-];
-
-type NotificationSoundOption = typeof NOTIFICATION_SOUNDS[number];
+const NOTIFICATION_CHANNEL_ID = 'finance-go-default';
+const ANDROID_PACKAGE_NAME = 'com.paidevc.financego';
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsData = {
   enabled: true,
@@ -141,10 +137,6 @@ export default function NotificationSettingsScreen() {
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [notificationSaving, setNotificationSaving] = useState(false);
   const [notificationError, setNotificationError] = useState('');
-
-  // Sound settings
-  const [selectedSound, setSelectedSound] = useState<string>('default');
-  const [soundPickerOpen, setSoundPickerOpen] = useState(false);
 
   // Test notification states
   const [testNotificationSending, setTestNotificationSending] = useState(false);
@@ -247,21 +239,6 @@ export default function NotificationSettingsScreen() {
     void loadSessionAndNotifications();
     return () => { active = false; };
   }, [applyNotificationSettings]);
-
-  // Load saved sound preference
-  useEffect(() => {
-    const loadSoundPreference = async () => {
-      try {
-        const channel = await Notifications.getNotificationChannelAsync('finance-go-default');
-        if (channel?.sound) {
-          setSelectedSound(channel.sound === 'default' ? 'default' : channel.sound);
-        }
-      } catch {
-        // Use default
-      }
-    };
-    loadSoundPreference();
-  }, []);
 
   const persistNotificationSettings = useCallback(
     async (nextState: {
@@ -400,23 +377,34 @@ export default function NotificationSettingsScreen() {
     await persistNotificationSettings({ salaryReminderDaysBefore: clampNumber(salaryReminderDaysBefore + delta, 0, 31) });
   }, [notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderDaysBefore]);
 
-  const handleSoundChange = useCallback(async (soundId: string) => {
-    setSelectedSound(soundId);
-    setSoundPickerOpen(false);
+  const handleAdjustDebtDaysBefore = useCallback(async (delta: number) => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ debtPaymentReminderDaysBefore: clampNumber(debtPaymentReminderDaysBefore + delta, 0, 31) });
+  }, [debtPaymentReminderDaysBefore, notificationLoading, notificationSaving, persistNotificationSettings]);
 
-    // Update notification channel with new sound
+  const handleOpenNotificationSoundSettings = useCallback(async () => {
     try {
-      await Notifications.setNotificationChannelAsync('finance-go-default', {
+      await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
         name: 'Finance GO Alerts',
         importance: Notifications.AndroidImportance.MAX,
-        sound: soundId === 'none' ? null : soundId,
+        sound: 'default',
         enableVibrate: true,
         vibrationPattern: [0, 250, 250, 250],
         showBadge: true,
       });
-      debugNotificationSettings('sound-updated', { sound: soundId });
+
+      if (Platform.OS === 'android') {
+        await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
+          { key: 'android.provider.extra.APP_PACKAGE', value: ANDROID_PACKAGE_NAME },
+          { key: 'android.provider.extra.CHANNEL_ID', value: NOTIFICATION_CHANNEL_ID },
+        ]);
+        return;
+      }
+
+      await Linking.openSettings();
     } catch (error) {
-      debugNotificationSettings('sound-update-failed', { error });
+      debugNotificationSettings('sound-settings-open-failed', { error });
+      await Linking.openSettings().catch(() => {});
     }
   }, []);
 
@@ -435,8 +423,6 @@ export default function NotificationSettingsScreen() {
       setTestNotificationSending(false);
     }
   }, [testNotificationSending]);
-
-  const currentSoundLabel = NOTIFICATION_SOUNDS.find(s => s.id === selectedSound)?.label || 'Default System';
 
   return (
     <View style={styles.screen}>
@@ -477,52 +463,26 @@ export default function NotificationSettingsScreen() {
           <Text style={styles.sectionTitle}>Suara Notifikasi</Text>
           <View style={styles.soundCard}>
             <Pressable
-              onPress={() => setSoundPickerOpen(!soundPickerOpen)}
+              onPress={() => void handleOpenNotificationSoundSettings()}
               style={styles.soundRow}>
               <View style={styles.soundLeft}>
                 <View style={styles.soundIcon}>
                   <MaterialCommunityIcons name="volume-high" size={22} color={colors.primary} />
                 </View>
                 <View style={styles.soundCopy}>
-                  <Text style={styles.soundTitle}>Sound</Text>
-                  <Text style={styles.soundSubtitle}>{currentSoundLabel}</Text>
+                  <Text style={styles.soundTitle}>Suara bawaan Android</Text>
+                  <Text style={styles.soundSubtitle}>Pilih nada notifikasi Finance GO dari pengaturan sistem</Text>
                 </View>
               </View>
               <MaterialCommunityIcons
-                name={soundPickerOpen ? 'chevron-up' : 'chevron-down'}
+                name="open-in-new"
                 size={24}
                 color={colors.icon}
               />
             </Pressable>
-
-            {soundPickerOpen && (
-              <View style={styles.soundPicker}>
-                {NOTIFICATION_SOUNDS.map((sound) => (
-                  <Pressable
-                    key={sound.id}
-                    onPress={() => handleSoundChange(sound.id)}
-                    style={[
-                      styles.soundOption,
-                      selectedSound === sound.id && styles.soundOptionActive,
-                    ]}>
-                    <MaterialCommunityIcons
-                      name={sound.icon as keyof typeof MaterialCommunityIcons.glyphMap}
-                      size={20}
-                      color={selectedSound === sound.id ? colors.primary : colors.icon}
-                    />
-                    <Text style={[
-                      styles.soundOptionText,
-                      selectedSound === sound.id && styles.soundOptionTextActive,
-                    ]}>
-                      {sound.label}
-                    </Text>
-                    {selectedSound === sound.id && (
-                      <MaterialCommunityIcons name="check" size={20} color={colors.primary} />
-                    )}
-                  </Pressable>
-                ))}
-              </View>
-            )}
+            <Text style={styles.soundHelperText}>
+              Finance GO memakai channel "Finance GO Alerts". Di Android, suara channel diubah dari pengaturan sistem seperti WhatsApp.
+            </Text>
 
             <Pressable
               onPress={() => void handleSendTestNotification()}
@@ -591,11 +551,11 @@ export default function NotificationSettingsScreen() {
                 <View style={styles.counterRow}>
                   <Text style={styles.counterLabel}>Hari sebelum:</Text>
                   <View style={styles.counterGroup}>
-                    <Pressable onPress={() => handleAdjustSalaryDaysBefore(-1)} style={styles.counterButton}>
+                    <Pressable onPress={() => void handleAdjustDebtDaysBefore(-1)} style={styles.counterButton}>
                       <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
                     </Pressable>
                     <Text style={styles.counterValue}>{debtPaymentReminderDaysBefore}</Text>
-                    <Pressable onPress={() => handleAdjustSalaryDaysBefore(1)} style={styles.counterButton}>
+                    <Pressable onPress={() => void handleAdjustDebtDaysBefore(1)} style={styles.counterButton}>
                       <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
                     </Pressable>
                   </View>
@@ -795,31 +755,14 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     soundSubtitle: {
       fontSize: 13,
       color: colors.shellTextMuted,
+      lineHeight: 18,
+      maxWidth: 220,
     },
-    soundPicker: {
-      backgroundColor: colors.shellCardMuted,
-      borderRadius: 14,
-      padding: 8,
-      gap: 4,
-    },
-    soundOption: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      padding: 12,
-      borderRadius: 10,
-    },
-    soundOptionActive: {
-      backgroundColor: alpha(colors.primary, 0.1),
-    },
-    soundOptionText: {
-      flex: 1,
-      fontSize: 14,
+    soundHelperText: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
       fontWeight: '600',
-      color: colors.shellTextPrimary,
-    },
-    soundOptionTextActive: {
-      color: colors.primary,
     },
     testButton: {
       flexDirection: 'row',
