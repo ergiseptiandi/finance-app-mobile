@@ -173,6 +173,10 @@ export const resolveNotificationRoute = (data: NotificationData) => {
       return '/activity?compose=income';
     }
 
+    if (data.route === '/reports') {
+      return '/reports';
+    }
+
     return data.route;
   }
 
@@ -188,6 +192,14 @@ export const resolveNotificationRoute = (data: NotificationData) => {
 
   if (kind === 'salary_reminder') {
     return '/activity?compose=income';
+  }
+
+  if (kind === 'budget_warning' || kind === 'weekly_summary' || kind === 'goal_reminder') {
+    return '/reports';
+  }
+
+  if (kind === 'large_transaction') {
+    return '/activity';
   }
 
   return '/';
