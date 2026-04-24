@@ -726,6 +726,7 @@ const handleAdjustSalaryDaysBefore = useCallback(
               title={t('settings.changePassword')}
               subtitle={t('settings.changePasswordMeta')}
               iconTone="primary"
+              onPress={() => router.push('/change-password')}
               rightSlot={<MaterialCommunityIcons name="chevron-right" size={22} color={colors.outlineVariant} />}
             />
 
