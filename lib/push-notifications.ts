@@ -414,9 +414,9 @@ export const sendTestNotification = async () => {
       title: 'Finance GO - Test Notification',
       body: 'Ini adalah notifikasi test. Jika kamu melihat ini, notifikasi berfungsi dengan baik!',
       data: { kind: 'test', route: '/' },
-      sound: 'default',
+      sound: true,
     },
-    trigger: null,
+    trigger: { channelId: DEFAULT_NOTIFICATION_CHANNEL_ID },
   });
 
   debugPush('test-notification', { sent: true });
