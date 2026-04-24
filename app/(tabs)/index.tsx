@@ -35,6 +35,7 @@ import {
 } from '@/lib/api/dashboard';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
+import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
 import { useAppLanguage } from '@/providers/language-provider';
 
 type TrendMode = 'daily' | 'monthly';
@@ -325,6 +326,7 @@ export default function DashboardScreen() {
   const [monthlySpending, setMonthlySpending] = useState<MonthlySpendingItem[]>([]);
   const [comparison, setComparison] = useState<DashboardComparisonData | null>(null);
   const [displayName, setDisplayName] = useState('Kinetic Pulse');
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [filters, setFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
   const [draftFilters, setDraftFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -488,10 +490,35 @@ export default function DashboardScreen() {
     [comparison, dailySpending, hasDashboardSnapshot, monthlySpending, summary, t]
   );
 
+  const loadUnreadNotifications = useCallback(async () => {
+    try {
+      const session = await getAuthSession();
+
+      if (!session) {
+        setUnreadNotificationCount(0);
+        return;
+      }
+
+      try {
+        setUnreadNotificationCount(await loadUnreadNotificationCount(session.token.access_token));
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 401 && session.token.refresh_token) {
+          const refreshed = await refreshStoredAuthSession();
+          if (refreshed) {
+            setUnreadNotificationCount(await loadUnreadNotificationCount(refreshed.token.access_token));
+          }
+        }
+      }
+    } catch {
+      setUnreadNotificationCount(0);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       void loadDashboard(false, filtersRef.current);
-    }, [loadDashboard])
+      void loadUnreadNotifications();
+    }, [loadDashboard, loadUnreadNotifications])
   );
 
   const openFilterModal = useCallback(() => {
@@ -767,6 +794,7 @@ export default function DashboardScreen() {
             refreshing={refreshing}
             onRefresh={() => {
               void loadDashboard(true, filtersRef.current);
+              void loadUnreadNotifications();
             }}
             tintColor={colors.primary}
           />
@@ -784,6 +812,13 @@ export default function DashboardScreen() {
 
           <Pressable onPress={() => router.push('/notifications')} style={styles.iconButton}>
             <MaterialCommunityIcons name="bell-outline" size={20} color={colors.shellTextPrimary} />
+            {unreadNotificationCount > 0 ? (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
         </View>
 
@@ -1377,6 +1412,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       letterSpacing: -0.8,
     },
     iconButton: {
+      position: 'relative',
       width: 40,
       height: 40,
       borderRadius: 12,
@@ -1385,6 +1421,26 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       backgroundColor: colors.shellCard,
       borderWidth: 1,
       borderColor: colors.shellBorder,
+    },
+    notificationBadge: {
+      position: 'absolute',
+      top: -5,
+      right: -5,
+      minWidth: 18,
+      height: 18,
+      borderRadius: 999,
+      paddingHorizontal: 4,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.danger,
+      borderWidth: 2,
+      borderColor: colors.shellBackground,
+    },
+    notificationBadgeText: {
+      color: colors.onPrimary,
+      fontSize: 9,
+      lineHeight: 12,
+      fontWeight: '900',
     },
     loadingState: {
       marginTop: 20,

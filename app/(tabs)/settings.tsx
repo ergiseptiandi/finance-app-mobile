@@ -31,6 +31,7 @@ import {
 } from '@/lib/api/notifications';
 import { getAuthSession, refreshStoredAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
+import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
 import {
   getDevicePushToken,
   hasGrantedNotificationPermission,
@@ -185,6 +186,7 @@ export default function SettingsScreen() {
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [notificationSaving, setNotificationSaving] = useState(false);
   const [notificationError, setNotificationError] = useState('');
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(true);
@@ -247,6 +249,22 @@ const [signingOut, setSigningOut] = useState(false);
     []
   );
 
+  const refreshUnreadNotificationCount = useCallback(async (accessToken: string) => {
+    try {
+      setUnreadNotificationCount(await loadUnreadNotificationCount(accessToken));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        const refreshed = await refreshStoredAuthSession();
+        if (refreshed) {
+          setUnreadNotificationCount(await loadUnreadNotificationCount(refreshed.token.access_token));
+          return;
+        }
+      }
+
+      setUnreadNotificationCount(0);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -261,6 +279,7 @@ const [signingOut, setSigningOut] = useState(false);
 
         setDisplayName(session.user.name || 'Alex Sterling');
         setEmail(session.user.email || 'alex.sterling@ledger.io');
+        void refreshUnreadNotificationCount(session.token.access_token);
 
         setNotificationLoading(true);
         setNotificationError('');
@@ -326,7 +345,7 @@ const [signingOut, setSigningOut] = useState(false);
       return () => {
         active = false;
       };
-    }, [applyNotificationSettings, t])
+    }, [applyNotificationSettings, refreshUnreadNotificationCount, t])
   );
 
   const persistNotificationSettings = useCallback(
@@ -886,7 +905,18 @@ const handleAdjustSalaryDaysBefore = useCallback(
                 router.push('/notifications');
               });
             }}
-            rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
+            rightSlot={
+              <View style={styles.notificationInboxRightSlot}>
+                {unreadNotificationCount > 0 ? (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                    </Text>
+                  </View>
+                ) : null}
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />
+              </View>
+            }
           />
 </View>
 
@@ -1354,6 +1384,27 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
 notificationInboxRow: {
       marginBottom: 12,
+    },
+    notificationInboxRightSlot: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flexShrink: 0,
+    },
+    notificationBadge: {
+      minWidth: 22,
+      height: 22,
+      borderRadius: 999,
+      paddingHorizontal: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.danger,
+    },
+    notificationBadgeText: {
+      color: colors.onPrimary,
+      fontSize: 10,
+      lineHeight: 14,
+      fontWeight: '900',
     },
     logoutWrap: {
       paddingTop: 8,
