@@ -470,8 +470,8 @@ export default function NotificationSettingsScreen() {
                   <MaterialCommunityIcons name="volume-high" size={22} color={colors.primary} />
                 </View>
                 <View style={styles.soundCopy}>
-                  <Text style={styles.soundTitle}>Suara bawaan Android</Text>
-                  <Text style={styles.soundSubtitle}>Pilih nada notifikasi Finance GO dari pengaturan sistem</Text>
+                  <Text style={styles.soundTitle}>Suara Notifikasi</Text>
+                  <Text style={styles.soundSubtitle}>Pilih nada notifikasi Finance GO dari pengaturan perangkat</Text>
                 </View>
               </View>
               <MaterialCommunityIcons
@@ -481,7 +481,7 @@ export default function NotificationSettingsScreen() {
               />
             </Pressable>
             <Text style={styles.soundHelperText}>
-              Finance GO memakai channel "Finance GO Alerts". Di Android, suara channel diubah dari pengaturan sistem seperti WhatsApp.
+              Kamu bisa memilih nada bawaan perangkat untuk notifikasi Finance GO melalui pengaturan aplikasi.
             </Text>
 
             <Pressable
