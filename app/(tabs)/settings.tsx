@@ -35,7 +35,6 @@ import {
   getDevicePushToken,
   hasGrantedNotificationPermission,
   loadNotificationSettings,
-  sendTestNotification,
   syncDevicePushToken,
 } from '@/lib/push-notifications';
 
@@ -193,9 +192,7 @@ export default function SettingsScreen() {
   const [biometricError, setBiometricError] = useState('');
   const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState('');
-  const [signingOut, setSigningOut] = useState(false);
-  const [testNotificationSending, setTestNotificationSending] = useState(false);
-  const [testNotificationResult, setTestNotificationResult] = useState<'idle' | 'success' | 'error'>('idle');
+const [signingOut, setSigningOut] = useState(false);
   const pushTokenReady = Boolean(pushToken);
   const pushToggleActive = Boolean(pushEnabled && notificationPermissionGranted);
   const currentNotificationSettings = useMemo(
@@ -661,26 +658,8 @@ const handleAdjustSalaryDaysBefore = useCallback(
 
       await persistNotificationSettings({ salaryReminderDaysBefore: clampNumber(salaryReminderDaysBefore + delta, 0, 31) });
     },
-    [notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderDaysBefore]
+[notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderDaysBefore]
   );
-
-  const handleSendTestNotification = useCallback(async () => {
-    if (testNotificationSending) {
-      return;
-    }
-
-    setTestNotificationSending(true);
-    setTestNotificationResult('idle');
-
-    try {
-      const sent = await sendTestNotification();
-      setTestNotificationResult(sent ? 'success' : 'error');
-    } catch {
-      setTestNotificationResult('error');
-    } finally {
-      setTestNotificationSending(false);
-    }
-  }, [testNotificationSending]);
 
   const initials = useMemo(() => {
     return displayName
@@ -878,8 +857,23 @@ const handleAdjustSalaryDaysBefore = useCallback(
           </View>
         </View>
 
-        <View style={styles.section}>
+<View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings.notifications')}</Text>
+          <SettingsRow
+            colors={colors}
+            icon="bell-ring-outline"
+            title={t('settings.notifications')}
+            subtitle="Kelola suara, pengingat, dan notifikasi"
+            iconTone="primary"
+            onPress={() => {
+              showTransitionOverlay();
+              requestAnimationFrame(() => {
+                router.push('/notification-settings');
+              });
+            }}
+            rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
+            style={styles.notificationInboxRow}
+          />
           <SettingsRow
             colors={colors}
             icon="inbox-outline"
@@ -893,206 +887,8 @@ const handleAdjustSalaryDaysBefore = useCallback(
               });
             }}
             rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
-            style={styles.notificationInboxRow}
           />
-          <View style={styles.gridTwo}>
-            <SettingsRow
-              colors={colors}
-              icon="bell-ring-outline"
-              title={t('settings.notificationsLabel')}
-              subtitle={t('settings.notificationsLabelMeta')}
-              iconTone="primary"
-              accent={pushToggleActive}
-              rightSlot={
-                <Pressable
-                  onPress={() => void handlePushToggle()}
-                  disabled={notificationLoading || notificationSaving}
-                  style={[
-                    styles.switchTrack,
-                    pushToggleActive && styles.switchTrackPrimary,
-                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                  ]}>
-                  <View style={[styles.switchThumb, pushToggleActive && styles.switchThumbPrimary]} />
-                </Pressable>
-              }
-            />
-
-            <SettingsRow
-              colors={colors}
-              icon="cash-fast"
-              title={t('settings.dailyExpenseReminder')}
-              subtitle={t('settings.dailyExpenseReminderMeta')}
-              accent={dailyExpenseReminderEnabled}
-              onPress={() => void handleDailyReminderToggle()}
-              rightSlot={
-                <Pressable
-                  onPress={() => void handlePickReminderTime('daily')}
-                  disabled={notificationLoading || notificationSaving}
-                  style={[
-                    styles.notificationTimeButton,
-                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                  ]}>
-                  <Text style={styles.notificationTimeText}>{dailyExpenseReminderTime}</Text>
-                  <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
-                </Pressable>
-              }
-            />
-
-            <SettingsRow
-              colors={colors}
-              icon="calendar-clock"
-              title={t('settings.debtPaymentReminder')}
-              subtitle={t('settings.debtPaymentReminderMeta')}
-              iconTone="secondary"
-              accent={debtPaymentReminderEnabled}
-              onPress={() => void handleDebtReminderToggle()}
-              rightSlot={
-                <Pressable
-                  onPress={() => void handlePickReminderTime('debt')}
-                  disabled={notificationLoading || notificationSaving}
-                  style={[
-                    styles.notificationTimeButton,
-                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                  ]}>
-                  <Text style={styles.notificationTimeText}>{debtPaymentReminderTime}</Text>
-                  <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
-                </Pressable>
-              }
-            />
-
-            <SettingsRow
-              colors={colors}
-              icon="cash-plus"
-              title={t('settings.salaryReminder')}
-              subtitle={t('settings.salaryReminderMeta')}
-              iconTone="secondary"
-              accent={salaryReminderEnabled}
-              onPress={() => void handleSalaryReminderToggle()}
-              rightSlot={
-                <Pressable
-                  onPress={() => void handleSalaryReminderToggle()}
-                  disabled={notificationLoading || notificationSaving}
-                  style={[
-                    styles.switchTrack,
-                    salaryReminderEnabled && styles.switchTrackActive,
-                    (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                  ]}>
-                  <View style={[styles.switchThumb, salaryReminderEnabled && styles.switchThumbActive]} />
-                </Pressable>
-              }
-            />
-
-            {salaryReminderEnabled ? (
-              <View style={styles.notificationInfoCard}>
-                <View style={styles.notificationStatusRow}>
-                  <MaterialCommunityIcons name="cash-plus" size={16} color={colors.secondary} />
-                  <Text style={styles.notificationSuccessText}>{t('settings.salaryReminderEnabled')}</Text>
-                </View>
-
-                <View style={styles.notificationMetaRow}>
-                  <Text style={styles.notificationMetaLabel}>{t('settings.salaryReminderTime')}</Text>
-                  <Pressable
-                    onPress={() => void handlePickReminderTime('salary')}
-                    disabled={notificationLoading || notificationSaving}
-                    style={({ pressed }) => [
-                      styles.notificationTimeButton,
-                      pressed && !notificationLoading && !notificationSaving && styles.notificationTimeButtonPressed,
-                      (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                    ]}>
-                    <Text style={styles.notificationTimeText}>{salaryReminderTime}</Text>
-                    <MaterialCommunityIcons name="clock-outline" size={14} color={colors.primary} />
-                  </Pressable>
-                </View>
-
-                <View style={styles.notificationMetaRow}>
-                  <Text style={styles.notificationMetaLabel}>{t('settings.salaryReminderDay')}</Text>
-                  <View style={styles.notificationCounterGroup}>
-                    <Pressable
-                      onPress={() => void handleAdjustSalaryDay(-1)}
-                      disabled={notificationLoading || notificationSaving}
-                      style={({ pressed }) => [
-                        styles.notificationCounterButton,
-                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
-                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                      ]}>
-                      <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
-                    </Pressable>
-                    <View style={styles.notificationCounterValueWrap}>
-                      <Text style={styles.notificationCounterValue}>{salaryDay}</Text>
-                    </View>
-                    <Pressable
-                      onPress={() => void handleAdjustSalaryDay(1)}
-                      disabled={notificationLoading || notificationSaving}
-                      style={({ pressed }) => [
-                        styles.notificationCounterButton,
-                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
-                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                      ]}>
-                      <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
-                    </Pressable>
-                  </View>
-                </View>
-
-                <View style={styles.notificationMetaRow}>
-                  <Text style={styles.notificationMetaLabel}>{t('settings.salaryReminderDaysBefore')}</Text>
-                  <View style={styles.notificationCounterGroup}>
-                    <Pressable
-                      onPress={() => void handleAdjustSalaryDaysBefore(-1)}
-                      disabled={notificationLoading || notificationSaving}
-                      style={({ pressed }) => [
-                        styles.notificationCounterButton,
-                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
-                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                      ]}>
-                      <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
-                    </Pressable>
-                    <View style={styles.notificationCounterValueWrap}>
-                      <Text style={styles.notificationCounterValue}>{t('settings.beforeDays', { count: salaryReminderDaysBefore })}</Text>
-                    </View>
-                    <Pressable
-                      onPress={() => void handleAdjustSalaryDaysBefore(1)}
-                      disabled={notificationLoading || notificationSaving}
-                      style={({ pressed }) => [
-                        styles.notificationCounterButton,
-                        pressed && !notificationLoading && !notificationSaving && styles.notificationCounterButtonPressed,
-                        (notificationLoading || notificationSaving) && styles.switchTrackDisabled,
-                      ]}>
-                      <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            ) : null}
-          </View>
-
-{notificationError ? <Text style={styles.notificationErrorText}>{notificationError}</Text> : null}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.testNotification')}</Text>
-          <View style={styles.testNotificationCard}>
-            <Text style={styles.testNotificationText}>{t('settings.testNotificationDesc')}</Text>
-            <Pressable
-              onPress={() => void handleSendTestNotification()}
-              disabled={testNotificationSending}
-              style={({ pressed }) => [
-                styles.testNotificationButton,
-                pressed && !testNotificationSending && styles.testNotificationButtonPressed,
-                testNotificationSending && styles.testNotificationButtonDisabled,
-              ]}>
-              <MaterialCommunityIcons name="bell-ring" size={18} color={colors.onPrimary} />
-              <Text style={styles.testNotificationButtonText}>
-                {testNotificationSending ? t('settings.sending') : t('settings.sendTestNotification')}
-              </Text>
-            </Pressable>
-            {testNotificationResult === 'success' ? (
-              <Text style={styles.testNotificationSuccessText}>{t('settings.testNotificationSuccess')}</Text>
-            ) : null}
-            {testNotificationResult === 'error' ? (
-              <Text style={styles.testNotificationErrorText}>{t('settings.testNotificationError')}</Text>
-            ) : null}
-          </View>
-        </View>
+</View>
 
         <View style={styles.logoutWrap}>
           <Pressable
@@ -1558,53 +1354,6 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
 notificationInboxRow: {
       marginBottom: 12,
-    },
-    testNotificationCard: {
-      borderRadius: 22,
-      backgroundColor: colors.shellCard,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
-      padding: 16,
-      gap: 12,
-    },
-    testNotificationText: {
-      color: colors.shellTextMuted,
-      fontSize: 13,
-      lineHeight: 18,
-      fontWeight: '600',
-    },
-    testNotificationButton: {
-      minHeight: 48,
-      borderRadius: 16,
-      backgroundColor: colors.primary,
-      paddingHorizontal: 20,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-    },
-    testNotificationButtonPressed: {
-      opacity: 0.92,
-    },
-    testNotificationButtonDisabled: {
-      opacity: 0.7,
-    },
-    testNotificationButtonText: {
-      color: colors.onPrimary,
-      fontSize: 14,
-      fontWeight: '800',
-    },
-    testNotificationSuccessText: {
-      color: colors.secondary,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '700',
-    },
-    testNotificationErrorText: {
-      color: colors.danger,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '700',
     },
     logoutWrap: {
       paddingTop: 8,
