@@ -384,3 +384,29 @@ export const registerNotificationReceivedListener = (
 
   return Notifications.addNotificationReceivedListener(handler);
 };
+
+export const sendTestNotification = async () => {
+  const Notifications = getNotificationsModule();
+
+  if (!Notifications) {
+    return false;
+  }
+
+  const permission = await Notifications.getPermissionsAsync();
+  if (permission.status !== 'granted') {
+    return false;
+  }
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Finance GO - Test Notification',
+      body: 'Ini adalah notifikasi test. Jika kamu melihat ini, notifikasi berfungsi dengan baik!',
+      data: { kind: 'test', route: '/' },
+      sound: 'default',
+    },
+    trigger: null,
+  });
+
+  debugPush('test-notification', { sent: true });
+  return true;
+};

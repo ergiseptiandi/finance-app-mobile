@@ -35,6 +35,7 @@ import {
   getDevicePushToken,
   hasGrantedNotificationPermission,
   loadNotificationSettings,
+  sendTestNotification,
   syncDevicePushToken,
 } from '@/lib/push-notifications';
 
@@ -193,6 +194,8 @@ export default function SettingsScreen() {
   const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
+  const [testNotificationSending, setTestNotificationSending] = useState(false);
+  const [testNotificationResult, setTestNotificationResult] = useState<'idle' | 'success' | 'error'>('idle');
   const pushTokenReady = Boolean(pushToken);
   const pushToggleActive = Boolean(pushEnabled && notificationPermissionGranted);
   const currentNotificationSettings = useMemo(
@@ -650,7 +653,7 @@ export default function SettingsScreen() {
     [notificationLoading, notificationSaving, persistNotificationSettings, salaryDay]
   );
 
-  const handleAdjustSalaryDaysBefore = useCallback(
+const handleAdjustSalaryDaysBefore = useCallback(
     async (delta: number) => {
       if (notificationLoading || notificationSaving) {
         return;
@@ -660,6 +663,24 @@ export default function SettingsScreen() {
     },
     [notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderDaysBefore]
   );
+
+  const handleSendTestNotification = useCallback(async () => {
+    if (testNotificationSending) {
+      return;
+    }
+
+    setTestNotificationSending(true);
+    setTestNotificationResult('idle');
+
+    try {
+      const sent = await sendTestNotification();
+      setTestNotificationResult(sent ? 'success' : 'error');
+    } catch {
+      setTestNotificationResult('error');
+    } finally {
+      setTestNotificationSending(false);
+    }
+  }, [testNotificationSending]);
 
   const initials = useMemo(() => {
     return displayName
@@ -1044,7 +1065,33 @@ export default function SettingsScreen() {
             ) : null}
           </View>
 
-          {notificationError ? <Text style={styles.notificationErrorText}>{notificationError}</Text> : null}
+{notificationError ? <Text style={styles.notificationErrorText}>{notificationError}</Text> : null}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.testNotification')}</Text>
+          <View style={styles.testNotificationCard}>
+            <Text style={styles.testNotificationText}>{t('settings.testNotificationDesc')}</Text>
+            <Pressable
+              onPress={() => void handleSendTestNotification()}
+              disabled={testNotificationSending}
+              style={({ pressed }) => [
+                styles.testNotificationButton,
+                pressed && !testNotificationSending && styles.testNotificationButtonPressed,
+                testNotificationSending && styles.testNotificationButtonDisabled,
+              ]}>
+              <MaterialCommunityIcons name="bell-ring" size={18} color={colors.onPrimary} />
+              <Text style={styles.testNotificationButtonText}>
+                {testNotificationSending ? t('settings.sending') : t('settings.sendTestNotification')}
+              </Text>
+            </Pressable>
+            {testNotificationResult === 'success' ? (
+              <Text style={styles.testNotificationSuccessText}>{t('settings.testNotificationSuccess')}</Text>
+            ) : null}
+            {testNotificationResult === 'error' ? (
+              <Text style={styles.testNotificationErrorText}>{t('settings.testNotificationError')}</Text>
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.logoutWrap}>
@@ -1509,8 +1556,55 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontWeight: '800',
       textAlign: 'center',
     },
-    notificationInboxRow: {
+notificationInboxRow: {
       marginBottom: 12,
+    },
+    testNotificationCard: {
+      borderRadius: 22,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 16,
+      gap: 12,
+    },
+    testNotificationText: {
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    testNotificationButton: {
+      minHeight: 48,
+      borderRadius: 16,
+      backgroundColor: colors.primary,
+      paddingHorizontal: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    testNotificationButtonPressed: {
+      opacity: 0.92,
+    },
+    testNotificationButtonDisabled: {
+      opacity: 0.7,
+    },
+    testNotificationButtonText: {
+      color: colors.onPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    testNotificationSuccessText: {
+      color: colors.secondary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    testNotificationErrorText: {
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
     },
     logoutWrap: {
       paddingTop: 8,
