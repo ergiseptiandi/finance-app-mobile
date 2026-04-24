@@ -28,7 +28,10 @@
       [
         "expo-notifications",
         {
-          "defaultChannel": "finance-go-default"
+          "defaultChannel": "finance-go-default",
+          "sounds": [
+            "./assets/sounds/finance_go_notification.wav"
+          ]
         }
       ],
       [

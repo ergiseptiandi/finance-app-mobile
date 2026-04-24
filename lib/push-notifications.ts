@@ -74,7 +74,7 @@ const ensureAndroidNotificationChannel = async (Notifications: NotificationsModu
   await Notifications.setNotificationChannelAsync(DEFAULT_NOTIFICATION_CHANNEL_ID, {
     name: 'Finance GO Alerts',
     importance: Notifications.AndroidImportance.MAX,
-    sound: 'default',
+    sound: 'finance_go_notification',
     enableVibrate: true,
     vibrationPattern: [0, 250, 250, 250],
     showBadge: true,
@@ -414,7 +414,7 @@ export const sendTestNotification = async () => {
       title: 'Finance GO - Test Notification',
       body: 'Ini adalah notifikasi test. Jika kamu melihat ini, notifikasi berfungsi dengan baik!',
       data: { kind: 'test', route: '/' },
-      sound: 'default',
+      sound: 'finance_go_notification',
     },
     trigger: null,
   });
