@@ -9,7 +9,6 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,28 +23,11 @@ import {
   saveBiometricCredentials,
 } from '@/lib/biometric-auth';
 import { ApiRequestError, login } from '@/lib/api/auth';
-import {
-  updateNotificationSettings,
-  type NotificationSettingsData,
-  type UpdateNotificationSettingsPayload,
-} from '@/lib/api/notifications';
 import { getAuthSession, refreshStoredAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
 import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
-import {
-  getDevicePushToken,
-  hasGrantedNotificationPermission,
-  loadNotificationSettings,
-  syncDevicePushToken,
-} from '@/lib/push-notifications';
 
 const DEVICE_NAME = getDeviceName();
-const PUSH_DEBUG_ENABLED = true;
-const debugNotificationSettings = (...args: unknown[]) => {
-  if (PUSH_DEBUG_ENABLED) {
-    console.log('[push-debug][settings]', ...args);
-  }
-};
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -58,76 +40,6 @@ type SettingsRowProps = {
   style?: ViewStyle;
   onPress?: () => void;
 };
-
-const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsData = {
-  enabled: true,
-  daily_expense_reminder_enabled: true,
-  daily_expense_reminder_time: '20:00',
-  debt_payment_reminder_enabled: true,
-  debt_payment_reminder_time: '09:00',
-  debt_payment_reminder_days_before: 3,
-  salary_reminder_enabled: true,
-  salary_reminder_time: '08:00',
-  salary_reminder_days_before: 1,
-  salary_day: 25,
-  push_token: '',
-};
-
-const parseTimeValue = (value: string) => {
-  const [hours, minutes] = value.split(':').map((part) => Number(part));
-  const nextDate = new Date();
-
-  nextDate.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
-  return nextDate;
-};
-
-const formatTimeValue = (date: Date) =>
-  `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-
-const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-type NormalizedNotificationSettings = {
-  enabled: boolean;
-  daily_expense_reminder_enabled: boolean;
-  daily_expense_reminder_time: string;
-  debt_payment_reminder_enabled: boolean;
-  debt_payment_reminder_time: string;
-  debt_payment_reminder_days_before: number;
-  salary_reminder_enabled: boolean;
-  salary_reminder_time: string;
-  salary_reminder_days_before: number;
-  salary_day: number;
-  push_token: string;
-};
-
-const normalizePushToken = (value?: string | null) => value?.trim() ?? '';
-
-const normalizeNotificationSettings = (
-  data?: Partial<NotificationSettingsData> | null
-): NormalizedNotificationSettings => ({
-  enabled: Boolean(data?.enabled ?? DEFAULT_NOTIFICATION_SETTINGS.enabled),
-  daily_expense_reminder_enabled: Boolean(
-    data?.daily_expense_reminder_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_enabled
-  ),
-  daily_expense_reminder_time:
-    data?.daily_expense_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.daily_expense_reminder_time ?? '20:00',
-  debt_payment_reminder_enabled: Boolean(
-    data?.debt_payment_reminder_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_enabled
-  ),
-  debt_payment_reminder_time:
-    data?.debt_payment_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_time ?? '09:00',
-  debt_payment_reminder_days_before: Number(
-    data?.debt_payment_reminder_days_before ?? DEFAULT_NOTIFICATION_SETTINGS.debt_payment_reminder_days_before ?? 3
-  ),
-  salary_reminder_enabled: Boolean(data?.salary_reminder_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_enabled),
-  salary_reminder_time:
-    data?.salary_reminder_time ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_time ?? '08:00',
-  salary_reminder_days_before: Number(
-    data?.salary_reminder_days_before ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_days_before ?? 1
-  ),
-  salary_day: Number(data?.salary_day ?? DEFAULT_NOTIFICATION_SETTINGS.salary_day ?? 25),
-  push_token: normalizePushToken(data?.push_token ?? DEFAULT_NOTIFICATION_SETTINGS.push_token ?? ''),
-});
 
 function SettingsRow({
   colors,
@@ -171,21 +83,6 @@ export default function SettingsScreen() {
   const styles = createStyles(colors, insets.top);
   const [displayName, setDisplayName] = useState('Alex Sterling');
   const [email, setEmail] = useState('alex.sterling@ledger.io');
-  const [pushEnabled, setPushEnabled] = useState(false);
-  const [dailyExpenseReminderEnabled, setDailyExpenseReminderEnabled] = useState(false);
-  const [debtPaymentReminderEnabled, setDebtPaymentReminderEnabled] = useState(false);
-  const [salaryReminderEnabled, setSalaryReminderEnabled] = useState(false);
-  const [dailyExpenseReminderTime, setDailyExpenseReminderTime] = useState('20:00');
-  const [debtPaymentReminderTime, setDebtPaymentReminderTime] = useState('09:00');
-  const [debtPaymentReminderDaysBefore, setDebtPaymentReminderDaysBefore] = useState(3);
-  const [salaryReminderTime, setSalaryReminderTime] = useState('08:00');
-  const [salaryReminderDaysBefore, setSalaryReminderDaysBefore] = useState(1);
-  const [salaryDay, setSalaryDay] = useState(25);
-  const [pushToken, setPushToken] = useState('');
-  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(false);
-  const [notificationLoading, setNotificationLoading] = useState(true);
-  const [notificationSaving, setNotificationSaving] = useState(false);
-  const [notificationError, setNotificationError] = useState('');
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -194,61 +91,6 @@ export default function SettingsScreen() {
   const [biometricError, setBiometricError] = useState('');
   const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState('');
-const [signingOut, setSigningOut] = useState(false);
-  const pushTokenReady = Boolean(pushToken);
-  const pushToggleActive = Boolean(pushEnabled && notificationPermissionGranted);
-  const currentNotificationSettings = useMemo(
-    () => ({
-      enabled: pushEnabled,
-      daily_expense_reminder_enabled: dailyExpenseReminderEnabled,
-      daily_expense_reminder_time: dailyExpenseReminderTime,
-      debt_payment_reminder_enabled: debtPaymentReminderEnabled,
-      debt_payment_reminder_time: debtPaymentReminderTime,
-      debt_payment_reminder_days_before: debtPaymentReminderDaysBefore,
-      salary_reminder_enabled: salaryReminderEnabled,
-      salary_reminder_time: salaryReminderTime,
-      salary_reminder_days_before: salaryReminderDaysBefore,
-      salary_day: salaryDay,
-      push_token: pushToken,
-    }),
-    [
-      dailyExpenseReminderEnabled,
-      dailyExpenseReminderTime,
-      debtPaymentReminderDaysBefore,
-      debtPaymentReminderEnabled,
-      debtPaymentReminderTime,
-      pushEnabled,
-      pushToken,
-      salaryDay,
-      salaryReminderDaysBefore,
-      salaryReminderEnabled,
-      salaryReminderTime,
-    ]
-  );
-
-  const applyNotificationSettings = useCallback(
-    (data?: Partial<NotificationSettingsData> | null, base?: Partial<NotificationSettingsData> | null) => {
-      const nextData = normalizeNotificationSettings({
-        ...DEFAULT_NOTIFICATION_SETTINGS,
-        ...(base ?? {}),
-        ...(data ?? {}),
-      });
-
-      setPushEnabled(Boolean(nextData.enabled));
-      setDailyExpenseReminderEnabled(nextData.daily_expense_reminder_enabled);
-      setDailyExpenseReminderTime(nextData.daily_expense_reminder_time);
-      setDebtPaymentReminderEnabled(nextData.debt_payment_reminder_enabled);
-      setDebtPaymentReminderTime(nextData.debt_payment_reminder_time);
-      setDebtPaymentReminderDaysBefore(nextData.debt_payment_reminder_days_before);
-      setSalaryReminderEnabled(nextData.salary_reminder_enabled);
-      setSalaryReminderTime(nextData.salary_reminder_time);
-      setSalaryReminderDaysBefore(nextData.salary_reminder_days_before);
-      setSalaryDay(nextData.salary_day);
-      setPushToken(nextData.push_token);
-    },
-    []
-  );
-
   const refreshUnreadNotificationCount = useCallback(async (accessToken: string) => {
     try {
       setUnreadNotificationCount(await loadUnreadNotificationCount(accessToken));
@@ -269,10 +111,9 @@ const [signingOut, setSigningOut] = useState(false);
     useCallback(() => {
       let active = true;
 
-      const loadSessionAndNotifications = async () => {
+      const loadSessionAndBiometrics = async () => {
         const session = await getAuthSession();
         if (!session || !active) {
-          setNotificationLoading(false);
           setBiometricLoading(false);
           return;
         }
@@ -280,45 +121,8 @@ const [signingOut, setSigningOut] = useState(false);
         setDisplayName(session.user.name || 'Alex Sterling');
         setEmail(session.user.email || 'alex.sterling@ledger.io');
         void refreshUnreadNotificationCount(session.token.access_token);
-
-        setNotificationLoading(true);
-        setNotificationError('');
         setBiometricLoading(true);
         setBiometricError('');
-
-        try {
-          const permissionGranted = await hasGrantedNotificationPermission();
-          if (!active) {
-            return;
-          }
-
-          setNotificationPermissionGranted(permissionGranted);
-
-          const settings = permissionGranted
-            ? (await syncDevicePushToken(session.token.access_token)).settings
-            : await loadNotificationSettings(session.token.access_token);
-
-          if (!active) {
-            return;
-          }
-
-          debugNotificationSettings('load', {
-            permissionGranted,
-            backendEnabled: settings?.enabled ?? null,
-            backendToken: settings?.push_token ?? null,
-            hasBackendToken: Boolean(settings?.push_token),
-          });
-
-          applyNotificationSettings(settings);
-        } catch {
-          if (active) {
-            setNotificationError(t('settings.notificationsLoadError'));
-          }
-        } finally {
-          if (active) {
-            setNotificationLoading(false);
-          }
-        }
 
         try {
           const biometricState = await getBiometricState();
@@ -340,124 +144,12 @@ const [signingOut, setSigningOut] = useState(false);
         }
       };
 
-      void loadSessionAndNotifications();
+      void loadSessionAndBiometrics();
 
       return () => {
         active = false;
       };
-    }, [applyNotificationSettings, refreshUnreadNotificationCount, t])
-  );
-
-  const persistNotificationSettings = useCallback(
-    async (nextState: {
-      enabled?: boolean;
-      dailyExpenseReminderEnabled?: boolean;
-      dailyExpenseReminderTime?: string;
-      debtPaymentReminderEnabled?: boolean;
-      debtPaymentReminderTime?: string;
-      debtPaymentReminderDaysBefore?: number;
-      salaryReminderEnabled?: boolean;
-      salaryReminderTime?: string;
-      salaryReminderDaysBefore?: number;
-      salaryDay?: number;
-      pushToken?: string;
-    }) => {
-      const session = await getAuthSession();
-
-      if (!session) {
-        return false;
-      }
-
-      setNotificationSaving(true);
-      setNotificationError('');
-
-      const payload: UpdateNotificationSettingsPayload = {};
-
-      if (nextState.enabled !== undefined) {
-        payload.enabled = nextState.enabled;
-      }
-
-      if (nextState.dailyExpenseReminderEnabled !== undefined) {
-        payload.daily_expense_reminder_enabled = nextState.dailyExpenseReminderEnabled;
-      }
-
-      if (nextState.dailyExpenseReminderTime !== undefined) {
-        payload.daily_expense_reminder_time = nextState.dailyExpenseReminderTime;
-      }
-
-      if (nextState.debtPaymentReminderEnabled !== undefined) {
-        payload.debt_payment_reminder_enabled = nextState.debtPaymentReminderEnabled;
-      }
-
-      if (nextState.debtPaymentReminderTime !== undefined) {
-        payload.debt_payment_reminder_time = nextState.debtPaymentReminderTime;
-      }
-
-      if (nextState.debtPaymentReminderDaysBefore !== undefined) {
-        payload.debt_payment_reminder_days_before = nextState.debtPaymentReminderDaysBefore;
-      }
-
-      if (nextState.salaryReminderEnabled !== undefined) {
-        payload.salary_reminder_enabled = nextState.salaryReminderEnabled;
-      }
-
-      if (nextState.salaryReminderTime !== undefined) {
-        payload.salary_reminder_time = nextState.salaryReminderTime;
-      }
-
-      if (nextState.salaryReminderDaysBefore !== undefined) {
-        payload.salary_reminder_days_before = nextState.salaryReminderDaysBefore;
-      }
-
-      if (nextState.salaryDay !== undefined) {
-        payload.salary_day = nextState.salaryDay;
-      }
-
-      if (nextState.pushToken !== undefined) {
-        payload.push_token = nextState.pushToken;
-      }
-
-      if (Object.keys(payload).length === 0) {
-        setNotificationSaving(false);
-        return true;
-      }
-
-      try {
-        let response;
-
-        try {
-          response = await updateNotificationSettings(session.token.access_token, payload);
-        } catch (error) {
-          if (error instanceof ApiRequestError && error.status === 401) {
-            const refreshed = await refreshStoredAuthSession();
-            if (!refreshed) {
-              throw error;
-            }
-
-            response = await updateNotificationSettings(refreshed.token.access_token, payload);
-          } else {
-            throw error;
-          }
-        }
-
-        applyNotificationSettings(response.Data ?? payload, currentNotificationSettings);
-        return true;
-      } catch (error) {
-        setNotificationError(
-          error instanceof ApiRequestError && error.message
-            ? error.message
-            : t('settings.notificationsSaveError')
-        );
-        return false;
-      } finally {
-        setNotificationSaving(false);
-      }
-    },
-    [
-      applyNotificationSettings,
-      currentNotificationSettings,
-      t,
-    ]
+    }, [refreshUnreadNotificationCount, t])
   );
 
   const handleDisableBiometric = useCallback(async () => {
@@ -538,147 +230,6 @@ const [signingOut, setSigningOut] = useState(false);
     setBiometricSetupOpen(true);
     setBiometricPassword('');
   }, [biometricAvailable, biometricEnabled, biometricLoading, biometricSaving, handleDisableBiometric, t]);
-
-  const handlePushToggle = useCallback(async () => {
-    if (notificationLoading || notificationSaving) {
-      return;
-    }
-
-    debugNotificationSettings('toggle-start', {
-      pushEnabled,
-      notificationPermissionGranted,
-      pushToken,
-      pushTokenReady,
-      pushToggleActive,
-    });
-
-    if (pushToggleActive) {
-      await persistNotificationSettings({ enabled: false });
-      return;
-    }
-
-    if (notificationPermissionGranted && pushTokenReady) {
-      await persistNotificationSettings({ enabled: true });
-      return;
-    }
-
-    const token = await getDevicePushToken();
-    const permissionGranted = await hasGrantedNotificationPermission();
-    setNotificationPermissionGranted(permissionGranted);
-
-    debugNotificationSettings('toggle-request-result', {
-      permissionGranted,
-      token,
-      hasToken: Boolean(token),
-    });
-
-    if (!token) {
-      setNotificationError(t('settings.pushTokenUnavailable'));
-      return;
-    }
-
-    await persistNotificationSettings({ enabled: true, pushToken: token });
-  }, [
-    notificationLoading,
-    notificationPermissionGranted,
-    notificationSaving,
-    persistNotificationSettings,
-    pushEnabled,
-    pushToken,
-    pushToggleActive,
-    pushTokenReady,
-    t,
-  ]);
-
-  const handleDailyReminderToggle = useCallback(async () => {
-    if (notificationLoading || notificationSaving) {
-      return;
-    }
-
-    await persistNotificationSettings({ dailyExpenseReminderEnabled: !dailyExpenseReminderEnabled });
-  }, [dailyExpenseReminderEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
-
-  const handleDebtReminderToggle = useCallback(async () => {
-    if (notificationLoading || notificationSaving) {
-      return;
-    }
-
-    await persistNotificationSettings({ debtPaymentReminderEnabled: !debtPaymentReminderEnabled });
-  }, [debtPaymentReminderEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
-
-  const handleSalaryReminderToggle = useCallback(async () => {
-    if (notificationLoading || notificationSaving) {
-      return;
-    }
-
-    await persistNotificationSettings({ salaryReminderEnabled: !salaryReminderEnabled });
-  }, [notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderEnabled]);
-
-  const handlePickReminderTime = useCallback(
-    (kind: 'daily' | 'debt' | 'salary') => {
-      if (notificationLoading || notificationSaving) {
-        return;
-      }
-
-      const currentValue =
-        kind === 'daily' ? dailyExpenseReminderTime : kind === 'debt' ? debtPaymentReminderTime : salaryReminderTime;
-
-      DateTimePickerAndroid.open({
-        value: parseTimeValue(currentValue),
-        mode: 'time',
-        is24Hour: true,
-        onChange: async (event, selectedDate) => {
-          if (event.type !== 'set' || !selectedDate) {
-            return;
-          }
-
-          const nextTime = formatTimeValue(selectedDate);
-
-          if (kind === 'daily') {
-            await persistNotificationSettings({ dailyExpenseReminderTime: nextTime });
-            return;
-          }
-
-          if (kind === 'salary') {
-            await persistNotificationSettings({ salaryReminderTime: nextTime });
-            return;
-          }
-
-          await persistNotificationSettings({ debtPaymentReminderTime: nextTime });
-        },
-      });
-    },
-    [
-      dailyExpenseReminderTime,
-      debtPaymentReminderTime,
-      notificationLoading,
-      notificationSaving,
-      persistNotificationSettings,
-      salaryReminderTime,
-    ]
-  );
-
-  const handleAdjustSalaryDay = useCallback(
-    async (delta: number) => {
-      if (notificationLoading || notificationSaving) {
-        return;
-      }
-
-      await persistNotificationSettings({ salaryDay: clampNumber(salaryDay + delta, 1, 31) });
-    },
-    [notificationLoading, notificationSaving, persistNotificationSettings, salaryDay]
-  );
-
-const handleAdjustSalaryDaysBefore = useCallback(
-    async (delta: number) => {
-      if (notificationLoading || notificationSaving) {
-        return;
-      }
-
-      await persistNotificationSettings({ salaryReminderDaysBefore: clampNumber(salaryReminderDaysBefore + delta, 0, 31) });
-    },
-[notificationLoading, notificationSaving, persistNotificationSettings, salaryReminderDaysBefore]
-  );
 
   const initials = useMemo(() => {
     return displayName
@@ -1268,122 +819,7 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontSize: 13,
       fontWeight: '800',
     },
-    notificationInfoCard: {
-      marginTop: 12,
-      borderRadius: 20,
-      backgroundColor: colors.shellCard,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
-      padding: 14,
-      gap: 10,
-    },
-    notificationStatusRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    notificationInfoText: {
-      color: colors.shellTextMuted,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '600',
-    },
-    notificationSuccessText: {
-      color: colors.secondary,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '700',
-    },
-    notificationErrorText: {
-      color: colors.danger,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '700',
-    },
-    notificationMetaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 10,
-    },
-    notificationTimeButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 6,
-      minWidth: 92,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      backgroundColor: colors.shellCardMuted,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
-    },
-    notificationTimeButtonPressed: {
-      opacity: 0.88,
-    },
-    notificationTimeButtonDisabled: {
-      opacity: 0.55,
-    },
-    notificationTimeText: {
-      color: colors.shellTextPrimary,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '800',
-      textAlign: 'right',
-    },
-    notificationMetaLabel: {
-      flexShrink: 1,
-      color: colors.shellTextMuted,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '600',
-    },
-    notificationMetaValue: {
-      color: colors.shellTextPrimary,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '800',
-      textAlign: 'right',
-      flexShrink: 0,
-    },
-    notificationCounterGroup: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    notificationCounterButton: {
-      width: 30,
-      height: 30,
-      borderRadius: 999,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.shellCardMuted,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
-    },
-    notificationCounterButtonPressed: {
-      opacity: 0.88,
-    },
-    notificationCounterValueWrap: {
-      minWidth: 56,
-      minHeight: 30,
-      paddingHorizontal: 10,
-      borderRadius: 999,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: alpha(colors.primary, 0.08),
-      borderWidth: 1,
-      borderColor: alpha(colors.primary, 0.16),
-    },
-    notificationCounterValue: {
-      color: colors.shellTextPrimary,
-      fontSize: 12,
-      lineHeight: 16,
-      fontWeight: '800',
-      textAlign: 'center',
-    },
-notificationInboxRow: {
+    notificationInboxRow: {
       marginBottom: 12,
     },
     notificationInboxRightSlot: {
