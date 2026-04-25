@@ -47,6 +47,10 @@ Special case:
 | `daily_expense_input` | `/activity` | Expense input / activity screen |
 | `debt_payment` | `/debts` | Debt list or debt payment screen |
 | `salary_reminder` | `/transactions?type=income` | Income / salary input screen |
+| `budget_warning` | `/reports` | Budget warning view |
+| `weekly_summary` | `/reports` | Weekly summary view |
+| `large_transaction` | `/activity` | Large transaction review |
+| `goal_reminder` | `/reports` | Goal reminder view |
 
 Mobile should read `kind`, `type`, and `data.route` from inbox data or push payload.
 
@@ -64,6 +68,15 @@ Mobile should read `kind`, `type`, and `data.route` from inbox data or push payl
 | `salary_reminder_time` | string | `HH:MM`, 24-hour format |
 | `salary_reminder_days_before` | integer | Must be `>= 0` |
 | `salary_day` | integer | Must be `1` to `31` |
+| `budget_amount` | number | Monthly budget used by dashboard |
+| `budget_warning_enabled` | boolean | Enable budget warning reminder |
+| `budget_warning_threshold` | integer | Must be `1` to `100` |
+| `weekly_summary_enabled` | boolean | Enable weekly summary reminder |
+| `weekly_summary_day` | integer | Must be `0` to `6` |
+| `large_transaction_enabled` | boolean | Enable large transaction reminder |
+| `large_transaction_threshold` | number | Must be `>= 0` |
+| `goal_reminder_enabled` | boolean | Enable goal reminder |
+| `goal_reminder_days_before` | integer | Must be `>= 0` |
 | `push_token` | string | FCM device token; empty string clears it |
 
 Notes:
@@ -88,6 +101,15 @@ If the user has no row yet in `notification_settings`, `GET /settings` returns t
   "salary_reminder_time": "08:00",
   "salary_reminder_days_before": 1,
   "salary_day": 25,
+  "budget_amount": 0,
+  "budget_warning_enabled": true,
+  "budget_warning_threshold": 80,
+  "weekly_summary_enabled": true,
+  "weekly_summary_day": 0,
+  "large_transaction_enabled": true,
+  "large_transaction_threshold": 1000000,
+  "goal_reminder_enabled": true,
+  "goal_reminder_days_before": 7,
   "push_token": "",
   "created_at": "0001-01-01T00:00:00Z",
   "updated_at": "0001-01-01T00:00:00Z"
@@ -122,6 +144,15 @@ Example success response:
     "salary_reminder_time": "08:00",
     "salary_reminder_days_before": 1,
     "salary_day": 25,
+    "budget_amount": 0,
+    "budget_warning_enabled": true,
+    "budget_warning_threshold": 80,
+    "weekly_summary_enabled": true,
+    "weekly_summary_day": 0,
+    "large_transaction_enabled": true,
+    "large_transaction_threshold": 1000000,
+    "goal_reminder_enabled": true,
+    "goal_reminder_days_before": 7,
     "push_token": "",
     "created_at": "2026-04-21T09:00:00Z",
     "updated_at": "2026-04-21T09:00:00Z"
@@ -151,6 +182,15 @@ Example request:
   "salary_reminder_time": "08:00",
   "salary_reminder_days_before": 1,
   "salary_day": 25,
+  "budget_amount": 5000000,
+  "budget_warning_enabled": true,
+  "budget_warning_threshold": 80,
+  "weekly_summary_enabled": true,
+  "weekly_summary_day": 0,
+  "large_transaction_enabled": true,
+  "large_transaction_threshold": 1000000,
+  "goal_reminder_enabled": true,
+  "goal_reminder_days_before": 7,
   "push_token": "fcm-device-token"
 }
 ```
@@ -160,6 +200,10 @@ Validation rules:
 - `debt_payment_reminder_days_before >= 0`
 - `salary_reminder_days_before >= 0`
 - `salary_day` must be between `1` and `31`
+- `budget_warning_threshold` must be between `1` and `100`
+- `weekly_summary_day` must be between `0` and `6`
+- `large_transaction_threshold` must be `>= 0`
+- `goal_reminder_days_before` must be `>= 0`
 - Unknown JSON fields return `400`.
 
 Example success response:
@@ -275,6 +319,10 @@ Current supported kinds:
 - `daily_expense_input`
 - `debt_payment`
 - `salary_reminder`
+- `budget_warning`
+- `weekly_summary`
+- `large_transaction`
+- `goal_reminder`
 
 Filter notes:
 - `read` must be a valid boolean value.

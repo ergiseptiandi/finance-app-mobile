@@ -19,6 +19,15 @@ export type NotificationSettingsData = {
   salary_reminder_time: string | null;
   salary_reminder_days_before: number | string | null;
   salary_day: number | string | null;
+  budget_amount?: number | string | null;
+  budget_warning_enabled?: boolean | null;
+  budget_warning_threshold?: number | string | null;
+  weekly_summary_enabled?: boolean | null;
+  weekly_summary_day?: number | string | null;
+  large_transaction_enabled?: boolean | null;
+  large_transaction_threshold?: number | string | null;
+  goal_reminder_enabled?: boolean | null;
+  goal_reminder_days_before?: number | string | null;
   push_token: string | null;
   created_at?: string | null;
   updated_at?: string | null;

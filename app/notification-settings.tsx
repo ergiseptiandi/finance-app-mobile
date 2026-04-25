@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   Switch,
   Linking,
@@ -55,6 +56,15 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsData = {
   salary_reminder_time: '08:00',
   salary_reminder_days_before: 1,
   salary_day: 25,
+  budget_amount: 0,
+  budget_warning_enabled: true,
+  budget_warning_threshold: 80,
+  weekly_summary_enabled: true,
+  weekly_summary_day: 0,
+  large_transaction_enabled: true,
+  large_transaction_threshold: 1000000,
+  goal_reminder_enabled: true,
+  goal_reminder_days_before: 7,
   push_token: '',
 };
 
@@ -70,6 +80,27 @@ const formatTimeValue = (date: Date) =>
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
+const sanitizeNumericInput = (value: string) => value.replace(/[^\d]/g, '');
+
+const formatCurrencyInput = (value: string) => {
+  const normalized = sanitizeNumericInput(value);
+
+  if (!normalized) {
+    return '';
+  }
+
+  return new Intl.NumberFormat('id-ID', {
+    maximumFractionDigits: 0,
+  }).format(Number(normalized));
+};
+
+const parseCurrencyInput = (value: string) => {
+  const normalized = sanitizeNumericInput(value);
+  return normalized ? Number(normalized) : 0;
+};
+
+const DAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
 type NormalizedNotificationSettings = {
   enabled: boolean;
   daily_expense_reminder_enabled: boolean;
@@ -81,6 +112,15 @@ type NormalizedNotificationSettings = {
   salary_reminder_time: string;
   salary_reminder_days_before: number;
   salary_day: number;
+  budget_amount: number;
+  budget_warning_enabled: boolean;
+  budget_warning_threshold: number;
+  weekly_summary_enabled: boolean;
+  weekly_summary_day: number;
+  large_transaction_enabled: boolean;
+  large_transaction_threshold: number;
+  goal_reminder_enabled: boolean;
+  goal_reminder_days_before: number;
   push_token: string;
 };
 
@@ -110,6 +150,23 @@ const normalizeNotificationSettings = (
     data?.salary_reminder_days_before ?? DEFAULT_NOTIFICATION_SETTINGS.salary_reminder_days_before ?? 1
   ),
   salary_day: Number(data?.salary_day ?? DEFAULT_NOTIFICATION_SETTINGS.salary_day ?? 25),
+  budget_amount: Number(data?.budget_amount ?? DEFAULT_NOTIFICATION_SETTINGS.budget_amount ?? 0),
+  budget_warning_enabled: Boolean(data?.budget_warning_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.budget_warning_enabled),
+  budget_warning_threshold: Number(
+    data?.budget_warning_threshold ?? DEFAULT_NOTIFICATION_SETTINGS.budget_warning_threshold ?? 80
+  ),
+  weekly_summary_enabled: Boolean(data?.weekly_summary_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.weekly_summary_enabled),
+  weekly_summary_day: Number(data?.weekly_summary_day ?? DEFAULT_NOTIFICATION_SETTINGS.weekly_summary_day ?? 0),
+  large_transaction_enabled: Boolean(
+    data?.large_transaction_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.large_transaction_enabled
+  ),
+  large_transaction_threshold: Number(
+    data?.large_transaction_threshold ?? DEFAULT_NOTIFICATION_SETTINGS.large_transaction_threshold ?? 1000000
+  ),
+  goal_reminder_enabled: Boolean(data?.goal_reminder_enabled ?? DEFAULT_NOTIFICATION_SETTINGS.goal_reminder_enabled),
+  goal_reminder_days_before: Number(
+    data?.goal_reminder_days_before ?? DEFAULT_NOTIFICATION_SETTINGS.goal_reminder_days_before ?? 7
+  ),
   push_token: normalizePushToken(data?.push_token ?? DEFAULT_NOTIFICATION_SETTINGS.push_token ?? ''),
 });
 
@@ -132,6 +189,15 @@ export default function NotificationSettingsScreen() {
   const [salaryReminderTime, setSalaryReminderTime] = useState('08:00');
   const [salaryReminderDaysBefore, setSalaryReminderDaysBefore] = useState(1);
   const [salaryDay, setSalaryDay] = useState(25);
+  const [budgetAmountInput, setBudgetAmountInput] = useState('0');
+  const [budgetWarningEnabled, setBudgetWarningEnabled] = useState(true);
+  const [budgetWarningThreshold, setBudgetWarningThreshold] = useState(80);
+  const [weeklySummaryEnabled, setWeeklySummaryEnabled] = useState(true);
+  const [weeklySummaryDay, setWeeklySummaryDay] = useState(0);
+  const [largeTransactionEnabled, setLargeTransactionEnabled] = useState(true);
+  const [largeTransactionThresholdInput, setLargeTransactionThresholdInput] = useState('1000000');
+  const [goalReminderEnabled, setGoalReminderEnabled] = useState(true);
+  const [goalReminderDaysBefore, setGoalReminderDaysBefore] = useState(7);
   const [pushToken, setPushToken] = useState('');
   const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(true);
@@ -157,16 +223,34 @@ export default function NotificationSettingsScreen() {
       salary_reminder_time: salaryReminderTime,
       salary_reminder_days_before: salaryReminderDaysBefore,
       salary_day: salaryDay,
+      budget_amount: parseCurrencyInput(budgetAmountInput),
+      budget_warning_enabled: budgetWarningEnabled,
+      budget_warning_threshold: budgetWarningThreshold,
+      weekly_summary_enabled: weeklySummaryEnabled,
+      weekly_summary_day: weeklySummaryDay,
+      large_transaction_enabled: largeTransactionEnabled,
+      large_transaction_threshold: parseCurrencyInput(largeTransactionThresholdInput),
+      goal_reminder_enabled: goalReminderEnabled,
+      goal_reminder_days_before: goalReminderDaysBefore,
       push_token: pushToken,
     }),
     [
+      budgetAmountInput,
+      budgetWarningEnabled,
+      budgetWarningThreshold,
       dailyExpenseReminderEnabled,
       dailyExpenseReminderTime,
       debtPaymentReminderDaysBefore,
       debtPaymentReminderEnabled,
       debtPaymentReminderTime,
+      goalReminderDaysBefore,
+      goalReminderEnabled,
+      largeTransactionEnabled,
+      largeTransactionThresholdInput,
       pushEnabled,
       pushToken,
+      weeklySummaryDay,
+      weeklySummaryEnabled,
       salaryDay,
       salaryReminderDaysBefore,
       salaryReminderEnabled,
@@ -192,6 +276,17 @@ export default function NotificationSettingsScreen() {
       setSalaryReminderTime(nextData.salary_reminder_time);
       setSalaryReminderDaysBefore(nextData.salary_reminder_days_before);
       setSalaryDay(nextData.salary_day);
+      setBudgetAmountInput(formatCurrencyInput(String(nextData.budget_amount)) || '0');
+      setBudgetWarningEnabled(nextData.budget_warning_enabled);
+      setBudgetWarningThreshold(nextData.budget_warning_threshold);
+      setWeeklySummaryEnabled(nextData.weekly_summary_enabled);
+      setWeeklySummaryDay(nextData.weekly_summary_day);
+      setLargeTransactionEnabled(nextData.large_transaction_enabled);
+      setLargeTransactionThresholdInput(
+        formatCurrencyInput(String(nextData.large_transaction_threshold)) || '0'
+      );
+      setGoalReminderEnabled(nextData.goal_reminder_enabled);
+      setGoalReminderDaysBefore(nextData.goal_reminder_days_before);
       setPushToken(nextData.push_token);
     },
     []
@@ -252,6 +347,15 @@ export default function NotificationSettingsScreen() {
       salaryReminderTime?: string;
       salaryReminderDaysBefore?: number;
       salaryDay?: number;
+      budgetAmount?: number;
+      budgetWarningEnabled?: boolean;
+      budgetWarningThreshold?: number;
+      weeklySummaryEnabled?: boolean;
+      weeklySummaryDay?: number;
+      largeTransactionEnabled?: boolean;
+      largeTransactionThreshold?: number;
+      goalReminderEnabled?: boolean;
+      goalReminderDaysBefore?: number;
       pushToken?: string;
     }) => {
       const session = await getAuthSession();
@@ -271,6 +375,15 @@ export default function NotificationSettingsScreen() {
       if (nextState.salaryReminderTime !== undefined) payload.salary_reminder_time = nextState.salaryReminderTime;
       if (nextState.salaryReminderDaysBefore !== undefined) payload.salary_reminder_days_before = nextState.salaryReminderDaysBefore;
       if (nextState.salaryDay !== undefined) payload.salary_day = nextState.salaryDay;
+      if (nextState.budgetAmount !== undefined) payload.budget_amount = nextState.budgetAmount;
+      if (nextState.budgetWarningEnabled !== undefined) payload.budget_warning_enabled = nextState.budgetWarningEnabled;
+      if (nextState.budgetWarningThreshold !== undefined) payload.budget_warning_threshold = nextState.budgetWarningThreshold;
+      if (nextState.weeklySummaryEnabled !== undefined) payload.weekly_summary_enabled = nextState.weeklySummaryEnabled;
+      if (nextState.weeklySummaryDay !== undefined) payload.weekly_summary_day = nextState.weeklySummaryDay;
+      if (nextState.largeTransactionEnabled !== undefined) payload.large_transaction_enabled = nextState.largeTransactionEnabled;
+      if (nextState.largeTransactionThreshold !== undefined) payload.large_transaction_threshold = nextState.largeTransactionThreshold;
+      if (nextState.goalReminderEnabled !== undefined) payload.goal_reminder_enabled = nextState.goalReminderEnabled;
+      if (nextState.goalReminderDaysBefore !== undefined) payload.goal_reminder_days_before = nextState.goalReminderDaysBefore;
       if (nextState.pushToken !== undefined) payload.push_token = nextState.pushToken;
 
       if (Object.keys(payload).length === 0) {
@@ -327,7 +440,7 @@ export default function NotificationSettingsScreen() {
     }
 
     await persistNotificationSettings({ enabled: true, pushToken: token });
-  }, [notificationLoading, notificationPermissionGranted, notificationSaving, persistNotificationSettings, pushEnabled, pushToken, pushToggleActive, pushTokenReady]);
+  }, [notificationLoading, notificationPermissionGranted, notificationSaving, persistNotificationSettings, pushToggleActive, pushTokenReady]);
 
   const handleDailyReminderToggle = useCallback(async () => {
     if (notificationLoading || notificationSaving) return;
@@ -381,6 +494,51 @@ export default function NotificationSettingsScreen() {
     if (notificationLoading || notificationSaving) return;
     await persistNotificationSettings({ debtPaymentReminderDaysBefore: clampNumber(debtPaymentReminderDaysBefore + delta, 0, 31) });
   }, [debtPaymentReminderDaysBefore, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleAdjustBudgetWarningThreshold = useCallback(async (delta: number) => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ budgetWarningThreshold: clampNumber(budgetWarningThreshold + delta, 1, 100) });
+  }, [budgetWarningThreshold, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleAdjustWeeklySummaryDay = useCallback(async (delta: number) => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ weeklySummaryDay: (weeklySummaryDay + delta + 7) % 7 });
+  }, [notificationLoading, notificationSaving, persistNotificationSettings, weeklySummaryDay]);
+
+  const handleAdjustGoalReminderDaysBefore = useCallback(async (delta: number) => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ goalReminderDaysBefore: clampNumber(goalReminderDaysBefore + delta, 0, 31) });
+  }, [goalReminderDaysBefore, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleToggleBudgetWarning = useCallback(async () => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ budgetWarningEnabled: !budgetWarningEnabled });
+  }, [budgetWarningEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleToggleWeeklySummary = useCallback(async () => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ weeklySummaryEnabled: !weeklySummaryEnabled });
+  }, [notificationLoading, notificationSaving, persistNotificationSettings, weeklySummaryEnabled]);
+
+  const handleToggleLargeTransaction = useCallback(async () => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ largeTransactionEnabled: !largeTransactionEnabled });
+  }, [largeTransactionEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleToggleGoalReminder = useCallback(async () => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ goalReminderEnabled: !goalReminderEnabled });
+  }, [goalReminderEnabled, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleBudgetAmountSave = useCallback(async () => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ budgetAmount: parseCurrencyInput(budgetAmountInput) });
+  }, [budgetAmountInput, notificationLoading, notificationSaving, persistNotificationSettings]);
+
+  const handleLargeTransactionThresholdSave = useCallback(async () => {
+    if (notificationLoading || notificationSaving) return;
+    await persistNotificationSettings({ largeTransactionThreshold: parseCurrencyInput(largeTransactionThresholdInput) });
+  }, [largeTransactionThresholdInput, notificationLoading, notificationSaving, persistNotificationSettings]);
 
   const handleOpenNotificationSoundSettings = useCallback(async () => {
     try {
@@ -611,6 +769,151 @@ export default function NotificationSettingsScreen() {
               </View>
             )}
           </View>
+
+          <View style={styles.reminderCard}>
+            <View style={styles.reminderHeader}>
+              <View style={styles.reminderLeft}>
+                <MaterialCommunityIcons name="cash-multiple" size={20} color={colors.primary} />
+                <Text style={styles.reminderTitle}>Budget bulanan</Text>
+              </View>
+            </View>
+            <View style={styles.inputShell}>
+              <TextInput
+                value={budgetAmountInput}
+                onChangeText={(value) => setBudgetAmountInput(formatCurrencyInput(value))}
+                onBlur={() => void handleBudgetAmountSave()}
+                keyboardType="number-pad"
+                placeholder="1000000"
+                placeholderTextColor={colors.shellTextMuted}
+                editable={!notificationLoading && !notificationSaving}
+                style={styles.input}
+              />
+            </View>
+          </View>
+
+          <View style={styles.reminderCard}>
+            <View style={styles.reminderHeader}>
+              <View style={styles.reminderLeft}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.primary} />
+                <Text style={styles.reminderTitle}>Peringatan budget</Text>
+              </View>
+              <Switch
+                value={budgetWarningEnabled}
+                onValueChange={() => void handleToggleBudgetWarning()}
+                trackColor={{ false: colors.shellCardMuted, true: alpha(colors.primary, 0.4) }}
+                thumbColor={budgetWarningEnabled ? colors.primary : colors.outlineVariant}
+              />
+            </View>
+            {budgetWarningEnabled && (
+              <View style={styles.reminderDetails}>
+                <View style={styles.counterRow}>
+                  <Text style={styles.counterLabel}>Ambang peringatan:</Text>
+                  <View style={styles.counterGroup}>
+                    <Pressable onPress={() => void handleAdjustBudgetWarningThreshold(-5)} style={styles.counterButton}>
+                      <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
+                    </Pressable>
+                    <Text style={styles.counterValue}>{budgetWarningThreshold}%</Text>
+                    <Pressable onPress={() => void handleAdjustBudgetWarningThreshold(5)} style={styles.counterButton}>
+                      <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.reminderCard}>
+            <View style={styles.reminderHeader}>
+              <View style={styles.reminderLeft}>
+                <MaterialCommunityIcons name="calendar-week" size={20} color={colors.secondary} />
+                <Text style={styles.reminderTitle}>Ringkasan mingguan</Text>
+              </View>
+              <Switch
+                value={weeklySummaryEnabled}
+                onValueChange={() => void handleToggleWeeklySummary()}
+                trackColor={{ false: colors.shellCardMuted, true: alpha(colors.secondary, 0.4) }}
+                thumbColor={weeklySummaryEnabled ? colors.secondary : colors.outlineVariant}
+              />
+            </View>
+            {weeklySummaryEnabled && (
+              <View style={styles.reminderDetails}>
+                <View style={styles.counterRow}>
+                  <Text style={styles.counterLabel}>Hari laporan:</Text>
+                  <View style={styles.counterGroup}>
+                    <Pressable onPress={() => void handleAdjustWeeklySummaryDay(-1)} style={styles.counterButton}>
+                      <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
+                    </Pressable>
+                    <Text style={styles.counterValue}>{DAY_LABELS[weeklySummaryDay] ?? weeklySummaryDay}</Text>
+                    <Pressable onPress={() => void handleAdjustWeeklySummaryDay(1)} style={styles.counterButton}>
+                      <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.reminderCard}>
+            <View style={styles.reminderHeader}>
+              <View style={styles.reminderLeft}>
+                <MaterialCommunityIcons name="cash-fast" size={20} color={colors.secondary} />
+                <Text style={styles.reminderTitle}>Transaksi besar</Text>
+              </View>
+              <Switch
+                value={largeTransactionEnabled}
+                onValueChange={() => void handleToggleLargeTransaction()}
+                trackColor={{ false: colors.shellCardMuted, true: alpha(colors.secondary, 0.4) }}
+                thumbColor={largeTransactionEnabled ? colors.secondary : colors.outlineVariant}
+              />
+            </View>
+            {largeTransactionEnabled && (
+              <View style={styles.reminderDetails}>
+                <View style={styles.inputShell}>
+                  <TextInput
+                    value={largeTransactionThresholdInput}
+                    onChangeText={(value) => setLargeTransactionThresholdInput(formatCurrencyInput(value))}
+                    onBlur={() => void handleLargeTransactionThresholdSave()}
+                    keyboardType="number-pad"
+                    placeholder="1000000"
+                    placeholderTextColor={colors.shellTextMuted}
+                    editable={!notificationLoading && !notificationSaving}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.reminderCard}>
+            <View style={styles.reminderHeader}>
+              <View style={styles.reminderLeft}>
+                <MaterialCommunityIcons name="flag-checkered" size={20} color={colors.primary} />
+                <Text style={styles.reminderTitle}>Pengingat target</Text>
+              </View>
+              <Switch
+                value={goalReminderEnabled}
+                onValueChange={() => void handleToggleGoalReminder()}
+                trackColor={{ false: colors.shellCardMuted, true: alpha(colors.primary, 0.4) }}
+                thumbColor={goalReminderEnabled ? colors.primary : colors.outlineVariant}
+              />
+            </View>
+            {goalReminderEnabled && (
+              <View style={styles.reminderDetails}>
+                <View style={styles.counterRow}>
+                  <Text style={styles.counterLabel}>Hari sebelum jatuh tempo:</Text>
+                  <View style={styles.counterGroup}>
+                    <Pressable onPress={() => void handleAdjustGoalReminderDaysBefore(-1)} style={styles.counterButton}>
+                      <MaterialCommunityIcons name="minus" size={16} color={colors.primary} />
+                    </Pressable>
+                    <Text style={styles.counterValue}>{goalReminderDaysBefore}</Text>
+                    <Pressable onPress={() => void handleAdjustGoalReminderDaysBefore(1)} style={styles.counterButton}>
+                      <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Notification Inbox Link */}
@@ -812,6 +1115,19 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       paddingTop: 4,
       borderTopWidth: 1,
       borderTopColor: colors.shellBorder,
+    },
+    inputShell: {
+      borderRadius: 12,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+    },
+    input: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      fontWeight: '700',
+      paddingVertical: 10,
     },
     timeButton: {
       flexDirection: 'row',
