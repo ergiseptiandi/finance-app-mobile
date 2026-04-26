@@ -1067,6 +1067,30 @@ export default function DebtScreen() {
                     <View style={styles.debtCardFooter}>
                       <Text style={styles.debtFooterText}>{formatDate(debt.due_date, locale)}</Text>
                       <Text style={styles.debtFooterText}>{progress}%</Text>
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          Alert.alert(
+                            t('debt.deleteConfirmTitle'),
+                            t('debt.deleteConfirmMessage', { name: debt.name }),
+                            [
+                              { text: t('common.cancel'), style: 'cancel' },
+                              {
+                                text: t('debt.deleteDebt'),
+                                style: 'destructive',
+                                onPress: async () => {
+                                  try {
+                                    await withAuthorizedRequest((accessToken) => deleteDebt(accessToken, debt.id));
+                                    await loadDebts(true);
+                                  } catch {}
+                                },
+                              },
+                            ]
+                          );
+                        }}
+                        style={styles.debtCardDeleteButton}>
+                        <MaterialCommunityIcons name="trash-can-outline" size={14} color={colors.danger} />
+                      </Pressable>
                     </View>
                   </Pressable>
                 );
@@ -2181,6 +2205,16 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1,
+    },
+    debtCardDeleteButton: {
+      width: 26,
+      height: 26,
+      borderRadius: 8,
+      backgroundColor: alpha(colors.danger, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, 0.2),
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     detailCard: {
       borderRadius: 28,
