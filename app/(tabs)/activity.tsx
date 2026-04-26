@@ -1137,6 +1137,8 @@ export default function ActivityScreen() {
     () => walletOptions.filter((wallet) => !isMainWalletName(wallet.name)),
     [walletOptions]
   );
+  const mainWallet = useMemo(() => walletOptions.find((wallet) => isMainWalletName(wallet.name)), [walletOptions]);
+  const mainWalletBalance = mainWallet ? Number(mainWallet.balance ?? 0) : 0;
   const filterCategories = useMemo(
     () =>
       [...new Set(categories.map((category) => category.name.trim()).filter(Boolean))].sort((left, right) =>
@@ -1580,6 +1582,7 @@ export default function ActivityScreen() {
 
                         {walletOptions.map((wallet) => {
                           const active = draftFilters.walletId === wallet.id;
+                          const balance = Number(wallet.balance ?? 0);
                           return (
                             <Pressable
                               key={wallet.id}
@@ -1587,6 +1590,9 @@ export default function ActivityScreen() {
                               style={[styles.filterChip, active && styles.filterChipActive]}>
                               <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
                                 {wallet.name}
+                              </Text>
+                              <Text style={[styles.filterChipBalance, active && styles.filterChipBalanceActive]}>
+                                {toCurrency(balance, locale)}
                               </Text>
                             </Pressable>
                           );
@@ -1811,6 +1817,9 @@ export default function ActivityScreen() {
                                   style={[styles.filterChip, !form.walletId && styles.filterChipActive]}>
                                   <Text style={[styles.filterChipText, !form.walletId && styles.filterChipTextActive]}>
                                     {t('activity.transactions.walletDefault')}
+                                  </Text>
+                                  <Text style={[styles.filterChipBalance, !form.walletId && styles.filterChipBalanceActive]}>
+                                    {toCurrency(mainWalletBalance, locale)}
                                   </Text>
                                 </Pressable>
 

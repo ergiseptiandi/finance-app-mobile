@@ -851,6 +851,8 @@ export default function DebtScreen() {
     () => new Map(walletOptions.map((wallet) => [wallet.id, wallet] as const)),
     [walletOptions]
   );
+  const mainWallet = useMemo(() => walletOptions.find((wallet) => isMainWalletName(wallet.name)), [walletOptions]);
+  const mainWalletBalance = mainWallet ? Number(mainWallet.balance ?? 0) : 0;
   const selectedPaymentWalletLabel =
     paymentForm.walletId && walletMap.has(paymentForm.walletId)
       ? walletMap.get(paymentForm.walletId)?.name ?? t('debt.form.walletDefault')
@@ -1604,6 +1606,9 @@ export default function DebtScreen() {
                             style={[styles.debtChip, !paymentForm.walletId && styles.debtChipSelected]}>
                             <Text style={[styles.debtChipText, !paymentForm.walletId && styles.debtChipTextSelected]}>
                               {t('debt.form.walletDefault')}
+                            </Text>
+                            <Text style={[styles.debtChipBalance, !paymentForm.walletId && styles.debtChipBalanceSelected]}>
+                              {formatCompactCurrency(mainWalletBalance, locale)}
                             </Text>
                           </Pressable>
 
