@@ -692,6 +692,17 @@ export default function DashboardScreen() {
   const filterModeLabel =
     filters.dateMode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode');
   const dashboardAlert = summary?.alerts?.[0] ?? null;
+  const budgetSummary = summary?.budget_summary ?? null;
+  const budgetGoalsProgress = summary?.goals_progress ?? [];
+  const budgetPreview = budgetGoalsProgress.slice(0, 3);
+  const budgetUsage = toNumber(budgetSummary?.usage_rate);
+  const budgetStatusLabel = budgetSummary
+    ? budgetSummary.is_over_budget
+      ? t('dashboard.budgetOverBudget')
+      : budgetUsage >= 80
+        ? t('dashboard.budgetOnTrack')
+        : t('dashboard.budgetUnderBudget')
+    : t('dashboard.budgetEmptyState');
 
   const trendPoints = useMemo<TrendPoint[]>(() => {
     if (trendMode === 'daily' && dailySpending.length > 0) {
@@ -941,6 +952,100 @@ export default function DashboardScreen() {
                   <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
                 </View>
               </View>
+            </View>
+
+            <View style={styles.summaryCard}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardHeaderCopy}>
+                  <Text style={styles.cardEyebrow}>{t('dashboard.budgetGoals')}</Text>
+                  <Text style={styles.cardTitle}>{t('dashboard.budgetGoalsTitle')}</Text>
+                </View>
+                <View style={[styles.summaryBadge, budgetSummary?.is_over_budget && styles.summaryBadgeDanger]}>
+                  <Text
+                    style={[
+                      styles.summaryBadgeLabel,
+                      budgetSummary?.is_over_budget && styles.summaryBadgeLabelDanger,
+                    ]}>
+                    {budgetStatusLabel}
+                  </Text>
+                </View>
+              </View>
+
+              {budgetSummary ? (
+                <View style={styles.summaryGrid}>
+                  <View style={styles.summaryMetric}>
+                    <Text style={styles.summaryMetricLabel}>{t('dashboard.budgetMonthly')}</Text>
+                    <Text style={styles.summaryMetricValue}>{formatCompactCurrency(toNumber(budgetSummary.monthly_budget), locale)}</Text>
+                  </View>
+                  <View style={styles.summaryMetric}>
+                    <Text style={styles.summaryMetricLabel}>{t('dashboard.budgetSpent')}</Text>
+                    <Text style={styles.summaryMetricValue}>{formatCompactCurrency(toNumber(budgetSummary.spent), locale)}</Text>
+                  </View>
+                  <View style={styles.summaryMetric}>
+                    <Text style={styles.summaryMetricLabel}>{t('dashboard.budgetRemaining')}</Text>
+                    <Text style={styles.summaryMetricValue}>{formatCompactCurrency(toNumber(budgetSummary.remaining), locale)}</Text>
+                  </View>
+                  <View style={styles.summaryMetric}>
+                    <Text style={styles.summaryMetricLabel}>{t('dashboard.budgetUsage')}</Text>
+                    <Text style={styles.summaryMetricValue}>{formatPercentValue(toNumber(budgetSummary.usage_rate))}</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.budgetEmptyState}>
+                  <MaterialCommunityIcons name="target" size={22} color={colors.shellTextMuted} />
+                  <Text style={styles.budgetEmptyTitle}>{t('dashboard.budgetEmptyTitle')}</Text>
+                  <Text style={styles.budgetEmptyBody}>{t('dashboard.budgetEmptyBody')}</Text>
+                </View>
+              )}
+
+              {budgetSummary?.is_over_budget ? (
+                <View style={styles.budgetAlert}>
+                  <Text style={styles.budgetAlertText}>
+                    {t('dashboard.budgetOverBudgetBody', {
+                      amount: formatCompactCurrency(toNumber(budgetSummary.over_budget_amount), locale),
+                    })}
+                  </Text>
+                </View>
+              ) : null}
+
+              {budgetPreview.length > 0 ? (
+                <View style={styles.budgetPreviewList}>
+                  {budgetPreview.map((goal) => {
+                    const tone =
+                      goal.status === 'over_budget'
+                        ? colors.danger
+                        : goal.status === 'on_track'
+                          ? colors.secondary
+                          : colors.primary;
+
+                    return (
+                      <View key={`${goal.name}-${goal.target_amount}`} style={styles.budgetPreviewItem}>
+                        <View style={styles.budgetPreviewHeader}>
+                          <View style={styles.budgetPreviewCopy}>
+                            <Text numberOfLines={1} style={styles.budgetPreviewTitle}>
+                              {goal.name}
+                            </Text>
+                            <Text style={styles.budgetPreviewMeta}>
+                              {formatCompactCurrency(toNumber(goal.current_amount), locale)} / {formatCompactCurrency(toNumber(goal.target_amount), locale)}
+                            </Text>
+                          </View>
+                          <View style={[styles.budgetPreviewPill, { backgroundColor: alpha(tone, 0.14) }]}>
+                            <Text style={[styles.budgetPreviewPillText, { color: tone }]}>{formatPercentValue(toNumber(goal.progress_percentage))}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.budgetPreviewTrack}>
+                          <View style={[styles.budgetPreviewFill, { width: `${clampPercent(toNumber(goal.progress_percentage))}%`, backgroundColor: tone }]} />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <Pressable onPress={() => router.push('/budgets')} style={styles.secondaryAction}>
+                <Text style={styles.secondaryActionText}>{t('dashboard.manageBudgetGoals')}</Text>
+                <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
+              </Pressable>
             </View>
 
             <View style={styles.card}>
@@ -1675,12 +1780,18 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       paddingHorizontal: 10,
       paddingVertical: 6,
     },
+    summaryBadgeDanger: {
+      backgroundColor: alpha(colors.danger, isDark ? 0.18 : 0.12),
+    },
     summaryBadgeLabel: {
       color: colors.shellTextPrimary,
       fontSize: 10,
       fontWeight: '800',
       letterSpacing: 1,
       textTransform: 'uppercase',
+    },
+    summaryBadgeLabelDanger: {
+      color: colors.danger,
     },
     summaryGrid: {
       flexDirection: 'row',
@@ -1721,6 +1832,87 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       lineHeight: 16,
       fontWeight: '600',
       flexShrink: 1,
+    },
+    budgetEmptyState: {
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 8,
+    },
+    budgetEmptyTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    budgetEmptyBody: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
+    budgetAlert: {
+      borderRadius: 18,
+      backgroundColor: alpha(colors.danger, isDark ? 0.14 : 0.1),
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    budgetAlertText: {
+      color: colors.danger,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    budgetPreviewList: {
+      gap: 10,
+    },
+    budgetPreviewItem: {
+      gap: 8,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardMuted,
+      padding: 14,
+    },
+    budgetPreviewHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    budgetPreviewCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    budgetPreviewTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    budgetPreviewMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    budgetPreviewPill: {
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+    },
+    budgetPreviewPillText: {
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+    budgetPreviewTrack: {
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.shellCard,
+      overflow: 'hidden',
+    },
+    budgetPreviewFill: {
+      height: '100%',
+      borderRadius: 999,
     },
     summaryStatsRow: {
       flexDirection: compact ? 'column' : 'row',

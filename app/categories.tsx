@@ -83,6 +83,7 @@ export default function CategoriesScreen() {
   const styles = createStyles(colors, insets.top);
 
   const [filter, setFilter] = useState<'all' | CategoryType>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -162,10 +163,19 @@ export default function CategoriesScreen() {
     loadCategories();
   }, [loadCategories]);
 
-  const visibleCategories = useMemo(
-    () => categories.sort((left, right) => left.name.localeCompare(right.name)),
-    [categories]
-  );
+  const visibleCategories = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return categories
+      .filter((category) => {
+        if (!query) {
+          return true;
+        }
+
+        return `${category.name} ${category.type}`.toLowerCase().includes(query);
+      })
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [categories, searchQuery]);
 
   const handleSave = useCallback(async () => {
     const normalizedName = draft.name.trim();
@@ -248,6 +258,14 @@ export default function CategoriesScreen() {
         <Text style={styles.title}>{t('categories.subtitle')}</Text>
       </View>
 
+      <TextInput
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder={t('categories.searchPlaceholder')}
+        placeholderTextColor={colors.inputPlaceholder}
+        style={styles.searchInput}
+      />
+
       <View style={styles.formCard}>
         <View style={styles.typeSegment}>
           {(['expense', 'income'] as CategoryType[]).map((type) => {
@@ -327,8 +345,8 @@ export default function CategoriesScreen() {
       ) : visibleCategories.length === 0 ? (
         <View style={styles.stateCard}>
           <MaterialCommunityIcons name="shape-outline" size={28} color={colors.outlineVariant} />
-          <Text style={styles.emptyTitle}>{t('categories.emptyTitle')}</Text>
-          <Text style={styles.emptyBody}>{t('categories.emptyBody')}</Text>
+          <Text style={styles.emptyTitle}>{searchQuery.trim() ? t('categories.searchEmptyTitle') : t('categories.emptyTitle')}</Text>
+          <Text style={styles.emptyBody}>{searchQuery.trim() ? t('categories.searchEmptyBody') : t('categories.emptyBody')}</Text>
         </View>
       ) : (
         <View style={styles.list}>
@@ -505,6 +523,19 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       borderColor: colors.shellBorder,
       paddingHorizontal: 14,
       paddingVertical: 14,
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '500',
+    },
+    searchInput: {
+      minHeight: 50,
+      borderRadius: 16,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      paddingVertical: 13,
       color: colors.shellTextPrimary,
       fontSize: 14,
       lineHeight: 20,

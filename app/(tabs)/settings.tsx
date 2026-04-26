@@ -415,6 +415,19 @@ export default function SettingsScreen() {
 
             <SettingsRow
               colors={colors}
+              icon="target"
+              title={t('settings.budgetGoals')}
+              subtitle={t('settings.budgetGoalsMeta')}
+              iconTone="primary"
+              onPress={() => router.push('/budgets')}
+              rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
+              style={styles.preferenceRow}
+            />
+
+            <View style={styles.rowDivider} />
+
+            <SettingsRow
+              colors={colors}
               icon="wallet-outline"
               title={t('settings.wallets')}
               subtitle={t('settings.walletsMeta')}

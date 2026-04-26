@@ -187,6 +187,7 @@ export default function WalletsScreen() {
   const [walletForm, setWalletForm] = useState<WalletFormState>(createEmptyWalletForm());
   const [walletSubmitting, setWalletSubmitting] = useState(false);
   const [walletDeletingId, setWalletDeletingId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [transferModalVisible, setTransferModalVisible] = useState(false);
   const [transferDraft, setTransferDraft] = useState<WalletTransferDraft>(createEmptyTransferDraft());
   const [transferSubmitting, setTransferSubmitting] = useState(false);
@@ -202,6 +203,28 @@ export default function WalletsScreen() {
   const walletNameById = useMemo(
     () => new Map(resolvedWallets.map((wallet) => [wallet.id, wallet.name])),
     [resolvedWallets]
+  );
+  const searchTerm = searchQuery.trim().toLowerCase();
+  const filteredWallets = useMemo(
+    () =>
+      searchTerm
+        ? resolvedWallets.filter((wallet) => wallet.name.toLowerCase().includes(searchTerm))
+        : resolvedWallets,
+    [resolvedWallets, searchTerm]
+  );
+  const filteredTransfers = useMemo(
+    () =>
+      searchTerm
+        ? resolvedTransfers.filter((transfer) => {
+            const fromLabel =
+              transfer.from_wallet_name || walletNameById.get(Number(transfer.from_wallet_id ?? NaN)) || '';
+            const toLabel =
+              transfer.to_wallet_name || walletNameById.get(Number(transfer.to_wallet_id ?? NaN)) || '';
+            const haystack = `${fromLabel} ${toLabel} ${transfer.note ?? ''} ${transfer.amount ?? ''}`.toLowerCase();
+            return haystack.includes(searchTerm);
+          })
+        : resolvedTransfers,
+    [resolvedTransfers, searchTerm, walletNameById]
   );
   const totalBalance = useMemo(() => extractTotalBalance(summary, resolvedWallets), [resolvedWallets, summary]);
   const hasWalletSnapshot = resolvedWallets.length > 0 || resolvedTransfers.length > 0 || totalBalance > 0;
@@ -674,6 +697,14 @@ export default function WalletsScreen() {
           </View>
         </View>
 
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={t('wallets.searchPlaceholder')}
+          placeholderTextColor={colors.inputPlaceholder}
+          style={styles.searchInput}
+        />
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{t('wallets.walletListTitle')}</Text>
           <Text style={styles.sectionSubtitle}>{t('wallets.walletListHelper')}</Text>
@@ -684,15 +715,15 @@ export default function WalletsScreen() {
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.stateText}>{t('wallets.loading')}</Text>
           </View>
-        ) : resolvedWallets.length === 0 ? (
+        ) : filteredWallets.length === 0 ? (
           <View style={styles.stateCard}>
             <MaterialCommunityIcons name="wallet-outline" size={28} color={colors.outlineVariant} />
-            <Text style={styles.emptyTitle}>{t('wallets.emptyTitle')}</Text>
-            <Text style={styles.emptyBody}>{t('wallets.emptyBody')}</Text>
+            <Text style={styles.emptyTitle}>{searchTerm ? t('wallets.searchEmptyTitle') : t('wallets.emptyTitle')}</Text>
+            <Text style={styles.emptyBody}>{searchTerm ? t('wallets.searchEmptyBody') : t('wallets.emptyBody')}</Text>
           </View>
         ) : (
           <View style={styles.walletList}>
-            {resolvedWallets.map((wallet) => (
+            {filteredWallets.map((wallet) => (
               <View
                 key={wallet.id}
                 style={[
@@ -767,15 +798,15 @@ export default function WalletsScreen() {
           <Text style={styles.sectionSubtitle}>{t('wallets.transferHistoryHelper')}</Text>
         </View>
 
-        {resolvedTransfers.length === 0 ? (
+        {filteredTransfers.length === 0 ? (
           <View style={styles.stateCard}>
             <MaterialCommunityIcons name="swap-horizontal" size={28} color={colors.outlineVariant} />
-            <Text style={styles.emptyTitle}>{t('wallets.transferEmptyTitle')}</Text>
-            <Text style={styles.emptyBody}>{t('wallets.transferEmptyBody')}</Text>
+            <Text style={styles.emptyTitle}>{searchTerm ? t('wallets.searchEmptyTitle') : t('wallets.transferEmptyTitle')}</Text>
+            <Text style={styles.emptyBody}>{searchTerm ? t('wallets.searchEmptyBody') : t('wallets.transferEmptyBody')}</Text>
           </View>
         ) : (
           <View style={styles.transferList}>
-            {resolvedTransfers.map((transfer) => {
+            {filteredTransfers.map((transfer) => {
               const amount = formatCurrency(toNumber(transfer.amount), locale);
               const fromLabel =
                 transfer.from_wallet_name || walletNameById.get(Number(transfer.from_wallet_id ?? NaN)) || '—';
@@ -1164,6 +1195,17 @@ const createStyles = (colors: AppColorTheme, topInset: number) => {
       minHeight: 50,
       borderRadius: 14,
       backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    searchInput: {
+      minHeight: 50,
+      borderRadius: 14,
+      backgroundColor: colors.shellCard,
       borderWidth: 1,
       borderColor: colors.shellBorder,
       paddingHorizontal: 14,

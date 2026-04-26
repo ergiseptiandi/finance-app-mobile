@@ -337,6 +337,7 @@ export default function DebtScreen() {
   const [paymentTargetDebtId, setPaymentTargetDebtId] = useState<number | null>(null);
   const [paymentTargetLocked, setPaymentTargetLocked] = useState(false);
   const [paymentEditingId, setPaymentEditingId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [iosPaymentDatePickerVisible, setIosPaymentDatePickerVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [error, setError] = useState('');
@@ -909,6 +910,17 @@ export default function DebtScreen() {
     return isPaid || isFullyPaid;
   }), [debts]);
   const displayDebts = showPaidDebts ? paidDebts : activeDebts;
+  const searchTerm = searchQuery.trim().toLowerCase();
+  const visibleDebts = useMemo(
+    () =>
+      searchTerm
+        ? displayDebts.filter((debt) => {
+            const haystack = `${debt.name} ${debt.status} ${debt.due_date} ${debt.total_amount} ${debt.remaining_amount}`.toLowerCase();
+            return haystack.includes(searchTerm);
+          })
+        : displayDebts,
+    [displayDebts, searchTerm]
+  );
 
   const selected = selectedDebt ?? null;
   const selectedProgress = getInstallmentProgress(selected);
@@ -1036,6 +1048,14 @@ export default function DebtScreen() {
           </View>
         </View>
 
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={t('debt.searchPlaceholder')}
+          placeholderTextColor={colors.shellTextSoft}
+          style={styles.searchInput}
+        />
+
         <View style={styles.summarySection}>
           <Text style={styles.sectionLabel}>{t('debt.overview')}</Text>
 
@@ -1081,26 +1101,27 @@ export default function DebtScreen() {
               <Text style={styles.sectionLabel}>{t('debt.selectedDebt')}</Text>
               <Text style={styles.sectionTitle}>{t('debt.installmentSchedule')}</Text>
             </View>
-            {!!displayDebts.length && (
-              <Text style={styles.sectionHeaderMeta}>{displayDebts.length} items</Text>
-            )}
-          </View>
+              {!!visibleDebts.length && (
+                <Text style={styles.sectionHeaderMeta}>{visibleDebts.length} items</Text>
+              )}
+            </View>
 
           {loading ? (
             <View style={styles.loadingState}>
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>{t('debt.loading')}</Text>
             </View>
-          ) : displayDebts.length === 0 ? (
+          ) : visibleDebts.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialCommunityIcons name={showPaidDebts ? "history" : "wallet-outline"} size={22} color={colors.primary} />
               <Text style={styles.emptyTitle}>
-                {showPaidDebts ? t('debt.noPaidDebts') : t('debt.emptyTitle')}
+                {searchTerm ? t('debt.searchEmptyTitle') : showPaidDebts ? t('debt.noPaidDebts') : t('debt.emptyTitle')}
               </Text>
+              {searchTerm ? <Text style={styles.emptyBody}>{t('debt.searchEmptyBody')}</Text> : null}
             </View>
           ) : (
             <View style={styles.debtList}>
-              {displayDebts.map((debt) => {
+              {visibleDebts.map((debt) => {
                 const progress = getInstallmentProgress(debt);
                 const tone = getStatusTone(debt.status);
                 const isSelected = debt.id === selectedDebtId;
@@ -3013,6 +3034,18 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
+    },
+    searchInput: {
+      minHeight: 50,
+      borderRadius: 16,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '600',
     },
     inputIconWrap: {
       width: 34,
