@@ -25,7 +25,9 @@ import { ApiRequestError } from '@/lib/api/auth';
 import {
   DailySpendingItem,
   DashboardComparisonData,
+  DashboardInsightData,
   DashboardSummaryData,
+  getDashboardInsights,
   getComparison,
   getDailySpending,
   getDashboardSummary,
@@ -73,6 +75,7 @@ type DashboardCacheState = {
   dailySpending: DailySpendingItem[];
   monthlySpending: MonthlySpendingItem[];
   comparison: DashboardComparisonData | null;
+  insights: DashboardInsightData[];
   displayName: string;
 };
 
@@ -308,6 +311,17 @@ const formatExpenseCurrency = (value: number, locale: string) => {
 
 const formatPercentValue = (value: number) => `${Math.round(value)}%`;
 
+const getInsightIcon = (severity?: string): keyof typeof MaterialCommunityIcons.glyphMap => {
+  switch (severity) {
+    case 'critical':
+      return 'alert-octagon-outline';
+    case 'warning':
+      return 'alert-outline';
+    default:
+      return 'information-outline';
+  }
+};
+
 export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const isDark = colorScheme === 'dark';
@@ -325,6 +339,7 @@ export default function DashboardScreen() {
   const [dailySpending, setDailySpending] = useState<DailySpendingItem[]>([]);
   const [monthlySpending, setMonthlySpending] = useState<MonthlySpendingItem[]>([]);
   const [comparison, setComparison] = useState<DashboardComparisonData | null>(null);
+  const [insights, setInsights] = useState<DashboardInsightData[]>([]);
   const [displayName, setDisplayName] = useState('Kinetic Pulse');
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [filters, setFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
@@ -369,6 +384,7 @@ export default function DashboardScreen() {
       setDailySpending(cached.data.dailySpending);
       setMonthlySpending(cached.data.monthlySpending);
       setComparison(cached.data.comparison);
+      setInsights(cached.data.insights ?? []);
       setDisplayName(cached.data.displayName || nextDisplayName);
       setLoading(false);
     };
@@ -415,6 +431,7 @@ export default function DashboardScreen() {
             getDailySpending(accessToken, dashboardParams),
             getMonthlySpending(accessToken, dashboardParams),
             getComparison(accessToken),
+            getDashboardInsights(accessToken, dashboardParams),
           ]);
 
         let results = await fetchBundle(session.token.access_token);
@@ -433,7 +450,7 @@ export default function DashboardScreen() {
           }
         }
 
-        const [summaryResult, dailyResult, monthlyResult, comparisonResult] = results;
+        const [summaryResult, dailyResult, monthlyResult, comparisonResult, insightsResult] = results;
         const nextSummary = summaryResult.status === 'fulfilled' ? summaryResult.value.Data : summary;
         const nextDailySpending =
           dailyResult.status === 'fulfilled' ? dailyResult.value.Data : dailySpending;
@@ -441,6 +458,7 @@ export default function DashboardScreen() {
           monthlyResult.status === 'fulfilled' ? monthlyResult.value.Data : monthlySpending;
         const nextComparison =
           comparisonResult.status === 'fulfilled' ? comparisonResult.value.Data : comparison;
+        const nextInsights = insightsResult.status === 'fulfilled' ? insightsResult.value.Data : insights;
 
         if (summaryResult.status === 'fulfilled') {
           setSummary(nextSummary);
@@ -458,11 +476,16 @@ export default function DashboardScreen() {
           setComparison(nextComparison);
         }
 
+        if (insightsResult.status === 'fulfilled') {
+          setInsights(nextInsights);
+        }
+
         await writeScreenCache(buildScreenCacheKey('dashboard', session.user.id, cacheSuffix), {
           summary: nextSummary,
           dailySpending: nextDailySpending,
           monthlySpending: nextMonthlySpending,
           comparison: nextComparison,
+          insights: nextInsights,
           displayName: nextDisplayName,
         });
 
@@ -487,7 +510,7 @@ export default function DashboardScreen() {
         setRefreshing(false);
       }
     },
-    [comparison, dailySpending, hasDashboardSnapshot, monthlySpending, summary, t]
+    [comparison, dailySpending, hasDashboardSnapshot, insights, monthlySpending, summary, t]
   );
 
   const loadUnreadNotifications = useCallback(async () => {
@@ -691,7 +714,6 @@ export default function DashboardScreen() {
   const activePeriodLabel = getDashboardFilterLabel(filters, locale) || t('dashboard.filter.currentPeriod');
   const filterModeLabel =
     filters.dateMode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode');
-  const dashboardAlert = summary?.alerts?.[0] ?? null;
   const budgetSummary = summary?.budget_summary ?? null;
   const budgetGoalsProgress = summary?.goals_progress ?? [];
   const budgetPreview = budgetGoalsProgress.slice(0, 3);
@@ -727,14 +749,27 @@ export default function DashboardScreen() {
   const trendPeak = Math.max(...trendPoints.map((item) => item.value), 1);
   const liquidProgress = clampPercent(savingsRate > 0 ? savingsRate : 12);
 
-  const insightTitle = dashboardAlert?.title ?? t('dashboard.summaryInsightTitle');
-  const insightBody =
-    dashboardAlert?.message ??
-    (summary
-      ? t('dashboard.insightBody', {
+  const dashboardInsights = useMemo<DashboardInsightData[]>(() => {
+    if (insights.length > 0) {
+      return insights;
+    }
+
+    if (!summary) {
+      return [];
+    }
+
+    return [
+      {
+        type: 'summary',
+        code: 'summary_fallback',
+        title: t('dashboard.summaryInsightTitle'),
+        message: t('dashboard.insightBody', {
           amount: formatDetailCurrency(totalBalance, locale),
-        })
-      : t('dashboard.summaryInsightBody'));
+        }),
+        severity: 'info',
+      },
+    ];
+  }, [insights, locale, summary, t, totalBalance]);
 
   const activityItems = useMemo<ActivityItem[]>(
     () => [
@@ -1177,8 +1212,31 @@ export default function DashboardScreen() {
 
             <View style={styles.insightCard}>
               <Text style={styles.insightBadge}>{t('dashboard.pulseInsight')}</Text>
-              <Text style={styles.insightTitle}>{insightTitle}</Text>
-              <Text style={styles.insightText}>{insightBody}</Text>
+              <Text style={styles.insightTitle}>{t('dashboard.insightsSectionTitle')}</Text>
+              <Text style={styles.insightText}>{t('dashboard.insightsSectionBody')}</Text>
+
+              <View style={styles.insightList}>
+                {dashboardInsights.length > 0 ? (
+                  dashboardInsights.map((item) => (
+                    <View key={`${item.code}-${item.title}`} style={styles.insightItem}>
+                      <View style={styles.insightItemIcon}>
+                        <MaterialCommunityIcons
+                          name={getInsightIcon(item.severity)}
+                          size={16}
+                          color={colors.onPrimary}
+                        />
+                      </View>
+                      <View style={styles.insightItemCopy}>
+                        <Text style={styles.insightItemTitle}>{item.title}</Text>
+                        <Text style={styles.insightItemText}>{item.message}</Text>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.insightEmptyText}>{t('dashboard.insightsEmptyBody')}</Text>
+                )}
+              </View>
+
               <Pressable
                 onPress={() => {
                   router.navigate('/reports');
@@ -2186,6 +2244,50 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       color: alpha(colors.onPrimary, 0.9),
       fontSize: 16,
       lineHeight: 26,
+      fontWeight: '500',
+    },
+    insightList: {
+      gap: 12,
+    },
+    insightItem: {
+      flexDirection: 'row',
+      gap: 12,
+      alignItems: 'flex-start',
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderTopColor: alpha(colors.onPrimary, 0.14),
+    },
+    insightItemIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.onPrimary, 0.16),
+      marginTop: 2,
+      flexShrink: 0,
+    },
+    insightItemCopy: {
+      flex: 1,
+      gap: 4,
+    },
+    insightItemTitle: {
+      color: colors.onPrimary,
+      fontSize: 15,
+      lineHeight: 21,
+      fontWeight: '800',
+      letterSpacing: -0.2,
+    },
+    insightItemText: {
+      color: alpha(colors.onPrimary, 0.88),
+      fontSize: 13,
+      lineHeight: 19,
+      fontWeight: '500',
+    },
+    insightEmptyText: {
+      color: alpha(colors.onPrimary, 0.88),
+      fontSize: 14,
+      lineHeight: 20,
       fontWeight: '500',
     },
     primaryAction: {

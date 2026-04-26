@@ -78,6 +78,15 @@ export type DashboardAlertData = {
   change_value?: NumericLike;
 };
 
+export type DashboardInsightData = {
+  type: string;
+  code: string;
+  title: string;
+  message: string;
+  severity?: string;
+  change_value?: NumericLike;
+};
+
 export type DashboardGoalProgressData = {
   name: string;
   target_amount: NumericLike;
@@ -174,6 +183,12 @@ export const getMonthlySpending = (accessToken: string, params?: DashboardPeriod
 
 export const getComparison = (accessToken: string) =>
   request<ApiEnvelope<DashboardComparisonData>>(buildApiUrl('dashboard/comparison'), {
+    method: 'GET',
+    token: accessToken,
+  });
+
+export const getDashboardInsights = (accessToken: string, params?: DashboardPeriodParams) =>
+  request<ApiEnvelope<DashboardInsightData[]>>(withQueryParams(buildApiUrl('dashboard/insights'), params), {
     method: 'GET',
     token: accessToken,
   });
