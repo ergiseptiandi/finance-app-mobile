@@ -323,6 +323,9 @@ export default function DebtScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
+  const [showPaidDebts, setShowPaidDebts] = useState(false);
+  const [proofViewerVisible, setProofViewerVisible] = useState(false);
+  const [proofViewerUri, setProofViewerUri] = useState('');
   const keyboardOpen = keyboardHeight > 0;
   const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
   const hasDebtSnapshot = Boolean(debts.length || selectedDebt);
@@ -828,6 +831,7 @@ export default function DebtScreen() {
 
   const activeDebts = useMemo(() => debts.filter((debt) => debt.status !== 'paid' && debt.status !== 'completed'), [debts]);
   const paidDebts = useMemo(() => debts.filter((debt) => debt.status === 'paid' || debt.status === 'completed'), [debts]);
+  const displayDebts = showPaidDebts ? paidDebts : activeDebts;
 
   const selected = selectedDebt ?? null;
   const selectedProgress = getInstallmentProgress(selected);
@@ -939,9 +943,11 @@ export default function DebtScreen() {
               <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
               <Text style={styles.heroSecondaryActionText}>{t('debt.createDebt')}</Text>
             </Pressable>
-            <Pressable onPress={openPaymentForm} style={styles.heroSecondaryActionMuted}>
-              <MaterialCommunityIcons name="image-plus" size={16} color={colors.onPrimary} />
-              <Text style={styles.heroSecondaryActionText}>{t('debt.uploadProof')}</Text>
+            <Pressable onPress={() => setShowPaidDebts(!showPaidDebts)} style={styles.heroSecondaryActionMuted}>
+              <MaterialCommunityIcons name={showPaidDebts ? 'format-list-bulleted' : 'history'} size={16} color={colors.onPrimary} />
+              <Text style={styles.heroSecondaryActionText}>
+                {showPaidDebts ? t('debt.activeDebts') : t('debt.debtHistory')}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -991,8 +997,8 @@ export default function DebtScreen() {
               <Text style={styles.sectionLabel}>{t('debt.selectedDebt')}</Text>
               <Text style={styles.sectionTitle}>{t('debt.installmentSchedule')}</Text>
             </View>
-            {!!activeDebts.length && (
-              <Text style={styles.sectionHeaderMeta}>{activeDebts.length} items</Text>
+            {!!displayDebts.length && (
+              <Text style={styles.sectionHeaderMeta}>{displayDebts.length} items</Text>
             )}
           </View>
 
@@ -1001,14 +1007,16 @@ export default function DebtScreen() {
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>{t('debt.loading')}</Text>
             </View>
-          ) : activeDebts.length === 0 ? (
+          ) : displayDebts.length === 0 ? (
             <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="wallet-outline" size={22} color={colors.primary} />
-              <Text style={styles.emptyTitle}>{t('debt.emptyTitle')}</Text>
+              <MaterialCommunityIcons name={showPaidDebts ? "history" : "wallet-outline"} size={22} color={colors.primary} />
+              <Text style={styles.emptyTitle}>
+                {showPaidDebts ? t('debt.noPaidDebts') : t('debt.emptyTitle')}
+              </Text>
             </View>
           ) : (
             <View style={styles.debtList}>
-              {activeDebts.map((debt) => {
+              {displayDebts.map((debt) => {
                 const progress = getInstallmentProgress(debt);
                 const tone = getStatusTone(debt.status);
                 const isSelected = debt.id === selectedDebtId;
@@ -1217,9 +1225,17 @@ export default function DebtScreen() {
                             {formatDayLabel(payment.payment_date, locale)} | {paymentWalletLabel}
                           </Text>
                         </View>
-                        <Text numberOfLines={1} style={styles.paymentProof}>
-                          {payment.proof_image}
-                        </Text>
+                        {payment.proof_image ? (
+                          <Pressable
+                            onPress={() => {
+                              setProofViewerUri(payment.proof_image);
+                              setProofViewerVisible(true);
+                            }}
+                            style={styles.proofImageButton}>
+                            <MaterialCommunityIcons name="image-outline" size={14} color={colors.primary} />
+                            <Text style={styles.proofImageButtonText}>{t('debt.viewProof')}</Text>
+                          </Pressable>
+                        ) : null}
                       </View>
                     );
                   })}
@@ -1747,6 +1763,29 @@ export default function DebtScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={proofViewerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProofViewerVisible(false)}>
+        <Pressable
+          style={styles.proofViewerBackdrop}
+          onPress={() => setProofViewerVisible(false)}>
+          <View style={styles.proofViewerContainer}>
+            <Pressable
+              onPress={() => setProofViewerVisible(false)}
+              style={styles.proofViewerClose}>
+              <MaterialCommunityIcons name="close" size={24} color={colors.onPrimary} />
+            </Pressable>
+            <View style={styles.proofViewerImageWrap}>
+              <Text style={styles.proofViewerPlaceholder}>
+                {proofViewerUri ? t('debt.proofLoading') : t('debt.noProof')}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
       </Modal>
 
     </View>
@@ -2406,6 +2445,59 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       color: colors.shellTextSoft,
       fontSize: 10,
       fontWeight: '700',
+    },
+    proofImageButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      backgroundColor: alpha(colors.primary, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.2),
+    },
+    proofImageButtonText: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    proofViewerBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.9)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    proofViewerContainer: {
+      width: '90%',
+      maxHeight: '80%',
+      backgroundColor: colors.shellCard,
+      borderRadius: 20,
+      overflow: 'hidden',
+    },
+    proofViewerClose: {
+      position: 'absolute',
+      top: 12,
+      right: 12,
+      zIndex: 10,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: alpha(colors.inverseSurface, 0.6),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    proofViewerImageWrap: {
+      width: '100%',
+      height: 300,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+    },
+    proofViewerPlaceholder: {
+      color: colors.shellTextMuted,
+      fontSize: 14,
+      fontWeight: '600',
     },
     emptyInline: {
       color: colors.shellTextMuted,
