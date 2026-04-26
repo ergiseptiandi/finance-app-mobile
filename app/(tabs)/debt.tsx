@@ -823,14 +823,26 @@ export default function DebtScreen() {
     const paid = getTotalAmount(debts, (debt) => toNumber(debt.paid_amount));
     const dueSoon = getDueSoonCount(debts);
     const overdue = getOverdueCount(debts);
-    const activeDebts = debts.filter((debt) => debt.status !== 'paid').length;
+    const activeDebts = debts.filter((debt) => {
+      const isPaid = debt.status === 'paid' || debt.status === 'completed';
+      const isFullyPaid = toNumber(debt.remaining_amount) <= 0;
+      return !isPaid && !isFullyPaid;
+    }).length;
     const utilization = totalDebt > 0 ? Math.round((paid / totalDebt) * 100) : 0;
 
     return { totalDebt, remaining, paid, dueSoon, overdue, activeDebts, utilization };
   }, [debts]);
 
-  const activeDebts = useMemo(() => debts.filter((debt) => debt.status !== 'paid' && debt.status !== 'completed'), [debts]);
-  const paidDebts = useMemo(() => debts.filter((debt) => debt.status === 'paid' || debt.status === 'completed'), [debts]);
+  const activeDebts = useMemo(() => debts.filter((debt) => {
+    const isPaid = debt.status === 'paid' || debt.status === 'completed';
+    const isFullyPaid = toNumber(debt.remaining_amount) <= 0;
+    return !isPaid && !isFullyPaid;
+  }), [debts]);
+  const paidDebts = useMemo(() => debts.filter((debt) => {
+    const isPaid = debt.status === 'paid' || debt.status === 'completed';
+    const isFullyPaid = toNumber(debt.remaining_amount) <= 0;
+    return isPaid || isFullyPaid;
+  }), [debts]);
   const displayDebts = showPaidDebts ? paidDebts : activeDebts;
 
   const selected = selectedDebt ?? null;
