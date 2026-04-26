@@ -29,3 +29,21 @@ export const AUTH_ENDPOINTS = {
 } as const;
 
 export const buildApiUrl = (path: string) => joinUrl(API_V1_URL, path);
+
+export const buildAssetUrl = (path: string) => {
+  const value = path.trim();
+  if (!value) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  let normalized = value.startsWith('/') ? value : `/${value}`;
+  if (!normalized.startsWith('/uploads/')) {
+    normalized = `/uploads/${normalized.replace(/^\/+/, '')}`;
+  }
+
+  return joinUrl(API_BASE_URL, normalized);
+};

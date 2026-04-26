@@ -20,6 +20,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,7 @@ import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
 import { ApiRequestError } from '@/lib/api/auth';
+import { buildAssetUrl } from '@/constants/api';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import {
   createDebt,
@@ -39,6 +41,7 @@ import {
   getDebtPayments,
   listDebts,
   updateDebt,
+  updateDebtPayment,
   type DebtDetail,
   type DebtPaymentRecord,
   type DebtRecord,
@@ -48,7 +51,7 @@ import { listWallets, type WalletRecord } from '@/lib/api/wallets';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 
 type StatusTone = 'danger' | 'success' | 'warning' | 'neutral';
-type DebtFormMode = 'create' | 'edit' | 'payment';
+type DebtFormMode = 'create' | 'edit' | 'payment' | 'payment-edit';
 
 type DebtFormState = {
   name: string;
@@ -64,6 +67,8 @@ type PaymentFormState = {
   proofName: string;
   proofUri: string;
   proofType: string;
+  existingProofName: string;
+  existingProofUri: string;
 };
 
 type OpenPaymentFormOptions = {
@@ -159,6 +164,8 @@ const createEmptyPaymentForm = (): PaymentFormState => ({
   proofName: '',
   proofUri: '',
   proofType: '',
+  existingProofName: '',
+  existingProofUri: '',
 });
 
 const sanitizeCurrencyInput = (value: string) => value.replace(/[^\d]/g, '');
@@ -195,6 +202,16 @@ const getFileBadgeLabel = (proofName: string, proofType: string) => {
   }
 
   return 'FILE';
+};
+
+const getFileNameFromPathOrUrl = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const clean = trimmed.split('?')[0].split('#')[0];
+  return clean.split('/').filter(Boolean).pop() ?? clean;
 };
 
 const resolveApiMessage = (error: unknown, fallback: string) =>
@@ -319,6 +336,7 @@ export default function DebtScreen() {
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>(createEmptyPaymentForm);
   const [paymentTargetDebtId, setPaymentTargetDebtId] = useState<number | null>(null);
   const [paymentTargetLocked, setPaymentTargetLocked] = useState(false);
+  const [paymentEditingId, setPaymentEditingId] = useState<number | null>(null);
   const [iosPaymentDatePickerVisible, setIosPaymentDatePickerVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [error, setError] = useState('');
@@ -326,6 +344,8 @@ export default function DebtScreen() {
   const [showPaidDebts, setShowPaidDebts] = useState(false);
   const [proofViewerVisible, setProofViewerVisible] = useState(false);
   const [proofViewerUri, setProofViewerUri] = useState('');
+  const [proofViewerLoading, setProofViewerLoading] = useState(false);
+  const [proofViewerError, setProofViewerError] = useState('');
   const keyboardOpen = keyboardHeight > 0;
   const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
   const hasDebtSnapshot = Boolean(debts.length || selectedDebt);
@@ -563,6 +583,7 @@ export default function DebtScreen() {
     setPaymentForm(createEmptyPaymentForm());
     setPaymentTargetDebtId(null);
     setPaymentTargetLocked(false);
+    setPaymentEditingId(null);
     setIosPaymentDatePickerVisible(false);
     setSubmittingInstallmentId(null);
   }, []);
@@ -592,6 +613,7 @@ export default function DebtScreen() {
     setFormError('');
     setPaymentTargetDebtId(targetDebtId);
     setPaymentTargetLocked(Boolean(options.locked));
+    setPaymentEditingId(null);
     if (targetDebtId) {
       setSelectedDebtId(targetDebtId);
     }
@@ -613,6 +635,32 @@ export default function DebtScreen() {
       paymentDate: options.paymentDate || current.paymentDate || getTodayInputValue(),
     }));
   }, [debts, selectedDebt, selectedDebtId]);
+
+  const openEditPaymentForm = useCallback(
+    (payment: DebtPaymentRecord) => {
+      const targetDebtId = payment.debt_id ?? selectedDebtId ?? debts[0]?.id ?? null;
+      setFormMode('payment-edit');
+      setFormVisible(true);
+      setFormError('');
+      setPaymentTargetDebtId(targetDebtId);
+      setPaymentTargetLocked(true);
+      setPaymentEditingId(payment.id);
+      if (targetDebtId) {
+        setSelectedDebtId(targetDebtId);
+      }
+
+      setPaymentForm({
+        ...createEmptyPaymentForm(),
+        walletId:
+          payment.wallet_id && Number(payment.wallet_id) > 0 ? Number(payment.wallet_id) : null,
+        amount: formatRupiahInput(String(toNumber(payment.amount))),
+        paymentDate: parseDate(payment.payment_date)?.toISOString().slice(0, 10) ?? getTodayInputValue(),
+        existingProofName: getFileNameFromPathOrUrl(payment.proof_image),
+        existingProofUri: payment.proof_image,
+      });
+    },
+    [debts, selectedDebtId]
+  );
 
   const pickProofImage = useCallback(async () => {
     const result = await DocumentPicker.getDocumentAsync({
@@ -733,8 +781,14 @@ export default function DebtScreen() {
 
     const targetDebtId = paymentTargetDebtId ?? selectedDebtId ?? debts[0]?.id ?? null;
     const amount = parseCurrencyInput(paymentForm.amount);
+    const isEditPayment = formMode === 'payment-edit';
+    const hasNewProof = Boolean(paymentForm.proofUri);
 
-    if (!targetDebtId || !Number.isFinite(amount) || amount <= 0 || !paymentForm.proofUri) {
+    if (!targetDebtId || !Number.isFinite(amount) || amount <= 0 || (!isEditPayment && !hasNewProof)) {
+      setFormError(t('debt.form.invalidPayment'));
+      return;
+    }
+    if (isEditPayment && !paymentEditingId) {
       setFormError(t('debt.form.invalidPayment'));
       return;
     }
@@ -749,16 +803,25 @@ export default function DebtScreen() {
       }
       formData.append('amount', toPlainAmountString(paymentForm.amount));
       formData.append('payment_date', toApiDate(paymentForm.paymentDate));
-      formData.append(
-        'proof_image',
-        {
-          uri: paymentForm.proofUri,
-          name: paymentForm.proofName || `payment-proof-${Date.now()}.jpg`,
-          type: paymentForm.proofType || 'image/jpeg',
-        } as never
-      );
 
-      await withAuthorizedRequest((accessToken) => createDebtPayment(accessToken, targetDebtId, formData));
+      if (hasNewProof) {
+        formData.append(
+          'proof_image',
+          {
+            uri: paymentForm.proofUri,
+            name: paymentForm.proofName || `payment-proof-${Date.now()}.jpg`,
+            type: paymentForm.proofType || 'image/jpeg',
+          } as never
+        );
+      }
+
+      if (isEditPayment && paymentEditingId) {
+        await withAuthorizedRequest((accessToken) =>
+          updateDebtPayment(accessToken, targetDebtId, paymentEditingId, formData)
+        );
+      } else {
+        await withAuthorizedRequest((accessToken) => createDebtPayment(accessToken, targetDebtId, formData));
+      }
 
       closeForm();
       setSelectedDebtId(targetDebtId);
@@ -782,6 +845,8 @@ export default function DebtScreen() {
     paymentForm.proofName,
     paymentForm.proofType,
     paymentForm.proofUri,
+    paymentEditingId,
+    formMode,
     walletMap,
     paymentTargetDebtId,
     selectedDebtId,
@@ -864,7 +929,7 @@ export default function DebtScreen() {
       : 0;
   const paymentCount = selected?.payments?.length ?? 0;
   const dueLabel = selected ? formatDueLabel(selected.due_date, t) : '';
-  const modalAccent = formMode === 'payment' ? colors.secondary : colors.primary;
+  const modalAccent = formMode === 'payment' || formMode === 'payment-edit' ? colors.secondary : colors.primary;
   const paymentTarget = useMemo<DebtRecord | DebtDetail | null>(() => {
     const targetId = paymentTargetDebtId ?? selectedDebtId ?? debts[0]?.id ?? null;
     if (targetId === null) {
@@ -902,8 +967,15 @@ export default function DebtScreen() {
   const paymentTargetRemaining = toNumber(paymentTarget?.remaining_amount);
   const paymentTargetInstallment = toNumber(paymentTarget?.monthly_installment);
   const paymentTargetStatus = paymentTarget ? toStatusLabel(paymentTarget.status, t) : '';
-  const proofSelected = Boolean(paymentForm.proofUri);
-  const proofBadgeLabel = getFileBadgeLabel(paymentForm.proofName, paymentForm.proofType);
+  const isPaymentForm = formMode === 'payment' || formMode === 'payment-edit';
+  const isPaymentEditForm = formMode === 'payment-edit';
+  const hasStoredProof = Boolean(paymentForm.existingProofUri);
+  const hasNewProof = Boolean(paymentForm.proofUri);
+  const selectedProofUri = paymentForm.proofUri || paymentForm.existingProofUri;
+  const selectedProofName = paymentForm.proofUri ? paymentForm.proofName : paymentForm.existingProofName;
+  const selectedProofType = paymentForm.proofUri ? paymentForm.proofType : '';
+  const proofSelected = Boolean(selectedProofUri);
+  const proofBadgeLabel = getFileBadgeLabel(selectedProofName, selectedProofType);
   const showInitialSkeleton = loading && !debts.length && !selected;
 
   return (
@@ -1261,17 +1333,25 @@ export default function DebtScreen() {
                             {formatDayLabel(payment.payment_date, locale)} | {paymentWalletLabel}
                           </Text>
                         </View>
-                        {payment.proof_image ? (
-                          <Pressable
-                            onPress={() => {
-                              setProofViewerUri(payment.proof_image);
-                              setProofViewerVisible(true);
-                            }}
-                            style={styles.proofImageButton}>
-                            <MaterialCommunityIcons name="image-outline" size={14} color={colors.primary} />
-                            <Text style={styles.proofImageButtonText}>{t('debt.viewProof')}</Text>
+                        <View style={styles.paymentActionGroup}>
+                          {payment.proof_image ? (
+                            <Pressable
+                              onPress={() => {
+                                setProofViewerUri(buildAssetUrl(payment.proof_image));
+                                setProofViewerError('');
+                                setProofViewerLoading(true);
+                                setProofViewerVisible(true);
+                              }}
+                              style={styles.paymentActionButton}>
+                              <MaterialCommunityIcons name="image-outline" size={14} color={colors.primary} />
+                              <Text style={styles.paymentActionButtonText}>{t('debt.viewProof')}</Text>
+                            </Pressable>
+                          ) : null}
+                          <Pressable onPress={() => openEditPaymentForm(payment)} style={styles.paymentActionButton}>
+                            <MaterialCommunityIcons name="pencil-outline" size={14} color={colors.primary} />
+                            <Text style={styles.paymentActionButtonText}>{t('common.edit')}</Text>
                           </Pressable>
-                        ) : null}
+                        </View>
                       </View>
                     );
                   })}
@@ -1305,22 +1385,28 @@ export default function DebtScreen() {
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderCopy}>
                     <Text style={[styles.modalKicker, { color: modalAccent }]}>
-                      {formMode === 'payment'
-                        ? t('debt.paymentKicker')
+                      {isPaymentEditForm
+                        ? t('debt.paymentEditKicker')
+                        : formMode === 'payment'
+                          ? t('debt.paymentKicker')
                         : formMode === 'edit'
                           ? t('debt.editKicker')
                           : t('debt.createKicker')}
                     </Text>
                     <Text style={[styles.modalTitle, keyboardOpen && styles.modalTitleKeyboard]}>
-                      {formMode === 'payment'
-                        ? t('debt.paymentTitle')
+                      {isPaymentEditForm
+                        ? t('debt.paymentEditTitle')
+                        : formMode === 'payment'
+                          ? t('debt.paymentTitle')
                         : formMode === 'edit'
                           ? t('debt.editTitle')
                           : t('debt.createTitle')}
                     </Text>
                     <Text style={[styles.modalSubtitle, keyboardOpen && styles.modalSubtitleKeyboard]}>
-                      {formMode === 'payment'
-                        ? t('debt.paymentSubtitle')
+                      {isPaymentEditForm
+                        ? t('debt.paymentEditSubtitle')
+                        : formMode === 'payment'
+                          ? t('debt.paymentSubtitle')
                         : formMode === 'edit'
                           ? t('debt.editSubtitle')
                           : t('debt.createSubtitle')}
@@ -1353,8 +1439,10 @@ export default function DebtScreen() {
                         ]}>
                         <MaterialCommunityIcons
                           name={
-                            formMode === 'payment'
-                              ? 'file-image-plus-outline'
+                            isPaymentEditForm
+                              ? 'file-image-edit-outline'
+                              : formMode === 'payment'
+                                ? 'file-image-plus-outline'
                               : formMode === 'edit'
                                 ? 'file-document-edit-outline'
                                 : 'bank-plus'
@@ -1365,15 +1453,19 @@ export default function DebtScreen() {
                       </View>
                       <View style={styles.modalHeroCopy}>
                         <Text style={styles.modalHeroTitle}>
-                          {formMode === 'payment'
-                            ? t('debt.modal.paymentPreviewTitle')
+                          {isPaymentEditForm
+                            ? t('debt.modal.paymentEditPreviewTitle')
+                            : formMode === 'payment'
+                              ? t('debt.modal.paymentPreviewTitle')
                             : formMode === 'edit'
                               ? t('debt.modal.editPreviewTitle')
                               : t('debt.modal.createPreviewTitle')}
                         </Text>
                         <Text style={styles.modalHeroText}>
-                          {formMode === 'payment'
-                            ? t('debt.paymentSubtitle')
+                          {isPaymentEditForm
+                            ? t('debt.paymentEditSubtitle')
+                            : formMode === 'payment'
+                              ? t('debt.paymentSubtitle')
                             : formMode === 'edit'
                               ? t('debt.editSubtitle')
                               : t('debt.createSubtitle')}
@@ -1704,14 +1796,42 @@ export default function DebtScreen() {
 
                       <View style={styles.modalSectionCard}>
                         <View style={styles.modalSectionHeader}>
-                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}> 
                             <MaterialCommunityIcons name="paperclip" size={18} color={modalAccent} />
                           </View>
                           <View style={styles.modalSectionCopy}>
-                            <Text style={styles.modalSectionTitle}>{t('debt.modal.proofSectionTitle')}</Text>
-                            <Text style={styles.modalSectionSubtitle}>{t('debt.modal.proofSectionHelper')}</Text>
+                            <Text style={styles.modalSectionTitle}>
+                              {isPaymentEditForm ? t('debt.modal.proofEditSectionTitle') : t('debt.modal.proofSectionTitle')}
+                            </Text>
+                            <Text style={styles.modalSectionSubtitle}>
+                              {isPaymentEditForm
+                                ? t('debt.modal.proofEditSectionHelper')
+                                : t('debt.modal.proofSectionHelper')}
+                            </Text>
                           </View>
                         </View>
+
+                        {isPaymentEditForm && paymentForm.existingProofUri && !paymentForm.proofUri ? (
+                          <View style={styles.currentProofCard}>
+                            <View style={styles.currentProofCopy}>
+                              <Text style={styles.currentProofLabel}>{t('debt.modal.currentProofTitle')}</Text>
+                              <Text numberOfLines={1} style={styles.currentProofName}>
+                                {paymentForm.existingProofName || t('debt.modal.proofMissing')}
+                              </Text>
+                              <Text style={styles.currentProofMeta}>{t('debt.modal.currentProofHelper')}</Text>
+                            </View>
+                            <Pressable
+                              onPress={() => {
+                                setProofViewerUri(buildAssetUrl(paymentForm.existingProofUri));
+                                setProofViewerError('');
+                                setProofViewerLoading(true);
+                                setProofViewerVisible(true);
+                              }}
+                              style={styles.currentProofButton}>
+                              <Text style={styles.currentProofButtonText}>{t('debt.viewProof')}</Text>
+                            </Pressable>
+                          </View>
+                        ) : null}
 
                         <Pressable
                           onPress={pickProofImage}
@@ -1724,17 +1844,21 @@ export default function DebtScreen() {
                           ]}>
                           <View style={[styles.uploadDropzoneIcon, { backgroundColor: alpha(modalAccent, 0.14) }]}>
                             <MaterialCommunityIcons
-                              name={proofSelected ? 'check-bold' : 'file-image-plus-outline'}
+                              name={hasNewProof ? 'check-bold' : 'file-image-plus-outline'}
                               size={20}
                               color={modalAccent}
                             />
                           </View>
                           <View style={styles.uploadDropzoneCopy}>
                             <Text style={styles.uploadDropzoneTitle}>
-                              {proofSelected ? t('debt.form.changeProof') : t('debt.form.chooseProof')}
+                              {hasNewProof || hasStoredProof ? t('debt.form.changeProof') : t('debt.form.chooseProof')}
                             </Text>
                             <Text style={styles.uploadDropzoneSubtitle}>
-                              {proofSelected ? t('debt.modal.proofReady') : t('debt.form.noProofSelected')}
+                              {hasNewProof
+                                ? t('debt.modal.proofReady')
+                                : hasStoredProof
+                                  ? t('debt.modal.currentProofHelper')
+                                  : t('debt.form.noProofSelected')}
                             </Text>
                           </View>
                           <View style={styles.uploadDropzoneBadge}>
@@ -1752,13 +1876,17 @@ export default function DebtScreen() {
                           </View>
                           <View style={styles.proofFileCopy}>
                             <Text numberOfLines={1} style={styles.proofFileName}>
-                              {proofSelected ? paymentForm.proofName : t('debt.modal.proofMissing')}
+                              {proofSelected ? selectedProofName || t('debt.modal.proofMissing') : t('debt.modal.proofMissing')}
                             </Text>
                             <Text style={styles.proofFileMeta}>
-                              {proofSelected ? t('debt.modal.proofReady') : t('debt.modal.proofSectionHelper')}
+                              {hasNewProof
+                                ? t('debt.modal.proofReady')
+                                : hasStoredProof && isPaymentEditForm
+                                  ? t('debt.modal.currentProofHelper')
+                                  : t('debt.modal.proofSectionHelper')}
                             </Text>
                           </View>
-                          {proofSelected ? (
+                          {paymentForm.proofUri ? (
                             <Pressable onPress={clearProofSelection} style={styles.proofRemoveButton}>
                               <Text style={styles.proofRemoveText}>{t('debt.form.removeProof')}</Text>
                             </Pressable>
@@ -1775,9 +1903,9 @@ export default function DebtScreen() {
                   <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
                 </Pressable>
 
-                <Pressable
-                  onPress={formMode === 'payment' ? submitPaymentForm : submitDebtForm}
-                  disabled={formSubmitting}
+                  <Pressable
+                   onPress={isPaymentForm ? submitPaymentForm : submitDebtForm}
+                   disabled={formSubmitting}
                   style={({ pressed }) => [
                     styles.confirmButton,
                     pressed && styles.confirmButtonPressed,
@@ -1787,8 +1915,10 @@ export default function DebtScreen() {
                     <ActivityIndicator color={colors.onPrimary} />
                   ) : (
                     <Text style={styles.confirmButtonText}>
-                      {formMode === 'payment'
-                        ? t('debt.form.paymentSubmit')
+                      {isPaymentEditForm
+                        ? t('debt.form.paymentUpdateSubmit')
+                        : formMode === 'payment'
+                          ? t('debt.form.paymentSubmit')
                         : formMode === 'edit'
                           ? t('debt.form.updateSubmit')
                           : t('debt.form.createSubmit')}
@@ -1816,9 +1946,28 @@ export default function DebtScreen() {
               <MaterialCommunityIcons name="close" size={24} color={colors.onPrimary} />
             </Pressable>
             <View style={styles.proofViewerImageWrap}>
-              <Text style={styles.proofViewerPlaceholder}>
-                {proofViewerUri ? t('debt.proofLoading') : t('debt.noProof')}
-              </Text>
+              {proofViewerUri ? (
+                <>
+                  {proofViewerLoading ? (
+                    <ActivityIndicator size="large" color={colors.primary} />
+                  ) : null}
+                  <Image
+                    source={{ uri: proofViewerUri }}
+                    style={styles.proofViewerImage}
+                    contentFit="contain"
+                    cachePolicy="disk"
+                    onLoadStart={() => setProofViewerLoading(true)}
+                    onLoadEnd={() => setProofViewerLoading(false)}
+                    onError={() => {
+                      setProofViewerLoading(false);
+                      setProofViewerError(t('debt.proofFailed'));
+                    }}
+                  />
+                  {!!proofViewerError && <Text style={styles.proofViewerPlaceholder}>{proofViewerError}</Text>}
+                </>
+              ) : (
+                <Text style={styles.proofViewerPlaceholder}>{t('debt.noProof')}</Text>
+              )}
             </View>
           </View>
         </Pressable>
@@ -2463,6 +2612,30 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       alignItems: 'center',
       gap: 12,
     },
+    paymentActionGroup: {
+      marginLeft: 'auto',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
+    paymentActionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      backgroundColor: alpha(colors.primary, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.2),
+    },
+    paymentActionButtonText: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '700',
+    },
     paymentIconWrap: {
       width: 36,
       height: 36,
@@ -2485,28 +2658,6 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       color: colors.shellTextMuted,
       fontSize: 11,
       fontWeight: '600',
-    },
-    paymentProof: {
-      maxWidth: 108,
-      color: colors.shellTextSoft,
-      fontSize: 10,
-      fontWeight: '700',
-    },
-    proofImageButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 8,
-      backgroundColor: alpha(colors.primary, 0.1),
-      borderWidth: 1,
-      borderColor: alpha(colors.primary, 0.2),
-    },
-    proofImageButtonText: {
-      color: colors.primary,
-      fontSize: 10,
-      fontWeight: '700',
     },
     proofViewerBackdrop: {
       flex: 1,
@@ -2540,10 +2691,62 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       justifyContent: 'center',
       backgroundColor: colors.shellCardMuted,
     },
+    proofViewerImage: {
+      width: '100%',
+      height: '100%',
+    },
     proofViewerPlaceholder: {
       color: colors.shellTextMuted,
       fontSize: 14,
       fontWeight: '600',
+    },
+    currentProofCard: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    currentProofCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    currentProofLabel: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    currentProofName: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    currentProofMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '600',
+    },
+    currentProofButton: {
+      minHeight: 34,
+      borderRadius: 12,
+      backgroundColor: alpha(colors.primary, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.2),
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+    },
+    currentProofButtonText: {
+      color: colors.primary,
+      fontSize: 11,
+      fontWeight: '800',
     },
     emptyInline: {
       color: colors.shellTextMuted,

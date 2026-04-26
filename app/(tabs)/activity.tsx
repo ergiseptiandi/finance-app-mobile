@@ -646,14 +646,15 @@ export default function ActivityScreen() {
     }
 
     setTransactionModalVisible(true);
+    const defaultWalletId = wallets.find((wallet) => isMainWalletName(wallet.name))?.id ?? null;
     setForm((current) => ({
       ...createEmptyTransactionForm(),
       type: compose,
-      walletId: compose === 'income' ? null : current.walletId,
+      walletId: compose === 'income' ? defaultWalletId : current.walletId,
     }));
 
     router.setParams({ compose: undefined });
-  }, [searchParams.compose]);
+  }, [searchParams.compose, wallets]);
 
   const withAuthorizedRequest = useCallback(
     async <T,>(task: (accessToken: string) => Promise<T>) => {
@@ -1137,6 +1138,7 @@ export default function ActivityScreen() {
     () => walletOptions.filter((wallet) => !isMainWalletName(wallet.name)),
     [walletOptions]
   );
+  const transactionWalletOptions = form.type === 'income' ? walletOptions : selectableWalletOptions;
   const mainWallet = useMemo(() => walletOptions.find((wallet) => isMainWalletName(wallet.name)), [walletOptions]);
   const mainWalletBalance = mainWallet ? Number(mainWallet.balance ?? 0) : 0;
   const filterCategories = useMemo(
@@ -1156,10 +1158,9 @@ export default function ActivityScreen() {
     ? toCurrency(normalizedPreviewAmount, locale)
     : t('activity.transactions.modalAmountPending');
   const dateInputLabel = toDateInputLabel(form.date, locale);
-  const transactionWalletLocked = form.type === 'income';
   const selectedTransactionWalletId =
-    transactionWalletLocked
-      ? null
+    isIncomeForm
+      ? form.walletId ?? mainWallet?.id ?? null
       : form.walletId && walletMap.get(form.walletId) && !isMainWalletName(walletMap.get(form.walletId)?.name)
       ? form.walletId
       : null;
@@ -1790,19 +1791,19 @@ export default function ActivityScreen() {
                         </View>
                       </View>
 
-                        {!transactionWalletLocked && (
-                          <View style={styles.modalSectionCard}>
-                            <View style={styles.modalSectionHeader}>
-                              <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
-                                <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
-                              </View>
-                              <View style={styles.modalSectionCopy}>
-                                <Text style={styles.modalSectionTitle}>{t('activity.transactions.walletTitle')}</Text>
-                                <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.walletHelper')}</Text>
-                              </View>
+                        <View style={styles.modalSectionCard}>
+                          <View style={styles.modalSectionHeader}>
+                            <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}> 
+                              <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
                             </View>
+                            <View style={styles.modalSectionCopy}>
+                              <Text style={styles.modalSectionTitle}>{t('activity.transactions.walletTitle')}</Text>
+                              <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.walletHelper')}</Text>
+                            </View>
+                          </View>
 
-                            <View style={styles.filterChipWrap}>
+                          <View style={styles.filterChipWrap}>
+                            {!isIncomeForm ? (
                               <Pressable
                                 onPress={() => setForm((current) => ({ ...current, walletId: null }))}
                                 style={[styles.filterChip, !form.walletId && styles.filterChipActive]}>
@@ -1813,29 +1814,29 @@ export default function ActivityScreen() {
                                   {toCurrency(mainWalletBalance, locale)}
                                 </Text>
                               </Pressable>
+                            ) : null}
 
-                              {selectableWalletOptions.map((wallet) => {
-                                const active = form.walletId === wallet.id;
-                                const balance = Number(wallet.balance ?? 0);
-                                return (
-                                  <Pressable
-                                    key={wallet.id}
-                                    onPress={() => setForm((current) => ({ ...current, walletId: wallet.id }))}
-                                    style={[styles.filterChip, active && styles.filterChipActive]}>
-                                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                                      {wallet.name}
-                                    </Text>
-                                    <Text style={[styles.filterChipBalance, active && styles.filterChipBalanceActive]}>
-                                      {toCurrency(balance, locale)}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
-                            </View>
-
-                            <Text style={styles.monthSummaryMeta}>{selectedWalletLabel}</Text>
+                            {transactionWalletOptions.map((wallet) => {
+                              const active = form.walletId === wallet.id;
+                              const balance = Number(wallet.balance ?? 0);
+                              return (
+                                <Pressable
+                                  key={wallet.id}
+                                  onPress={() => setForm((current) => ({ ...current, walletId: wallet.id }))}
+                                  style={[styles.filterChip, active && styles.filterChipActive]}>
+                                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                    {wallet.name}
+                                  </Text>
+                                  <Text style={[styles.filterChipBalance, active && styles.filterChipBalanceActive]}>
+                                    {toCurrency(balance, locale)}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
                           </View>
-                        )}
+
+                          <Text style={styles.monthSummaryMeta}>{selectedWalletLabel}</Text>
+                        </View>
 
                         <View style={styles.modalSectionCard}>
                           <View style={styles.modalSectionHeader}>
@@ -1856,13 +1857,13 @@ export default function ActivityScreen() {
                                 <Pressable
                                   key={type}
                                   onPress={() =>
-                                    setForm((current) => ({
-                                      ...current,
-                                      type,
-                                      walletId: type === 'income' ? null : current.walletId,
-                                      category:
-                                        current.type === type
-                                          ? current.category
+                                      setForm((current) => ({
+                                        ...current,
+                                        type,
+                                        walletId: type === 'income' ? current.walletId ?? mainWallet?.id ?? null : current.walletId,
+                                        category:
+                                          current.type === type
+                                            ? current.category
                                           : categories.some((item) => item.type === type && item.name === current.category)
                                             ? current.category
                                             : '',
