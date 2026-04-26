@@ -91,6 +91,7 @@ export default function SettingsScreen() {
   const [biometricError, setBiometricError] = useState('');
   const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
   const refreshUnreadNotificationCount = useCallback(async (accessToken: string) => {
     try {
       setUnreadNotificationCount(await loadUnreadNotificationCount(accessToken));
