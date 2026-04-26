@@ -1816,6 +1816,7 @@ export default function ActivityScreen() {
 
                                 {selectableWalletOptions.map((wallet) => {
                                   const active = form.walletId === wallet.id;
+                                  const balance = Number(wallet.balance ?? 0);
                                   return (
                                     <Pressable
                                       key={wallet.id}
@@ -1823,6 +1824,9 @@ export default function ActivityScreen() {
                                       style={[styles.filterChip, active && styles.filterChipActive]}>
                                       <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
                                         {wallet.name}
+                                      </Text>
+                                      <Text style={[styles.filterChipBalance, active && styles.filterChipBalanceActive]}>
+                                        {toCurrency(balance, locale)}
                                       </Text>
                                     </Pressable>
                                   );
@@ -2425,6 +2429,16 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     },
     filterChipTextActive: {
       color: colors.primary,
+    },
+    filterChipBalance: {
+      color: colors.shellTextSecondary,
+      fontSize: 9,
+      lineHeight: 12,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    filterChipBalanceActive: {
+      color: alpha(colors.primary, 0.7),
     },
     monthChip: {
       minWidth: '22%',

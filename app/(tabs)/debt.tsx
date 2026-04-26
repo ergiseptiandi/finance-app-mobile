@@ -1609,6 +1609,7 @@ export default function DebtScreen() {
 
                           {selectableWalletOptions.map((wallet) => {
                             const active = paymentForm.walletId === wallet.id;
+                            const balance = Number(wallet.balance ?? 0);
                             return (
                               <Pressable
                                 key={wallet.id}
@@ -1616,6 +1617,9 @@ export default function DebtScreen() {
                                 style={[styles.debtChip, active && styles.debtChipSelected]}>
                                 <Text style={[styles.debtChipText, active && styles.debtChipTextSelected]}>
                                   {wallet.name}
+                                </Text>
+                                <Text style={[styles.debtChipBalance, active && styles.debtChipBalanceSelected]}>
+                                  {formatCompactCurrency(balance, locale)}
                                 </Text>
                               </Pressable>
                             );
@@ -2690,6 +2694,15 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
     },
     debtChipTextSelected: {
       color: colors.primary,
+    },
+    debtChipBalance: {
+      color: colors.shellTextSecondary,
+      fontSize: 9,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    debtChipBalanceSelected: {
+      color: alpha(colors.primary, 0.7),
     },
     selectedDebtCard: {
       borderRadius: 20,
