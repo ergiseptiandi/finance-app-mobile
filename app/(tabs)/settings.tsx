@@ -252,9 +252,6 @@ export default function SettingsScreen() {
                   <Text style={styles.avatarText}>{initials || 'AS'}</Text>
                 </View>
               </View>
-              <Pressable style={styles.editBadge}>
-                <MaterialCommunityIcons name="pencil" size={14} color={colors.onPrimary} />
-              </Pressable>
             </View>
 
             <View style={styles.profileCopy}>
@@ -607,17 +604,6 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontSize: 32,
       fontWeight: '900',
       letterSpacing: -0.8,
-    },
-    editBadge: {
-      position: 'absolute',
-      right: 6,
-      bottom: 6,
-      width: 34,
-      height: 34,
-      borderRadius: 12,
-      backgroundColor: colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     profileCopy: {
       alignItems: 'center',
