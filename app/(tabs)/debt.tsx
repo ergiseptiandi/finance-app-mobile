@@ -304,6 +304,8 @@ export default function DebtScreen() {
   const [wallets, setWallets] = useState<WalletRecord[]>([]);
   const [selectedDebtId, setSelectedDebtId] = useState<number | null>(null);
   const selectedDebtIdRef = useRef<number | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const detailCardRef = useRef<View>(null);
   const [selectedDebt, setSelectedDebt] = useState<DebtDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -520,6 +522,16 @@ export default function DebtScreen() {
     (debtId: number) => {
       setSelectedDebtId(debtId);
       loadDebtDetail(debtId);
+
+      setTimeout(() => {
+        detailCardRef.current?.measureLayout(
+          scrollRef.current as any,
+          (x, y) => {
+            scrollRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+          },
+          () => {}
+        );
+      }, 300);
     },
     [loadDebtDetail]
   );
@@ -814,6 +826,9 @@ export default function DebtScreen() {
     return { totalDebt, remaining, paid, dueSoon, overdue, activeDebts, utilization };
   }, [debts]);
 
+  const activeDebts = useMemo(() => debts.filter((debt) => debt.status !== 'paid' && debt.status !== 'completed'), [debts]);
+  const paidDebts = useMemo(() => debts.filter((debt) => debt.status === 'paid' || debt.status === 'completed'), [debts]);
+
   const selected = selectedDebt ?? null;
   const selectedProgress = getInstallmentProgress(selected);
   const selectedRemaining = toNumber(selected?.remaining_amount);
@@ -878,6 +893,7 @@ export default function DebtScreen() {
   return (
     <View style={styles.root}>
       <ScrollView
+        ref={scrollRef}
         style={styles.screen}
         contentContainerStyle={styles.content}
         refreshControl={
@@ -975,8 +991,8 @@ export default function DebtScreen() {
               <Text style={styles.sectionLabel}>{t('debt.selectedDebt')}</Text>
               <Text style={styles.sectionTitle}>{t('debt.installmentSchedule')}</Text>
             </View>
-            {!!debts.length && (
-              <Text style={styles.sectionHeaderMeta}>{debts.length} items</Text>
+            {!!activeDebts.length && (
+              <Text style={styles.sectionHeaderMeta}>{activeDebts.length} items</Text>
             )}
           </View>
 
@@ -985,14 +1001,14 @@ export default function DebtScreen() {
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>{t('debt.loading')}</Text>
             </View>
-          ) : debts.length === 0 ? (
+          ) : activeDebts.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialCommunityIcons name="wallet-outline" size={22} color={colors.primary} />
               <Text style={styles.emptyTitle}>{t('debt.emptyTitle')}</Text>
             </View>
           ) : (
             <View style={styles.debtList}>
-              {debts.map((debt) => {
+              {activeDebts.map((debt) => {
                 const progress = getInstallmentProgress(debt);
                 const tone = getStatusTone(debt.status);
                 const isSelected = debt.id === selectedDebtId;
@@ -1040,7 +1056,7 @@ export default function DebtScreen() {
         </View>
 
         {!!selected && (
-          <View style={styles.detailCard}>
+          <View ref={detailCardRef} style={styles.detailCard}>
             <View style={styles.detailTopRow}>
               <View style={styles.detailIconWrap}>
                 <MaterialCommunityIcons name="file-document-outline" size={18} color={colors.primary} />
