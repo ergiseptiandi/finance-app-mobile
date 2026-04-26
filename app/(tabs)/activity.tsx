@@ -1790,62 +1790,52 @@ export default function ActivityScreen() {
                         </View>
                       </View>
 
-                        <View style={styles.modalSectionCard}>
-                          <View style={styles.modalSectionHeader}>
-                            <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
-                              <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
-                            </View>
-                            <View style={styles.modalSectionCopy}>
-                              <Text style={styles.modalSectionTitle}>{t('activity.transactions.walletTitle')}</Text>
-                              <Text style={styles.modalSectionSubtitle}>
-                                {transactionWalletLocked
-                                  ? t('activity.transactions.walletLockedIncome')
-                                  : t('activity.transactions.walletHelper')}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {transactionWalletLocked ? (
-                            <View style={styles.emptyOptionCard}>
-                              <Text style={styles.emptyOptionText}>{t('activity.transactions.walletDefault')}</Text>
-                            </View>
-                          ) : (
-                            <>
-                              <View style={styles.filterChipWrap}>
-                                <Pressable
-                                  onPress={() => setForm((current) => ({ ...current, walletId: null }))}
-                                  style={[styles.filterChip, !form.walletId && styles.filterChipActive]}>
-                                  <Text style={[styles.filterChipText, !form.walletId && styles.filterChipTextActive]}>
-                                    {t('activity.transactions.walletDefault')}
-                                  </Text>
-                                  <Text style={[styles.filterChipBalance, !form.walletId && styles.filterChipBalanceActive]}>
-                                    {toCurrency(mainWalletBalance, locale)}
-                                  </Text>
-                                </Pressable>
-
-                                {selectableWalletOptions.map((wallet) => {
-                                  const active = form.walletId === wallet.id;
-                                  const balance = Number(wallet.balance ?? 0);
-                                  return (
-                                    <Pressable
-                                      key={wallet.id}
-                                      onPress={() => setForm((current) => ({ ...current, walletId: wallet.id }))}
-                                      style={[styles.filterChip, active && styles.filterChipActive]}>
-                                      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                                        {wallet.name}
-                                      </Text>
-                                      <Text style={[styles.filterChipBalance, active && styles.filterChipBalanceActive]}>
-                                        {toCurrency(balance, locale)}
-                                      </Text>
-                                    </Pressable>
-                                  );
-                                })}
+                        {!transactionWalletLocked && (
+                          <View style={styles.modalSectionCard}>
+                            <View style={styles.modalSectionHeader}>
+                              <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                                <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
                               </View>
+                              <View style={styles.modalSectionCopy}>
+                                <Text style={styles.modalSectionTitle}>{t('activity.transactions.walletTitle')}</Text>
+                                <Text style={styles.modalSectionSubtitle}>{t('activity.transactions.walletHelper')}</Text>
+                              </View>
+                            </View>
 
-                              <Text style={styles.monthSummaryMeta}>{selectedWalletLabel}</Text>
-                            </>
-                          )}
-                        </View>
+                            <View style={styles.filterChipWrap}>
+                              <Pressable
+                                onPress={() => setForm((current) => ({ ...current, walletId: null }))}
+                                style={[styles.filterChip, !form.walletId && styles.filterChipActive]}>
+                                <Text style={[styles.filterChipText, !form.walletId && styles.filterChipTextActive]}>
+                                  {t('activity.transactions.walletDefault')}
+                                </Text>
+                                <Text style={[styles.filterChipBalance, !form.walletId && styles.filterChipBalanceActive]}>
+                                  {toCurrency(mainWalletBalance, locale)}
+                                </Text>
+                              </Pressable>
+
+                              {selectableWalletOptions.map((wallet) => {
+                                const active = form.walletId === wallet.id;
+                                const balance = Number(wallet.balance ?? 0);
+                                return (
+                                  <Pressable
+                                    key={wallet.id}
+                                    onPress={() => setForm((current) => ({ ...current, walletId: wallet.id }))}
+                                    style={[styles.filterChip, active && styles.filterChipActive]}>
+                                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                      {wallet.name}
+                                    </Text>
+                                    <Text style={[styles.filterChipBalance, active && styles.filterChipBalanceActive]}>
+                                      {toCurrency(balance, locale)}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+
+                            <Text style={styles.monthSummaryMeta}>{selectedWalletLabel}</Text>
+                          </View>
+                        )}
 
                         <View style={styles.modalSectionCard}>
                           <View style={styles.modalSectionHeader}>
