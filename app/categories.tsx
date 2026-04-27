@@ -176,6 +176,7 @@ export default function CategoriesScreen() {
       })
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [categories, searchQuery]);
+  const searchActive = searchQuery.trim().length > 0;
 
   const handleSave = useCallback(async () => {
     const normalizedName = draft.name.trim();
@@ -243,7 +244,11 @@ export default function CategoriesScreen() {
   );
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      stickyHeaderIndices={[2]}
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}>
       <View style={styles.topRow}>
         <Pressable onPress={navigateToSettings} style={styles.backButton}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={colors.shellTextPrimary} />
@@ -253,20 +258,36 @@ export default function CategoriesScreen() {
         </Text>
       </View>
 
-      <View style={styles.hero}>
-        <Text style={styles.kicker}>{t('categories.kicker')}</Text>
-        <Text style={styles.title}>{t('categories.subtitle')}</Text>
+      <View style={[styles.hero, searchActive && styles.collapsedSection]}>
+        {!searchActive ? (
+          <>
+          <Text style={styles.kicker}>{t('categories.kicker')}</Text>
+          <Text style={styles.title}>{t('categories.subtitle')}</Text>
+          </>
+        ) : null}
       </View>
 
-      <TextInput
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder={t('categories.searchPlaceholder')}
-        placeholderTextColor={colors.inputPlaceholder}
-        style={styles.searchInput}
-      />
+      <View style={styles.searchShell}>
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={t('categories.searchPlaceholder')}
+          placeholderTextColor={colors.inputPlaceholder}
+          style={styles.searchInput}
+          returnKeyType="search"
+          autoCorrect={false}
+        />
+        {searchActive ? (
+          <Pressable onPress={() => setSearchQuery('')} style={styles.searchClearButton}>
+            <MaterialCommunityIcons name="close" size={18} color={colors.shellTextMuted} />
+          </Pressable>
+        ) : null}
+      </View>
 
-      <View style={styles.formCard}>
+      <View style={[styles.formCard, searchActive && styles.collapsedSection]}>
+        {!searchActive ? (
+          <>
         <View style={styles.typeSegment}>
           {(['expense', 'income'] as CategoryType[]).map((type) => {
             const active = type === draft.type;
@@ -310,6 +331,8 @@ export default function CategoriesScreen() {
           <Pressable onPress={() => setDraft(createEmptyCategoryDraft(draft.type))} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>{t('categories.cancelEdit')}</Text>
           </Pressable>
+        ) : null}
+          </>
         ) : null}
       </View>
 
@@ -529,17 +552,41 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontWeight: '500',
     },
     searchInput: {
-      minHeight: 50,
-      borderRadius: 16,
-      backgroundColor: colors.shellCard,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
-      paddingHorizontal: 14,
-      paddingVertical: 13,
       color: colors.shellTextPrimary,
       fontSize: 14,
       lineHeight: 20,
       fontWeight: '500',
+      flex: 1,
+      minWidth: 0,
+      paddingVertical: 0,
+      paddingHorizontal: 0,
+    },
+    searchShell: {
+      minHeight: 52,
+      borderRadius: 18,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    searchClearButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+    },
+    collapsedSection: {
+      height: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      overflow: 'hidden',
     },
     submitButton: {
       minHeight: 50,

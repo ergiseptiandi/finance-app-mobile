@@ -911,18 +911,29 @@ export default function DebtScreen() {
   }), [debts]);
   const displayDebts = showPaidDebts ? paidDebts : activeDebts;
   const searchTerm = searchQuery.trim().toLowerCase();
+  const searchActive = searchTerm.length > 0;
   const visibleDebts = useMemo(
     () =>
       searchTerm
         ? displayDebts.filter((debt) => {
-            const haystack = `${debt.name} ${debt.status} ${debt.due_date} ${debt.total_amount} ${debt.remaining_amount}`.toLowerCase();
-            return haystack.includes(searchTerm);
-          })
+          const haystack = `${debt.name} ${debt.status} ${debt.due_date} ${debt.total_amount} ${debt.remaining_amount}`.toLowerCase();
+          return haystack.includes(searchTerm);
+        })
         : displayDebts,
     [displayDebts, searchTerm]
   );
-
   const selected = selectedDebt ?? null;
+  const selectedVisible = useMemo(() => {
+    if (!selected) {
+      return false;
+    }
+
+    if (!searchActive) {
+      return true;
+    }
+
+    return visibleDebts.some((debt) => debt.id === selected.id);
+  }, [searchActive, selected, visibleDebts]);
   const selectedProgress = getInstallmentProgress(selected);
   const selectedRemaining = toNumber(selected?.remaining_amount);
   const selectedTotal = toNumber(selected?.total_amount);
@@ -993,9 +1004,11 @@ export default function DebtScreen() {
   return (
     <View style={styles.root}>
       <ScrollView
+        stickyHeaderIndices={[1]}
         ref={scrollRef}
         style={styles.screen}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
@@ -1004,95 +1017,113 @@ export default function DebtScreen() {
           <DebtSkeleton colors={colors} />
         ) : (
           <>
-        <View style={styles.heroCard}>
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroBadge}>
-              <MaterialCommunityIcons name="wallet-outline" size={14} color={colors.secondaryAccent} />
-              <Text style={styles.heroBadgeText}>{t('debt.kicker')}</Text>
-            </View>
-          </View>
+        <View style={[styles.heroCard, searchActive && styles.collapsedSection]}>
+          {!searchActive ? (
+            <>
+              <View style={styles.heroTopRow}>
+                <View style={styles.heroBadge}>
+                  <MaterialCommunityIcons name="wallet-outline" size={14} color={colors.secondaryAccent} />
+                  <Text style={styles.heroBadgeText}>{t('debt.kicker')}</Text>
+                </View>
+              </View>
 
-          <Text style={styles.heroTitle}>{t('debt.title')}</Text>
-          <Text style={styles.heroSubtitle}>{t('debt.subtitle')}</Text>
+              <Text style={styles.heroTitle}>{t('debt.title')}</Text>
+              <Text style={styles.heroSubtitle}>{t('debt.subtitle')}</Text>
 
-          <View style={styles.heroAmountRow}>
-            <View style={styles.heroAmountCopy}>
-              <Text style={styles.heroAmountLabel}>{t('debt.totalDebt')}</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.heroAmount}>
-                {formatCompactCurrency(overview.remaining, locale)}
-              </Text>
-            </View>
-            <View style={styles.heroRatioShell}>
-              <MaterialCommunityIcons name="chart-line" size={18} color={colors.onPrimary} />
-              <Text style={styles.heroRatioValue}>{overview.utilization}%</Text>
-            </View>
-          </View>
+              <View style={styles.heroAmountRow}>
+                <View style={styles.heroAmountCopy}>
+                  <Text style={styles.heroAmountLabel}>{t('debt.totalDebt')}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.heroAmount}>
+                    {formatCompactCurrency(overview.remaining, locale)}
+                  </Text>
+                </View>
+                <View style={styles.heroRatioShell}>
+                  <MaterialCommunityIcons name="chart-line" size={18} color={colors.onPrimary} />
+                  <Text style={styles.heroRatioValue}>{overview.utilization}%</Text>
+                </View>
+              </View>
 
-          <View style={styles.heroMetaRow}>
-            <Text style={styles.heroMeta}>{t('debt.activeDebts')}: {overview.activeDebts}</Text>
-            <Text style={styles.heroMeta}>{t('debt.dueSoon')}: {overview.dueSoon}</Text>
-            <Text style={styles.heroMeta}>{t('debt.overdue')}: {overview.overdue}</Text>
-          </View>
+              <View style={styles.heroMetaRow}>
+                <Text style={styles.heroMeta}>{t('debt.activeDebts')}: {overview.activeDebts}</Text>
+                <Text style={styles.heroMeta}>{t('debt.dueSoon')}: {overview.dueSoon}</Text>
+                <Text style={styles.heroMeta}>{t('debt.overdue')}: {overview.overdue}</Text>
+              </View>
 
-          <View style={styles.heroActionRow}>
-            <Pressable onPress={openCreateDebtForm} style={styles.heroSecondaryAction}>
-              <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
-              <Text style={styles.heroSecondaryActionText}>{t('debt.createDebt')}</Text>
-            </Pressable>
-            <Pressable onPress={() => setShowPaidDebts(!showPaidDebts)} style={styles.heroSecondaryActionMuted}>
-              <MaterialCommunityIcons name={showPaidDebts ? 'format-list-bulleted' : 'history'} size={16} color={colors.onPrimary} />
-              <Text style={styles.heroSecondaryActionText}>
-                {showPaidDebts ? t('debt.activeDebts') : t('debt.debtHistory')}
-              </Text>
-            </Pressable>
-          </View>
+              <View style={styles.heroActionRow}>
+                <Pressable onPress={openCreateDebtForm} style={styles.heroSecondaryAction}>
+                  <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
+                  <Text style={styles.heroSecondaryActionText}>{t('debt.createDebt')}</Text>
+                </Pressable>
+                <Pressable onPress={() => setShowPaidDebts(!showPaidDebts)} style={styles.heroSecondaryActionMuted}>
+                  <MaterialCommunityIcons name={showPaidDebts ? 'format-list-bulleted' : 'history'} size={16} color={colors.onPrimary} />
+                  <Text style={styles.heroSecondaryActionText}>
+                    {showPaidDebts ? t('debt.activeDebts') : t('debt.debtHistory')}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
         </View>
 
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder={t('debt.searchPlaceholder')}
-          placeholderTextColor={colors.shellTextSoft}
-          style={styles.searchInput}
-        />
+        <View style={styles.searchShell}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t('debt.searchPlaceholder')}
+            placeholderTextColor={colors.shellTextSoft}
+            style={styles.searchInput}
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          {searchActive ? (
+            <Pressable onPress={() => setSearchQuery('')} style={styles.searchClearButton}>
+              <MaterialCommunityIcons name="close" size={18} color={colors.shellTextMuted} />
+            </Pressable>
+          ) : null}
+        </View>
 
-        <View style={styles.summarySection}>
-          <Text style={styles.sectionLabel}>{t('debt.overview')}</Text>
+        <View style={[styles.summarySection, searchActive && styles.collapsedSection]}>
+          {!searchActive ? (
+            <>
+              <Text style={styles.sectionLabel}>{t('debt.overview')}</Text>
 
-          <View style={styles.metricGrid}>
-            <MetricCard
-              colors={colors}
-              icon="cash-multiple"
-              tone="success"
-              label={t('debt.paid')}
-              value={formatCurrency(overview.paid, locale)}
-              meta={`${overview.utilization}%`}
-            />
-            <MetricCard
-              colors={colors}
-              icon="calendar-clock"
-              tone="warning"
-              label={t('debt.dueSoon')}
-              value={String(overview.dueSoon)}
-              meta={t('debt.activeDebts')}
-            />
-            <MetricCard
-              colors={colors}
-              icon="alert-circle-outline"
-              tone="danger"
-              label={t('debt.overdue')}
-              value={String(overview.overdue)}
-              meta={t('debt.remaining')}
-            />
-            <MetricCard
-              colors={colors}
-              icon="bank-outline"
-              tone="neutral"
-              label={t('debt.remaining')}
-              value={formatCompactCurrency(overview.remaining, locale)}
-              meta={formatCurrency(overview.totalDebt, locale)}
-            />
-          </View>
+              <View style={styles.metricGrid}>
+                <MetricCard
+                  colors={colors}
+                  icon="cash-multiple"
+                  tone="success"
+                  label={t('debt.paid')}
+                  value={formatCurrency(overview.paid, locale)}
+                  meta={`${overview.utilization}%`}
+                />
+                <MetricCard
+                  colors={colors}
+                  icon="calendar-clock"
+                  tone="warning"
+                  label={t('debt.dueSoon')}
+                  value={String(overview.dueSoon)}
+                  meta={t('debt.activeDebts')}
+                />
+                <MetricCard
+                  colors={colors}
+                  icon="alert-circle-outline"
+                  tone="danger"
+                  label={t('debt.overdue')}
+                  value={String(overview.overdue)}
+                  meta={t('debt.remaining')}
+                />
+                <MetricCard
+                  colors={colors}
+                  icon="bank-outline"
+                  tone="neutral"
+                  label={t('debt.remaining')}
+                  value={formatCompactCurrency(overview.remaining, locale)}
+                  meta={formatCurrency(overview.totalDebt, locale)}
+                />
+              </View>
+            </>
+          ) : null}
         </View>
 
         <View style={styles.listSection}>
@@ -1127,21 +1158,24 @@ export default function DebtScreen() {
                 const isSelected = debt.id === selectedDebtId;
 
                 return (
-                  <Pressable
-                    key={debt.id}
-                    onPress={() => selectDebt(debt.id)}
-                    style={({ pressed }) => [
-                      styles.debtCard,
-                      isSelected && styles.debtCardSelected,
-                      pressed && styles.debtCardPressed,
-                    ]}>
+                    <Pressable
+                      key={debt.id}
+                      onPress={() => selectDebt(debt.id)}
+                      style={({ pressed }) => [
+                        styles.debtCard,
+                        isSelected && styles.debtCardSelected,
+                        isSelected && searchActive && styles.debtCardSelectedSearch,
+                        pressed && styles.debtCardPressed,
+                      ]}>
                     <View style={styles.debtCardHeader}>
                       <View style={styles.debtCardCopy}>
                         <View style={styles.debtCardTopRow}>
                           <Text numberOfLines={1} style={styles.debtName}>
                             {debt.name}
                           </Text>
-                          <StatusChip colors={colors} tone={tone} label={toStatusLabel(debt.status, t)} />
+                          <View style={styles.debtCardBadgeStack}>
+                            <StatusChip colors={colors} tone={tone} label={toStatusLabel(debt.status, t)} />
+                          </View>
                         </View>
                         <Text style={styles.debtMeta}>
                           {formatCurrency(toNumber(debt.monthly_installment), locale)} / month
@@ -1192,7 +1226,7 @@ export default function DebtScreen() {
           )}
         </View>
 
-        {!!selected && (
+        {selectedVisible && selected ? (
           <View ref={detailCardRef} style={styles.detailCard}>
             <View style={styles.detailTopRow}>
               <View style={styles.detailIconWrap}>
@@ -1382,7 +1416,7 @@ export default function DebtScreen() {
               )}
             </View>
           </View>
-        )}
+        ) : null}
           </>
         )}
 
@@ -2311,6 +2345,17 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       borderColor: alpha(colors.primary, 0.4),
       backgroundColor: colors.shellCardStrong,
     },
+    debtCardSelectedSearch: {
+      borderColor: alpha(colors.secondaryAccent, 0.34),
+      borderLeftWidth: 3,
+      borderLeftColor: colors.secondaryAccent,
+      backgroundColor: alpha(colors.primary, 0.14),
+      shadowColor: colors.primary,
+      shadowOpacity: 0.14,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 5 },
+      elevation: 2,
+    },
     debtCardPressed: {
       transform: [{ scale: 0.99 }],
     },
@@ -2330,6 +2375,10 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       alignItems: 'flex-start',
       justifyContent: 'space-between',
       gap: 10,
+    },
+    debtCardBadgeStack: {
+      alignItems: 'flex-end',
+      gap: 6,
     },
     debtName: {
       flex: 1,
@@ -3036,16 +3085,41 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       gap: 10,
     },
     searchInput: {
-      minHeight: 50,
-      borderRadius: 16,
-      backgroundColor: colors.shellCardSoft,
-      borderWidth: 1,
-      borderColor: colors.shellBorder,
-      paddingHorizontal: 14,
       color: colors.shellTextPrimary,
       fontSize: 14,
       lineHeight: 20,
       fontWeight: '600',
+      flex: 1,
+      minWidth: 0,
+      paddingVertical: 0,
+      paddingHorizontal: 0,
+    },
+    searchShell: {
+      minHeight: 52,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    searchClearButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+    },
+    collapsedSection: {
+      height: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      overflow: 'hidden',
     },
     inputIconWrap: {
       width: 34,

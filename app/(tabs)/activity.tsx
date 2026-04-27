@@ -5,7 +5,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -594,6 +594,10 @@ export default function ActivityScreen() {
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const searchInputRef = useRef<TextInput>(null);
+  const [searchInputKey, setSearchInputKey] = useState(0);
+  const [searchFocused, setSearchFocused] = useState(false);
   const keyboardOpen = keyboardHeight > 0;
   const modalLift = keyboardOpen ? Math.max(36, keyboardHeight - insets.bottom + 28) : 0;
   const hasActivitySnapshot = Boolean(
@@ -604,6 +608,14 @@ export default function ActivityScreen() {
       summary.total_expense ||
       summary.balance
   );
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    setSearchFocused(false);
+    setSearchInputKey((current) => current + 1);
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1053,6 +1065,7 @@ export default function ActivityScreen() {
   }, [closeTransactionModal, form.id, loadActivity, t, withAuthorizedRequest]);
 
   const transactionBalance = summary.balance;
+  const searchActive = searchQuery.trim().length > 0;
   const visibleTransactions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
@@ -1207,36 +1220,54 @@ export default function ActivityScreen() {
   return (
     <>
       <ScrollView
+        ref={scrollViewRef}
         style={styles.screen}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadActivity(true)} tintColor={colors.primary} />
         }
         showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <Text style={styles.kicker}>{t('activity.transactions.overview')}</Text>
-          <View style={styles.titleRow}>
-            <Text style={styles.title}>{t('activity.transactions.titleShort')}</Text>
-            <Pressable onPress={openCreateModal} style={styles.inlineCreateButton}>
-              <MaterialCommunityIcons name="plus" size={18} color={colors.onPrimary} />
-            </Pressable>
-          </View>
+        <View style={[styles.hero, searchActive && styles.collapsedSection]}>
+          {!searchActive ? (
+            <>
+              <Text style={styles.kicker}>{t('activity.transactions.overview')}</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.title}>{t('activity.transactions.titleShort')}</Text>
+                <Pressable onPress={openCreateModal} style={styles.inlineCreateButton}>
+                  <MaterialCommunityIcons name="plus" size={18} color={colors.onPrimary} />
+                </Pressable>
+              </View>
+            </>
+          ) : null}
         </View>
 
         <View style={styles.toolbarRow}>
-          <View style={styles.searchShell}>
+          <View style={[styles.searchShell, searchFocused && styles.searchShellFocused]}>
             <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
             <TextInput
+              ref={searchInputRef}
+              key={searchInputKey}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder={t('activity.transactions.searchPlaceholder')}
               placeholderTextColor={colors.shellTextMuted}
               style={styles.searchInput}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              onTouchStart={() => searchInputRef.current?.focus()}
+              autoCorrect={false}
+              returnKeyType="search"
             />
+            {searchActive ? (
+              <Pressable onPress={clearSearch} style={styles.searchClearButton} hitSlop={8}>
+                <MaterialCommunityIcons name="close" size={16} color={colors.shellTextMuted} />
+              </Pressable>
+            ) : null}
           </View>
 
-          <Pressable onPress={openFilterModal} style={styles.filterLauncher}>
-            <MaterialCommunityIcons name="tune-variant" size={18} color={colors.onPrimary} />
+          <Pressable onPress={openFilterModal} style={styles.filterCardButton}>
+            <MaterialCommunityIcons name="tune-variant" size={18} color={colors.primary} />
             {activeFilterCount > 0 ? (
               <View style={styles.filterLauncherBadge}>
                 <Text style={styles.filterLauncherBadgeText}>{activeFilterCount}</Text>
@@ -1249,15 +1280,12 @@ export default function ActivityScreen() {
           <ActivitySkeleton colors={colors} />
         ) : (
           <>
-            <View style={styles.filterSummaryCard}>
+            {!searchActive ? <View style={styles.filterSummaryCard}>
               <View style={styles.filterSummaryHeader}>
                 <View style={styles.filterSummaryCopy}>
                   <Text style={styles.filterSummaryKicker}>{t('activity.transactions.filterTitle')}</Text>
                   <Text style={styles.filterSummaryText}>{t('activity.transactions.filterHelper')}</Text>
                 </View>
-                <Pressable onPress={openFilterModal} style={styles.filterSummaryAction}>
-                  <Text style={styles.filterSummaryActionText}>{t('activity.transactions.filterAction')}</Text>
-                </Pressable>
               </View>
 
               <View style={styles.filterChipWrap}>
@@ -1267,9 +1295,9 @@ export default function ActivityScreen() {
                   </View>
                 ))}
               </View>
-            </View>
+            </View> : null}
 
-            <View style={styles.summaryStack}>
+            {!searchActive ? <View style={styles.summaryStack}>
               <SummaryStat
                 colors={colors}
                 title={t('activity.transactions.balance')}
@@ -1294,7 +1322,7 @@ export default function ActivityScreen() {
                 meta={t('activity.transactions.ofMovement')}
                 accent="teal"
               />
-            </View>
+            </View> : null}
 
             {groupedTransactions.length === 0 ? (
               <View style={styles.stateCard}>
@@ -2300,18 +2328,37 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     toolbarRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      flexWrap: 'nowrap',
+      marginBottom: 12,
+      position: 'relative',
+      zIndex: 2,
     },
     searchShell: {
       flex: 1,
       minWidth: 0,
+      flexShrink: 1,
       minHeight: 56,
-      borderRadius: 28,
-      backgroundColor: alpha(colors.surfaceContainerHighest, 0.2),
+      borderRadius: 18,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
       paddingHorizontal: 18,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
+      marginRight: 12,
+      overflow: 'hidden',
+      position: 'relative',
+      zIndex: 2,
+      elevation: 2,
+    },
+    searchShellFocused: {
+      borderColor: alpha(colors.primary, 0.28),
+      shadowColor: colors.primary,
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 1,
     },
     searchInput: {
       flex: 1,
@@ -2322,14 +2369,34 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       fontWeight: '500',
       paddingVertical: 0,
     },
-    filterLauncher: {
+    searchClearButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.surfaceContainerHighest, 0.6),
+    },
+    collapsedSection: {
+      height: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      overflow: 'hidden',
+    },
+    filterCardButton: {
       width: 56,
       height: 56,
       borderRadius: 18,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
+      flexShrink: 0,
+      zIndex: 1,
     },
     filterLauncherBadge: {
       position: 'absolute',
@@ -2338,12 +2405,12 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       minWidth: 18,
       height: 18,
       borderRadius: 999,
-      backgroundColor: colors.onPrimary,
+      backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
     },
     filterLauncherBadgeText: {
-      color: colors.primary,
+      color: colors.onPrimary,
       fontSize: 10,
       lineHeight: 12,
       fontWeight: '900',
@@ -2355,11 +2422,12 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       borderColor: colors.shellBorder,
       padding: 16,
       gap: 14,
+      position: 'relative',
+      zIndex: 1,
     },
     filterSummaryHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
       gap: 12,
     },
     filterSummaryCopy: {
@@ -2381,26 +2449,10 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       lineHeight: 18,
       fontWeight: '600',
     },
-    filterSummaryAction: {
-      minHeight: 34,
-      borderRadius: 12,
-      backgroundColor: colors.shellCardMuted,
-      paddingHorizontal: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    filterSummaryActionText: {
-      color: colors.primary,
-      fontSize: 11,
-      lineHeight: 14,
-      fontWeight: '800',
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
-    },
-    filterChipWrap: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 10,
+      filterChipWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
     },
     monthGrid: {
       flexDirection: 'row',

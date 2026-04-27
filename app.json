@@ -16,6 +16,7 @@
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/logo.png"
       },
+      "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,

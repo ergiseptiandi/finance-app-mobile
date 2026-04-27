@@ -205,6 +205,7 @@ export default function WalletsScreen() {
     [resolvedWallets]
   );
   const searchTerm = searchQuery.trim().toLowerCase();
+  const searchActive = searchTerm.length > 0;
   const filteredWallets = useMemo(
     () =>
       searchTerm
@@ -591,6 +592,7 @@ export default function WalletsScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView
+        stickyHeaderIndices={[3]}
         style={styles.scroll}
         contentContainerStyle={styles.content}
         refreshControl={
@@ -619,91 +621,113 @@ export default function WalletsScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.heroCard}>
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroLabel}>{t('wallets.summaryKicker')}</Text>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.heroAmount}>
-              {summaryLabel}
-            </Text>
-            <Text style={styles.heroMeta}>
-              {t('wallets.walletCount', { count: totalWalletCount })} •{' '}
-              {t('wallets.transferCount', { count: transferCount })}
-            </Text>
-          </View>
-
-          <View style={styles.heroBadge}>
-            <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
-          </View>
-        </View>
-
-        <View style={styles.noteCard}>
-          <MaterialCommunityIcons name="information-outline" size={18} color={colors.secondary} />
-          <Text style={styles.noteText}>{t('wallets.note')}</Text>
-        </View>
-
-        <View style={styles.formCard}>
-          <View style={styles.formHeader}>
-            <View style={styles.formHeaderCopy}>
-              <Text style={styles.sectionTitle}>{walletForm.id ? t('wallets.editTitle') : t('wallets.createTitle')}</Text>
-              <Text style={styles.sectionSubtitle}>{t('wallets.formHelper')}</Text>
-            </View>
-            <Pressable onPress={startCreateWallet} style={styles.formResetButton}>
-              <Text style={styles.formResetButtonText}>{t('wallets.newWallet')}</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{t('wallets.formName')}</Text>
-            <TextInput
-              value={walletForm.name}
-              onChangeText={(value) => setWalletForm((current) => ({ ...current, name: value }))}
-              placeholder={t('wallets.formNamePlaceholder')}
-              placeholderTextColor={colors.shellTextMuted}
-              autoCapitalize="words"
-              style={styles.input}
-            />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{t('wallets.formOpeningBalance')}</Text>
-            <TextInput
-              value={walletForm.openingBalance}
-              onChangeText={(value) =>
-                setWalletForm((current) => ({ ...current, openingBalance: formatCurrencyInput(value) }))
-              }
-              placeholder={t('wallets.formOpeningPlaceholder')}
-              placeholderTextColor={colors.shellTextMuted}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          </View>
-
-          <View style={styles.formActions}>
-            <Pressable onPress={handleSaveWallet} disabled={walletSubmitting} style={styles.primaryButton}>
-              {walletSubmitting ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {walletForm.id ? t('wallets.update') : t('wallets.save')}
+        <View style={[styles.heroCard, searchActive && styles.collapsedSection]}>
+          {!searchActive ? (
+            <>
+              <View style={styles.heroCopy}>
+                <Text style={styles.heroLabel}>{t('wallets.summaryKicker')}</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.heroAmount}>
+                  {summaryLabel}
                 </Text>
-              )}
-            </Pressable>
+                <Text style={styles.heroMeta}>
+                  {t('wallets.walletCount', { count: totalWalletCount })} •{' '}
+                  {t('wallets.transferCount', { count: transferCount })}
+                </Text>
+              </View>
 
-            {walletForm.id ? (
-              <Pressable onPress={closeWalletForm} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>{t('wallets.cancelEdit')}</Text>
-              </Pressable>
-            ) : null}
-          </View>
+              <View style={styles.heroBadge}>
+                <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
+              </View>
+            </>
+          ) : null}
         </View>
 
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder={t('wallets.searchPlaceholder')}
-          placeholderTextColor={colors.inputPlaceholder}
-          style={styles.searchInput}
-        />
+        <View style={[styles.noteCard, searchActive && styles.collapsedSection]}>
+          {!searchActive ? (
+            <>
+              <MaterialCommunityIcons name="information-outline" size={18} color={colors.secondary} />
+              <Text style={styles.noteText}>{t('wallets.note')}</Text>
+            </>
+          ) : null}
+        </View>
+
+        <View style={styles.searchShell}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t('wallets.searchPlaceholder')}
+            placeholderTextColor={colors.inputPlaceholder}
+            style={styles.searchInput}
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          {searchActive ? (
+            <Pressable onPress={() => setSearchQuery('')} style={styles.searchClearButton}>
+              <MaterialCommunityIcons name="close" size={18} color={colors.shellTextMuted} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        <View style={[styles.formCard, searchActive && styles.collapsedSection]}>
+          {!searchActive ? (
+            <>
+              <View style={styles.formHeader}>
+                <View style={styles.formHeaderCopy}>
+                  <Text style={styles.sectionTitle}>{walletForm.id ? t('wallets.editTitle') : t('wallets.createTitle')}</Text>
+                  <Text style={styles.sectionSubtitle}>{t('wallets.formHelper')}</Text>
+                </View>
+                <Pressable onPress={startCreateWallet} style={styles.formResetButton}>
+                  <Text style={styles.formResetButtonText}>{t('wallets.newWallet')}</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{t('wallets.formName')}</Text>
+                <TextInput
+                  value={walletForm.name}
+                  onChangeText={(value) => setWalletForm((current) => ({ ...current, name: value }))}
+                  placeholder={t('wallets.formNamePlaceholder')}
+                  placeholderTextColor={colors.shellTextMuted}
+                  autoCapitalize="words"
+                  style={styles.input}
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{t('wallets.formOpeningBalance')}</Text>
+                <TextInput
+                  value={walletForm.openingBalance}
+                  onChangeText={(value) =>
+                    setWalletForm((current) => ({ ...current, openingBalance: formatCurrencyInput(value) }))
+                  }
+                  placeholder={t('wallets.formOpeningPlaceholder')}
+                  placeholderTextColor={colors.shellTextMuted}
+                  keyboardType="numeric"
+                  style={styles.input}
+                />
+              </View>
+
+              <View style={styles.formActions}>
+                <Pressable onPress={handleSaveWallet} disabled={walletSubmitting} style={styles.primaryButton}>
+                  {walletSubmitting ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>
+                      {walletForm.id ? t('wallets.update') : t('wallets.save')}
+                    </Text>
+                  )}
+                </Pressable>
+
+                {walletForm.id ? (
+                  <Pressable onPress={closeWalletForm} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonText}>{t('wallets.cancelEdit')}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </>
+          ) : null}
+        </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{t('wallets.walletListTitle')}</Text>
@@ -1203,15 +1227,40 @@ const createStyles = (colors: AppColorTheme, topInset: number) => {
       fontWeight: '600',
     },
     searchInput: {
-      minHeight: 50,
-      borderRadius: 14,
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+      flex: 1,
+      minWidth: 0,
+      paddingVertical: 0,
+      paddingHorizontal: 0,
+    },
+    searchShell: {
+      minHeight: 52,
+      borderRadius: 18,
       backgroundColor: colors.shellCard,
       borderWidth: 1,
       borderColor: colors.shellBorder,
       paddingHorizontal: 14,
-      color: colors.shellTextPrimary,
-      fontSize: 14,
-      fontWeight: '600',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    searchClearButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+    },
+    collapsedSection: {
+      height: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+      overflow: 'hidden',
     },
     formActions: {
       flexDirection: 'row',
