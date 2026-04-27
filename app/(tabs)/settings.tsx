@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { cacheDirectory, EncodingType, writeAsStringAsync } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import {
   ActivityIndicator,
@@ -225,20 +225,19 @@ export default function SettingsScreen() {
       return;
     }
 
-    const fileUri = `${cacheDirectory ?? ''}${fileName}`;
-    await writeAsStringAsync(fileUri, csv, {
-      encoding: EncodingType.UTF8,
-    });
+    const safeFileName = fileName.replace(/[^A-Za-z0-9._-]/g, '_');
+    const file = new File(Paths.cache, safeFileName);
+    file.write(csv);
 
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri, {
+      await Sharing.shareAsync(file.uri, {
         mimeType: 'text/csv',
-        dialogTitle: fileName,
+        dialogTitle: safeFileName,
       });
       return;
     }
 
-    throw new Error('sharing_unavailable');
+    console.warn('Sharing is unavailable on this device, export file remains in cache:', file.uri);
   }, []);
 
   const openExportModal = useCallback(() => {
@@ -335,6 +334,7 @@ export default function SettingsScreen() {
           month: exportPeriodMode === 'month' ? selectedMonth : undefined,
           startDate: exportPeriodMode === 'custom' ? exportStartDate : undefined,
           endDate: exportPeriodMode === 'custom' ? exportEndDate : undefined,
+          language: language.startsWith('id') ? 'id' : 'en',
         })
       );
 
@@ -351,12 +351,13 @@ export default function SettingsScreen() {
       );
       setExportModalOpen(false);
     } catch (error) {
+      console.error('Failed to export CSV', error);
       const message = error instanceof Error ? error.message : String(error);
       if (message === 'missing_session') {
         return;
       }
 
-      Alert.alert(t('settings.exportDataTitle'), t('settings.exportError'));
+      Alert.alert(t('settings.exportDataTitle'), message === 'sharing_unavailable' ? t('settings.exportSuccess') : t('settings.exportError'));
     } finally {
       setExportingCsv(false);
     }
@@ -368,6 +369,7 @@ export default function SettingsScreen() {
     exportScope,
     exportStartDate,
     exportingCsv,
+    language,
     saveCsvExport,
     t,
     withAuthorizedRequest,

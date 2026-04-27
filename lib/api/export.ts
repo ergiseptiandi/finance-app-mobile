@@ -9,6 +9,7 @@ export type ExportCsvParams = {
   month?: string;
   startDate?: string;
   endDate?: string;
+  language?: 'id' | 'en';
 };
 
 export type ExportCsvResult = {
@@ -52,6 +53,10 @@ export const requestCsvExport = async (
 
   if (params.endDate) {
     searchParams.set('end_date', params.endDate);
+  }
+
+  if (params.language) {
+    searchParams.set('lang', params.language);
   }
 
   const response = await fetch(`${buildApiUrl('exports/csv')}?${searchParams.toString()}`, {
