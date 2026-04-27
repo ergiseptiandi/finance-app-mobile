@@ -32,6 +32,8 @@ const isFormData = (value: unknown): value is FormData =>
 const isBlob = (value: unknown): value is Blob =>
   typeof Blob !== 'undefined' && value instanceof Blob;
 
+const NETWORK_ERROR_MESSAGE = 'Koneksi internet tidak tersedia. Coba lagi.';
+
 const parseResponse = async (response: Response) => {
   const contentType = response.headers.get('content-type') ?? '';
   const raw = await response.text();
@@ -71,16 +73,21 @@ export const request = async <T>(url: string, options: RequestOptions = {}) => {
     headers.set('Authorization', bearerToken);
   }
 
-  const response = await fetch(url, {
-    ...rest,
-    headers,
-    body:
-      body === undefined
-        ? undefined
-        : hasBinaryBody
-          ? (body as BodyInit)
-          : JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...rest,
+      headers,
+      body:
+        body === undefined
+          ? undefined
+          : hasBinaryBody
+            ? (body as BodyInit)
+            : JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new ApiRequestError(0, NETWORK_ERROR_MESSAGE, error);
+  }
 
   const payload = await parseResponse(response);
 

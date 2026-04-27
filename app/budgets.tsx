@@ -23,6 +23,7 @@ import { createBudgetGoal, deleteBudgetGoal, listBudgetGoals, updateBudgetGoal, 
 import { listCategories, type CategoryRecord } from '@/lib/api/categories';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 
 type BudgetDraft = {
   id?: number;
@@ -188,6 +189,7 @@ export default function BudgetsScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const { language, t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const styles = createStyles(colors, insets.top);
 
@@ -289,18 +291,18 @@ export default function BudgetsScreen() {
         );
 
         if (hardFailure) {
-          setError(t('budget.partialError'));
+          setError(isOffline ? t('common.offlineLoadError') : t('budget.partialError'));
         }
       } catch (loadError) {
         if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
-          setError(t('budget.loadError'));
+          setError(isOffline ? t('common.offlineLoadError') : t('budget.loadError'));
         }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [t, withAuthorizedRequest]
+    [isOffline, t, withAuthorizedRequest]
   );
 
   useFocusEffect(

@@ -17,6 +17,7 @@ import {
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 import { ApiRequestError } from '@/lib/api/auth';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import {
@@ -143,6 +144,7 @@ export default function NotificationsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { language, t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const { showTransitionOverlay } = useTransitionOverlay();
   const insets = useSafeAreaInsets();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
@@ -221,14 +223,14 @@ export default function NotificationsScreen() {
         setNotifications(serverNotifications.length > 0 ? serverNotifications : deviceNotifications);
       } catch (loadError) {
         if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
-          setError(t('notifications.loadError'));
+          setError(isOffline ? t('common.offlineLoadError') : t('notifications.loadError'));
         }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [t, withAuthorizedRequest]
+    [isOffline, t, withAuthorizedRequest]
   );
 
   useFocusEffect(

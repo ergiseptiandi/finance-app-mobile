@@ -28,6 +28,7 @@ import {
   type CategoryRecord,
 } from '@/lib/api/categories';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 
 type CategoryDraft = {
   id?: number;
@@ -80,6 +81,7 @@ export default function CategoriesScreen() {
   const colors = Colors[useColorScheme() ?? 'light'];
   const insets = useSafeAreaInsets();
   const { t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const styles = createStyles(colors, insets.top);
 
   const [filter, setFilter] = useState<'all' | CategoryType>('all');
@@ -152,12 +154,12 @@ export default function CategoriesScreen() {
       setCategories(response.Data ?? []);
     } catch (loadError) {
       if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
-        setError(t('categories.loadError'));
+        setError(isOffline ? t('common.offlineLoadError') : t('categories.loadError'));
       }
     } finally {
       setLoading(false);
     }
-  }, [filter, t, withAuthorizedRequest]);
+  }, [filter, isOffline, t, withAuthorizedRequest]);
 
   useEffect(() => {
     loadCategories();

@@ -3,13 +3,16 @@ import { router, Redirect, Stack, useSegments } from 'expo-router';
 import { ThemeProvider } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
 import { useCallback, useEffect, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useAppLanguage, AppLanguageProvider } from '@/providers/language-provider';
 import { Colors, NavigationThemes } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppThemeProvider, useAppTheme } from '@/providers/theme-provider';
+import { NetworkStatusProvider, useNetworkStatus } from '@/providers/network-status-provider';
 import { getOnboardingCompleted } from '@/lib/onboarding';
 import { TransitionOverlayProvider, useTransitionOverlay } from '@/providers/transition-overlay-provider';
 import {
@@ -35,7 +38,9 @@ export default function RootLayout() {
     <AppLanguageProvider>
       <TransitionOverlayProvider>
         <AppThemeProvider>
-          <RootNavigator />
+          <NetworkStatusProvider>
+            <RootNavigator />
+          </NetworkStatusProvider>
         </AppThemeProvider>
       </TransitionOverlayProvider>
     </AppLanguageProvider>
@@ -50,6 +55,8 @@ function RootNavigator() {
   const { isThemeHydrated } = useAppTheme();
   const { isLanguageHydrated, t } = useAppLanguage();
   const { hideTransitionOverlay, isTransitionOverlayVisible } = useTransitionOverlay();
+  const { isOffline } = useNetworkStatus();
+  const insets = useSafeAreaInsets();
   const colors = Colors[colorScheme];
   const [isOnboardingHydrated, setIsOnboardingHydrated] = useState(false);
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
@@ -214,6 +221,24 @@ function RootNavigator() {
           />
         </Stack>
 
+        {isOffline ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.offlineBanner,
+              {
+                top: insets.top + 12,
+                backgroundColor: colors.shellCardSoft,
+                borderColor: colors.danger,
+              },
+            ]}>
+            <MaterialCommunityIcons name="wifi-off" size={18} color={colors.danger} />
+            <Text style={[styles.offlineBannerText, { color: colors.shellTextPrimary }]}>
+              {t('common.offlineBanner')}
+            </Text>
+          </View>
+        ) : null}
+
         {isTransitionOverlayVisible ? (
           <View pointerEvents="none" style={[styles.transitionOverlay, { backgroundColor: colors.background }]} />
         ) : null}
@@ -226,6 +251,7 @@ function RootNavigator() {
 const styles = StyleSheet.create({
   navigatorRoot: {
     flex: 1,
+    position: 'relative',
   },
   loadingGate: {
     flex: 1,
@@ -235,5 +261,30 @@ const styles = StyleSheet.create({
   transitionOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 60,
+  },
+  offlineBanner: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 80,
+    elevation: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  offlineBannerText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
   },
 });

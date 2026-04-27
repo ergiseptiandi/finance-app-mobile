@@ -39,6 +39,7 @@ import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 
 type TrendMode = 'daily' | 'monthly';
 type DashboardDateFilterMode = 'month' | 'range';
@@ -327,6 +328,7 @@ export default function DashboardScreen() {
   const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme];
   const { language, t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -496,7 +498,11 @@ export default function DashboardScreen() {
         );
 
         if (hasHardFailure) {
-          setError(t('dashboard.partialError'));
+          if (isOffline && hasDashboardSnapshot) {
+            return;
+          }
+
+          setError(isOffline ? t('common.offlineLoadError') : t('dashboard.partialError'));
         }
       } catch (err) {
         if (err instanceof ApiRequestError && err.status === 401) {
@@ -504,13 +510,18 @@ export default function DashboardScreen() {
           return;
         }
 
-        setError(t('dashboard.loadError'));
+        if (isOffline && hasDashboardSnapshot) {
+          setError('');
+          return;
+        }
+
+        setError(isOffline ? t('common.offlineLoadError') : t('dashboard.loadError'));
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [comparison, dailySpending, hasDashboardSnapshot, insights, monthlySpending, summary, t]
+    [comparison, dailySpending, hasDashboardSnapshot, insights, isOffline, monthlySpending, summary, t]
   );
 
   const loadUnreadNotifications = useCallback(async () => {

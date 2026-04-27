@@ -38,6 +38,7 @@ import {
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 
 type WalletFormState = {
   id?: number;
@@ -167,6 +168,7 @@ export default function WalletsScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const { language, t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const styles = createStyles(colors, insets.top);
 
@@ -312,7 +314,11 @@ export default function WalletsScreen() {
         );
 
         if (hasHardFailure) {
-          setError(t('wallets.partialError'));
+          if (isOffline && hasWalletSnapshot) {
+            return;
+          }
+
+          setError(isOffline ? t('common.offlineLoadError') : t('wallets.partialError'));
         }
       } catch (err) {
         if (err instanceof Error && err.message === 'missing_session') {
@@ -324,13 +330,18 @@ export default function WalletsScreen() {
           return;
         }
 
-        setError(t('wallets.loadError'));
+        if (isOffline && hasWalletSnapshot) {
+          setError('');
+          return;
+        }
+
+        setError(isOffline ? t('common.offlineLoadError') : t('wallets.loadError'));
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [hasWalletSnapshot, summary, t, transfers, wallets, withAuthorizedRequest]
+    [hasWalletSnapshot, isOffline, summary, t, transfers, wallets, withAuthorizedRequest]
   );
 
   useEffect(() => {

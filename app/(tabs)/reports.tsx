@@ -20,6 +20,7 @@ import { ReportsSkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 import { ApiRequestError } from '@/lib/api/auth';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import {
@@ -212,6 +213,7 @@ export default function ReportsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { language, t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -427,11 +429,20 @@ export default function ReportsScreen() {
         }
 
         if (results.some((result) => result.status === 'rejected')) {
-          setError(t('reports.partialError'));
+          if (isOffline && hasReportsSnapshot) {
+            return;
+          }
+
+          setError(isOffline ? t('common.offlineLoadError') : t('reports.partialError'));
         }
       } catch (err) {
         if (!(err instanceof Error && err.message === 'missing_session')) {
-          setError(t('reports.loadError'));
+          if (isOffline && hasReportsSnapshot) {
+            setError('');
+            return;
+          }
+
+          setError(isOffline ? t('common.offlineLoadError') : t('reports.loadError'));
         }
       } finally {
         setLoading(false);
@@ -440,6 +451,7 @@ export default function ReportsScreen() {
     },
     [
       averageDaily,
+      isOffline,
       expenseByCategory,
       hasReportsSnapshot,
       highestCategory,

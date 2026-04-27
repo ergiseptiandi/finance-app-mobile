@@ -43,6 +43,7 @@ import { listWallets, type WalletRecord } from '@/lib/api/wallets';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 
 type ActivityFilterType = 'all' | TransactionType;
 type ActivityDateFilterMode = 'month' | 'range';
@@ -566,6 +567,7 @@ export default function ActivityScreen() {
   const colors = Colors[useColorScheme() ?? 'light'];
   const insets = useSafeAreaInsets();
   const { language, t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const styles = createStyles(colors, insets.top, insets.bottom);
   const isLight = colors === Colors.light;
@@ -761,14 +763,19 @@ export default function ActivityScreen() {
         );
       } catch (loadError) {
         if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
-          setError(t('activity.transactions.loadError'));
+          if (isOffline && hasActivitySnapshot) {
+            setError('');
+            return;
+          }
+
+          setError(isOffline ? t('common.offlineLoadError') : t('activity.transactions.loadError'));
         }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [filters, hasActivitySnapshot, t, withAuthorizedRequest]
+    [filters, hasActivitySnapshot, isOffline, t, withAuthorizedRequest]
   );
 
   useFocusEffect(
@@ -824,12 +831,16 @@ export default function ActivityScreen() {
       });
     } catch (loadError) {
       if (!(loadError instanceof Error && loadError.message === 'missing_session')) {
-        setError(t('activity.transactions.loadMoreError'));
+        if (isOffline && hasActivitySnapshot) {
+          return;
+        }
+
+        setError(isOffline ? t('common.offlineLoadError') : t('activity.transactions.loadMoreError'));
       }
     } finally {
       setLoadingMore(false);
     }
-  }, [filters, loading, loadingMore, pagination, t, withAuthorizedRequest]);
+  }, [filters, hasActivitySnapshot, isOffline, loading, loadingMore, pagination, t, withAuthorizedRequest]);
 
   const resetTransactionForm = useCallback(() => {
     setForm(createEmptyTransactionForm());

@@ -29,6 +29,7 @@ import { DebtSkeleton } from '@/components/ui/skeleton';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 import { ApiRequestError } from '@/lib/api/auth';
 import { buildAssetUrl } from '@/constants/api';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
@@ -311,6 +312,7 @@ export default function DebtScreen() {
   const colors = Colors[colorScheme];
   const isLight = colorScheme === 'light';
   const { language, t } = useAppLanguage();
+  const { isOffline } = useNetworkStatus();
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -432,18 +434,23 @@ export default function DebtScreen() {
         return nextDetail;
       } catch (err) {
         if (!(err instanceof Error && err.message === 'missing_session')) {
-          setDetailError(t('debt.partialError'));
+          if (isOffline && selectedDebt) {
+            setDetailError('');
+            return selectedDebt;
+          }
+
+          setDetailError(isOffline ? t('common.offlineLoadError') : t('debt.partialError'));
           if (!isRefresh) {
             setSelectedDebt(null);
           }
         }
 
-        return null;
+        return selectedDebt;
       } finally {
         setDetailLoading(false);
       }
     },
-    [t, withAuthorizedRequest]
+    [isOffline, selectedDebt, t, withAuthorizedRequest]
   );
 
   const loadDebts = useCallback(
@@ -496,14 +503,19 @@ export default function DebtScreen() {
         });
       } catch (err) {
         if (!(err instanceof Error && err.message === 'missing_session')) {
-          setError(t('debt.loadError'));
+          if (isOffline && hasDebtSnapshot) {
+            setError('');
+            return;
+          }
+
+          setError(isOffline ? t('common.offlineLoadError') : t('debt.loadError'));
         }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [hasDebtSnapshot, loadDebtDetail, t, withAuthorizedRequest]
+    [hasDebtSnapshot, isOffline, loadDebtDetail, t, withAuthorizedRequest]
   );
 
   useEffect(() => {
