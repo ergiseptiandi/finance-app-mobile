@@ -15,6 +15,10 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,6 +40,58 @@ import { requestCsvExport, type ExportPeriodMode, type ExportScope } from '@/lib
 
 const DEVICE_NAME = getDeviceName();
 const getCurrentMonthValue = () => new Date().toISOString().slice(0, 7);
+const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
+
+type ExportDateTarget = 'startDate' | 'endDate' | null;
+
+type ExportMonthPickerState = {
+  year: number;
+  monthIndex: number;
+};
+
+const getExportMonthPickerStateFromInput = (value: string): ExportMonthPickerState => {
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-').map(Number);
+    return {
+      year: Number.isFinite(year) ? year : new Date().getFullYear(),
+      monthIndex: Number.isFinite(month) ? Math.min(11, Math.max(0, month - 1)) : new Date().getMonth(),
+    };
+  }
+
+  const now = new Date();
+  return {
+    year: now.getFullYear(),
+    monthIndex: now.getMonth(),
+  };
+};
+
+const parseExportDateValue = (value: string) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-').map(Number);
+    return new Date(year, month - 1, 1);
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatExportDateLabel = (value: string, locale: string) => {
+  const date = parseExportDateValue(value);
+
+  if (!date) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+};
+
+const formatExportMonthChipLabel = (monthIndex: number, locale: string) =>
+  new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(2020, monthIndex, 1)).replace(/\.$/, '').toUpperCase();
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -87,6 +143,7 @@ export default function SettingsScreen() {
   const { language, setLanguage, t } = useAppLanguage();
   const { showTransitionOverlay } = useTransitionOverlay();
   const colors = Colors[colorScheme];
+  const locale = language === 'id' ? 'id-ID' : 'en-US';
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors, insets.top);
   const [displayName, setDisplayName] = useState('Alex Sterling');
@@ -104,9 +161,13 @@ export default function SettingsScreen() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportScope, setExportScope] = useState<ExportScope>('transactions');
   const [exportPeriodMode, setExportPeriodMode] = useState<ExportPeriodMode>('month');
-  const [exportMonth, setExportMonth] = useState(getCurrentMonthValue());
+  const [exportMonthPickerState, setExportMonthPickerState] = useState<ExportMonthPickerState>(() =>
+    getExportMonthPickerStateFromInput(getCurrentMonthValue())
+  );
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
+  const [exportDateTarget, setExportDateTarget] = useState<ExportDateTarget>(null);
+  const [iosExportDatePickerVisible, setIosExportDatePickerVisible] = useState(false);
   const refreshUnreadNotificationCount = useCallback(async (accessToken: string) => {
     try {
       setUnreadNotificationCount(await loadUnreadNotificationCount(accessToken));
@@ -183,15 +244,63 @@ export default function SettingsScreen() {
   const openExportModal = useCallback(() => {
     setExportScope('transactions');
     setExportPeriodMode('month');
-    setExportMonth(getCurrentMonthValue());
+    setExportMonthPickerState(getExportMonthPickerStateFromInput(getCurrentMonthValue()));
     setExportStartDate('');
     setExportEndDate('');
+    setExportDateTarget(null);
+    setIosExportDatePickerVisible(false);
     setExportModalOpen(true);
   }, []);
 
   const closeExportModal = useCallback(() => {
     setExportModalOpen(false);
+    setExportDateTarget(null);
+    setIosExportDatePickerVisible(false);
   }, []);
+
+  const handleExportCustomDateChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === 'android' && event.type === 'dismissed') {
+        return;
+      }
+
+      if (!selectedDate || !exportDateTarget) {
+        return;
+      }
+
+      const nextValue = selectedDate.toISOString().slice(0, 10);
+      if (exportDateTarget === 'startDate') {
+        setExportStartDate(nextValue);
+      } else {
+        setExportEndDate(nextValue);
+      }
+
+      if (Platform.OS === 'ios') {
+        setIosExportDatePickerVisible(false);
+      }
+    },
+    [exportDateTarget]
+  );
+
+  const openExportCustomDatePicker = useCallback(
+    (target: 'startDate' | 'endDate') => {
+      const currentValue = target === 'startDate' ? exportStartDate : exportEndDate;
+      const currentDate = parseExportDateValue(currentValue) ?? new Date();
+      setExportDateTarget(target);
+
+      if (Platform.OS === 'android') {
+        DateTimePickerAndroid.open({
+          value: currentDate,
+          mode: 'date',
+          onChange: handleExportCustomDateChange,
+        });
+        return;
+      }
+
+      setIosExportDatePickerVisible(true);
+    },
+    [exportEndDate, exportStartDate, handleExportCustomDateChange]
+  );
 
   const handleExportCsv = useCallback(async () => {
     if (exportingCsv) {
@@ -201,13 +310,20 @@ export default function SettingsScreen() {
     setExportingCsv(true);
 
     try {
-      if (exportPeriodMode === 'month' && !/^\d{4}-\d{2}$/.test(exportMonth)) {
-        Alert.alert(t('settings.exportDataTitle'), t('settings.exportMonthInvalid'));
-        return;
-      }
+      const selectedMonth = `${exportMonthPickerState.year}-${String(exportMonthPickerState.monthIndex + 1).padStart(
+        2,
+        '0'
+      )}`;
 
       if (exportPeriodMode === 'custom') {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(exportStartDate) || !/^\d{4}-\d{2}-\d{2}$/.test(exportEndDate)) {
+          Alert.alert(t('settings.exportDataTitle'), t('settings.exportCustomInvalid'));
+          return;
+        }
+
+        const start = parseExportDateValue(exportStartDate);
+        const end = parseExportDateValue(exportEndDate);
+        if (!start || !end || start.getTime() > end.getTime()) {
           Alert.alert(t('settings.exportDataTitle'), t('settings.exportCustomInvalid'));
           return;
         }
@@ -216,7 +332,7 @@ export default function SettingsScreen() {
       const exportResult = await withAuthorizedRequest((accessToken) =>
         requestCsvExport(accessToken, {
           scope: exportScope,
-          month: exportPeriodMode === 'month' ? exportMonth : undefined,
+          month: exportPeriodMode === 'month' ? selectedMonth : undefined,
           startDate: exportPeriodMode === 'custom' ? exportStartDate : undefined,
           endDate: exportPeriodMode === 'custom' ? exportEndDate : undefined,
         })
@@ -246,7 +362,8 @@ export default function SettingsScreen() {
     }
   }, [
     exportEndDate,
-    exportMonth,
+    exportMonthPickerState.monthIndex,
+    exportMonthPickerState.year,
     exportPeriodMode,
     exportScope,
     exportStartDate,
@@ -680,53 +797,113 @@ export default function SettingsScreen() {
               </View>
 
               {exportPeriodMode === 'month' ? (
-                <View style={styles.exportField}>
-                  <Text style={styles.exportFieldLabel}>{t('settings.exportMonth')}</Text>
-                  <View style={styles.exportInputShell}>
-                    <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.icon} />
-                    <TextInput
-                      value={exportMonth}
-                      onChangeText={setExportMonth}
-                      placeholder="YYYY-MM"
-                      placeholderTextColor={colors.shellTextMuted}
-                      style={styles.exportInput}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
+                <>
+                  <View style={styles.exportYearRow}>
+                    <Pressable
+                      onPress={() =>
+                        setExportMonthPickerState((current) => ({
+                          ...current,
+                          year: current.year - 1,
+                        }))
+                      }
+                      style={styles.exportYearButton}>
+                      <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
+                    </Pressable>
+                    <Text style={styles.exportYearText}>{exportMonthPickerState.year}</Text>
+                    <Pressable
+                      onPress={() =>
+                        setExportMonthPickerState((current) => ({
+                          ...current,
+                          year: current.year + 1,
+                        }))
+                      }
+                      style={styles.exportYearButton}>
+                      <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
+                    </Pressable>
                   </View>
-                </View>
+
+                  <View style={styles.exportMonthGrid}>
+                    {MONTH_INDEXES.map((monthIndex) => {
+                      const selected = exportMonthPickerState.monthIndex === monthIndex;
+                      const monthLabel = formatExportMonthChipLabel(monthIndex, locale);
+
+                      return (
+                        <Pressable
+                          key={monthIndex}
+                          onPress={() =>
+                            setExportMonthPickerState((current) => ({
+                              ...current,
+                              monthIndex,
+                            }))
+                          }
+                          style={[
+                            styles.exportMonthChip,
+                            selected && {
+                              backgroundColor: alpha(colors.primary, 0.12),
+                              borderColor: alpha(colors.primary, 0.28),
+                            },
+                          ]}>
+                          <Text style={[styles.exportMonthChipText, selected && { color: colors.primary }]}>
+                            {monthLabel}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
               ) : (
                 <View style={styles.exportRangeGrid}>
                   <View style={styles.exportField}>
                     <Text style={styles.exportFieldLabel}>{t('settings.exportStartDate')}</Text>
-                    <View style={styles.exportInputShell}>
-                      <MaterialCommunityIcons name="calendar-start-outline" size={18} color={colors.icon} />
-                      <TextInput
-                        value={exportStartDate}
-                        onChangeText={setExportStartDate}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={colors.shellTextMuted}
-                        style={styles.exportInput}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                    </View>
+                    <Pressable
+                      onPress={() => openExportCustomDatePicker('startDate')}
+                      style={({ pressed }) => [styles.exportPickerShell, pressed && styles.exportPickerPressed]}>
+                      <View style={styles.exportPickerIcon}>
+                        <MaterialCommunityIcons name="calendar-start-outline" size={18} color={colors.primary} />
+                      </View>
+                      <View style={styles.exportPickerCopy}>
+                        <Text style={styles.exportPickerValue}>
+                          {exportStartDate ? formatExportDateLabel(exportStartDate, locale) : t('reports.filter.startDatePlaceholder')}
+                        </Text>
+                        <Text style={styles.exportPickerMeta}>{t('reports.filter.dateHelper')}</Text>
+                      </View>
+                      <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                    </Pressable>
                   </View>
+
                   <View style={styles.exportField}>
                     <Text style={styles.exportFieldLabel}>{t('settings.exportEndDate')}</Text>
-                    <View style={styles.exportInputShell}>
-                      <MaterialCommunityIcons name="calendar-end-outline" size={18} color={colors.icon} />
-                      <TextInput
-                        value={exportEndDate}
-                        onChangeText={setExportEndDate}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={colors.shellTextMuted}
-                        style={styles.exportInput}
-                        autoCapitalize="none"
-                        autoCorrect={false}
+                    <Pressable
+                      onPress={() => openExportCustomDatePicker('endDate')}
+                      style={({ pressed }) => [styles.exportPickerShell, pressed && styles.exportPickerPressed]}>
+                      <View style={styles.exportPickerIcon}>
+                        <MaterialCommunityIcons name="calendar-end-outline" size={18} color={colors.primary} />
+                      </View>
+                      <View style={styles.exportPickerCopy}>
+                        <Text style={styles.exportPickerValue}>
+                          {exportEndDate ? formatExportDateLabel(exportEndDate, locale) : t('reports.filter.endDatePlaceholder')}
+                        </Text>
+                        <Text style={styles.exportPickerMeta}>{t('reports.filter.dateHelper')}</Text>
+                      </View>
+                      <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                    </Pressable>
+                  </View>
+
+                  {Platform.OS === 'ios' && iosExportDatePickerVisible && exportDateTarget ? (
+                    <View style={styles.exportDatePickerCard}>
+                      <DateTimePicker
+                        value={
+                          parseExportDateValue(exportDateTarget === 'startDate' ? exportStartDate : exportEndDate) ??
+                          new Date()
+                        }
+                        mode="date"
+                        display="spinner"
+                        onChange={handleExportCustomDateChange}
+                        accentColor={colors.primary}
+                        themeVariant={colorScheme === 'dark' ? 'dark' : 'light'}
                       />
                     </View>
-                  </View>
+                  ) : null}
                 </View>
               )}
 
@@ -1198,6 +1375,53 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     exportField: {
       gap: 8,
     },
+    exportYearRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    exportYearButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    exportYearText: {
+      color: colors.shellTextPrimary,
+      fontSize: 18,
+      lineHeight: 24,
+      fontWeight: '800',
+      letterSpacing: -0.3,
+    },
+    exportMonthGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    exportMonthChip: {
+      flexGrow: 1,
+      flexBasis: '22%',
+      minWidth: 72,
+      minHeight: 44,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 10,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    exportMonthChipText: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
     exportRangeGrid: {
       gap: 12,
     },
@@ -1222,6 +1446,45 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontSize: 14,
       fontWeight: '600',
       paddingVertical: 0,
+    },
+    exportPickerShell: {
+      minHeight: 52,
+      borderRadius: 16,
+      backgroundColor: colors.shellCardMuted,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    exportPickerPressed: {
+      opacity: 0.9,
+    },
+    exportPickerIcon: {
+      width: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    exportPickerCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    exportPickerValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    exportPickerMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 14,
+      fontWeight: '600',
+    },
+    exportDatePickerCard: {
+      borderRadius: 18,
+      backgroundColor: colors.shellCardMuted,
+      paddingVertical: 10,
+      paddingHorizontal: 8,
     },
     exportActions: {
       marginTop: 4,
