@@ -103,7 +103,8 @@ export default function RegisterScreen() {
 
         <KeyboardAvoidingView
           style={styles.keyboardShell}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}>
           <ScrollView
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.scrollContent}
@@ -258,10 +259,6 @@ export default function RegisterScreen() {
                         </View>
                       </View>
                     </View>
-
-                    <Text style={styles.helperText}>
-                      {t('register.helperDeviceTracking', { device: DEVICE_NAME })}
-                    </Text>
 
                     {!!error && <Text style={styles.errorText}>{error}</Text>}
 
