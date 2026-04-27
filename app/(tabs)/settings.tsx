@@ -1,11 +1,17 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { cacheDirectory, EncodingType, writeAsStringAsync } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import {
+  ActivityIndicator,
+  Alert,
+  Modal,
   Pressable,
   TextInput,
   ScrollView,
   StyleSheet,
   Text,
+  Platform,
   View,
   type ViewStyle,
 } from 'react-native';
@@ -26,8 +32,10 @@ import { ApiRequestError, login } from '@/lib/api/auth';
 import { getAuthSession, refreshStoredAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
 import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
+import { requestCsvExport, type ExportPeriodMode, type ExportScope } from '@/lib/api/export';
 
 const DEVICE_NAME = getDeviceName();
+const getCurrentMonthValue = () => new Date().toISOString().slice(0, 7);
 
 type SettingsRowProps = {
   colors: AppColorTheme;
@@ -92,6 +100,13 @@ export default function SettingsScreen() {
   const [biometricSetupOpen, setBiometricSetupOpen] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportScope, setExportScope] = useState<ExportScope>('transactions');
+  const [exportPeriodMode, setExportPeriodMode] = useState<ExportPeriodMode>('month');
+  const [exportMonth, setExportMonth] = useState(getCurrentMonthValue());
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
   const refreshUnreadNotificationCount = useCallback(async (accessToken: string) => {
     try {
       setUnreadNotificationCount(await loadUnreadNotificationCount(accessToken));
@@ -107,6 +122,139 @@ export default function SettingsScreen() {
       setUnreadNotificationCount(0);
     }
   }, []);
+
+  const withAuthorizedRequest = useCallback(
+    async <T,>(task: (accessToken: string) => Promise<T>) => {
+      const session = await getAuthSession();
+
+      if (!session) {
+        router.replace('/login');
+        throw new Error('missing_session');
+      }
+
+      try {
+        return await task(session.token.access_token);
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 401 && session.token.refresh_token) {
+          const refreshed = await refreshStoredAuthSession();
+          if (refreshed) {
+            return task(refreshed.token.access_token);
+          }
+        }
+
+        if (error instanceof ApiRequestError && error.status === 401) {
+          router.replace('/login');
+        }
+
+        throw error;
+      }
+    },
+    []
+  );
+
+  const saveCsvExport = useCallback(async (csv: string, fileName: string) => {
+    if (Platform.OS === 'web') {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      return;
+    }
+
+    const fileUri = `${cacheDirectory ?? ''}${fileName}`;
+    await writeAsStringAsync(fileUri, csv, {
+      encoding: EncodingType.UTF8,
+    });
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: fileName,
+      });
+      return;
+    }
+
+    throw new Error('sharing_unavailable');
+  }, []);
+
+  const openExportModal = useCallback(() => {
+    setExportScope('transactions');
+    setExportPeriodMode('month');
+    setExportMonth(getCurrentMonthValue());
+    setExportStartDate('');
+    setExportEndDate('');
+    setExportModalOpen(true);
+  }, []);
+
+  const closeExportModal = useCallback(() => {
+    setExportModalOpen(false);
+  }, []);
+
+  const handleExportCsv = useCallback(async () => {
+    if (exportingCsv) {
+      return;
+    }
+
+    setExportingCsv(true);
+
+    try {
+      if (exportPeriodMode === 'month' && !/^\d{4}-\d{2}$/.test(exportMonth)) {
+        Alert.alert(t('settings.exportDataTitle'), t('settings.exportMonthInvalid'));
+        return;
+      }
+
+      if (exportPeriodMode === 'custom') {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(exportStartDate) || !/^\d{4}-\d{2}-\d{2}$/.test(exportEndDate)) {
+          Alert.alert(t('settings.exportDataTitle'), t('settings.exportCustomInvalid'));
+          return;
+        }
+      }
+
+      const exportResult = await withAuthorizedRequest((accessToken) =>
+        requestCsvExport(accessToken, {
+          scope: exportScope,
+          month: exportPeriodMode === 'month' ? exportMonth : undefined,
+          startDate: exportPeriodMode === 'custom' ? exportStartDate : undefined,
+          endDate: exportPeriodMode === 'custom' ? exportEndDate : undefined,
+        })
+      );
+
+      if (exportResult.recordCount <= 0) {
+        Alert.alert(t('settings.exportDataTitle'), t('settings.exportEmpty'));
+        return;
+      }
+
+      await saveCsvExport(exportResult.csv, exportResult.fileName);
+
+      Alert.alert(
+        t('settings.exportDataTitle'),
+        exportResult.partial ? t('settings.exportPartial') : t('settings.exportSuccess')
+      );
+      setExportModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'missing_session') {
+        return;
+      }
+
+      Alert.alert(t('settings.exportDataTitle'), t('settings.exportError'));
+    } finally {
+      setExportingCsv(false);
+    }
+  }, [
+    exportEndDate,
+    exportMonth,
+    exportPeriodMode,
+    exportScope,
+    exportStartDate,
+    exportingCsv,
+    saveCsvExport,
+    t,
+    withAuthorizedRequest,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -438,6 +586,172 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.exportData')}</Text>
+          <View style={styles.preferenceBlock}>
+            <SettingsRow
+              colors={colors}
+              icon="download-outline"
+              title={t('settings.exportDataTitle')}
+              subtitle={t('settings.exportDataMeta')}
+              iconTone="primary"
+              onPress={() => openExportModal()}
+              rightSlot={<MaterialCommunityIcons name="chevron-right" size={20} color={colors.outlineVariant} />}
+              style={styles.preferenceRow}
+            />
+          </View>
+        </View>
+
+        <Modal transparent visible={exportModalOpen} animationType="fade" onRequestClose={closeExportModal}>
+          <Pressable style={styles.exportOverlay} onPress={closeExportModal}>
+            <Pressable style={styles.exportSheet} onPress={(event) => event.stopPropagation()}>
+              <Text style={styles.exportSheetTitle}>{t('settings.exportDataTitle')}</Text>
+              <Text style={styles.exportSheetBody}>{t('settings.exportDataMeta')}</Text>
+
+              <View style={styles.exportSection}>
+                <Text style={styles.exportSectionLabel}>{t('settings.exportScope')}</Text>
+                <View style={styles.exportSegment}>
+                  <Pressable
+                    onPress={() => setExportScope('transactions')}
+                    style={[
+                      styles.exportPill,
+                      exportScope === 'transactions' && styles.exportPillActive,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.exportPillText,
+                        exportScope === 'transactions' && styles.exportPillTextActive,
+                      ]}>
+                      {t('settings.exportScopeTransactions')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setExportScope('debts')}
+                    style={[styles.exportPill, exportScope === 'debts' && styles.exportPillActive]}>
+                    <Text
+                      style={[styles.exportPillText, exportScope === 'debts' && styles.exportPillTextActive]}>
+                      {t('settings.exportScopeDebts')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setExportScope('reports')}
+                    style={[styles.exportPill, exportScope === 'reports' && styles.exportPillActive]}>
+                    <Text
+                      style={[styles.exportPillText, exportScope === 'reports' && styles.exportPillTextActive]}>
+                      {t('settings.exportScopeReports')}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.exportSection}>
+                <Text style={styles.exportSectionLabel}>{t('settings.exportPeriod')}</Text>
+                <View style={styles.exportSegment}>
+                  <Pressable
+                    onPress={() => setExportPeriodMode('month')}
+                    style={[
+                      styles.exportPill,
+                      exportPeriodMode === 'month' && styles.exportPillActive,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.exportPillText,
+                        exportPeriodMode === 'month' && styles.exportPillTextActive,
+                      ]}>
+                      {t('settings.exportPeriodMonth')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setExportPeriodMode('custom')}
+                    style={[
+                      styles.exportPill,
+                      exportPeriodMode === 'custom' && styles.exportPillActive,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.exportPillText,
+                        exportPeriodMode === 'custom' && styles.exportPillTextActive,
+                      ]}>
+                      {t('settings.exportPeriodCustom')}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {exportPeriodMode === 'month' ? (
+                <View style={styles.exportField}>
+                  <Text style={styles.exportFieldLabel}>{t('settings.exportMonth')}</Text>
+                  <View style={styles.exportInputShell}>
+                    <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.icon} />
+                    <TextInput
+                      value={exportMonth}
+                      onChangeText={setExportMonth}
+                      placeholder="YYYY-MM"
+                      placeholderTextColor={colors.shellTextMuted}
+                      style={styles.exportInput}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.exportRangeGrid}>
+                  <View style={styles.exportField}>
+                    <Text style={styles.exportFieldLabel}>{t('settings.exportStartDate')}</Text>
+                    <View style={styles.exportInputShell}>
+                      <MaterialCommunityIcons name="calendar-start-outline" size={18} color={colors.icon} />
+                      <TextInput
+                        value={exportStartDate}
+                        onChangeText={setExportStartDate}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={colors.shellTextMuted}
+                        style={styles.exportInput}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.exportField}>
+                    <Text style={styles.exportFieldLabel}>{t('settings.exportEndDate')}</Text>
+                    <View style={styles.exportInputShell}>
+                      <MaterialCommunityIcons name="calendar-end-outline" size={18} color={colors.icon} />
+                      <TextInput
+                        value={exportEndDate}
+                        onChangeText={setExportEndDate}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={colors.shellTextMuted}
+                        style={styles.exportInput}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.exportActions}>
+                <Pressable onPress={closeExportModal} style={styles.exportSecondaryButton}>
+                  <Text style={styles.exportSecondaryButtonText}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void handleExportCsv()}
+                  disabled={exportingCsv}
+                  style={({ pressed }) => [
+                    styles.exportPrimaryButton,
+                    pressed && !exportingCsv && styles.exportPrimaryButtonPressed,
+                    exportingCsv && styles.exportPrimaryButtonDisabled,
+                  ]}>
+                  {exportingCsv ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.exportPrimaryButtonText}>{t('settings.exportAction')}</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
 <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings.notifications')}</Text>
@@ -815,6 +1129,135 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       opacity: 0.7,
     },
     biometricPrimaryButtonText: {
+      color: colors.onPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    exportOverlay: {
+      flex: 1,
+      backgroundColor: alpha(colors.background, 0.72),
+      padding: 18,
+      justifyContent: 'center',
+    },
+    exportSheet: {
+      borderRadius: 24,
+      backgroundColor: colors.shellCard,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      padding: 18,
+      gap: 14,
+    },
+    exportSheetTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 18,
+      lineHeight: 24,
+      fontWeight: '900',
+    },
+    exportSheetBody: {
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 19,
+      fontWeight: '600',
+    },
+    exportSection: {
+      gap: 10,
+    },
+    exportSectionLabel: {
+      color: colors.primary,
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    exportSegment: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    exportPill: {
+      minHeight: 38,
+      paddingHorizontal: 14,
+      borderRadius: 14,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    exportPillActive: {
+      backgroundColor: colors.primary,
+    },
+    exportPillText: {
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '800',
+    },
+    exportPillTextActive: {
+      color: colors.onPrimary,
+    },
+    exportField: {
+      gap: 8,
+    },
+    exportRangeGrid: {
+      gap: 12,
+    },
+    exportFieldLabel: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '700',
+    },
+    exportInputShell: {
+      minHeight: 52,
+      borderRadius: 16,
+      backgroundColor: colors.shellCardMuted,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    exportInput: {
+      flex: 1,
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+      paddingVertical: 0,
+    },
+    exportActions: {
+      marginTop: 4,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 10,
+    },
+    exportSecondaryButton: {
+      minHeight: 44,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+      backgroundColor: colors.shellCardMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    exportSecondaryButtonText: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    exportPrimaryButton: {
+      minHeight: 44,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    exportPrimaryButtonPressed: {
+      opacity: 0.92,
+    },
+    exportPrimaryButtonDisabled: {
+      opacity: 0.72,
+    },
+    exportPrimaryButtonText: {
       color: colors.onPrimary,
       fontSize: 13,
       fontWeight: '800',

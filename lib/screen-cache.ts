@@ -24,6 +24,42 @@ export const readScreenCache = async <T,>(key: string) => {
   }
 };
 
+export const readLatestScreenCache = async <T,>(scope: string, userId: string | number) => {
+  const prefix = `${SCREEN_CACHE_PREFIX}${scope}:${String(userId)}`;
+  const keys = await AsyncStorage.getAllKeys();
+  const matchingKeys = keys.filter((key) => key.startsWith(prefix));
+
+  if (!matchingKeys.length) {
+    return null;
+  }
+
+  const entries = await Promise.all(
+    matchingKeys.map(async (key) => {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) {
+        return null;
+      }
+
+      try {
+        const parsed = JSON.parse(raw) as ScreenCacheEnvelope<T>;
+        return { key, parsed };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const validEntries = entries.filter((entry): entry is { key: string; parsed: ScreenCacheEnvelope<T> } => entry !== null);
+
+  if (!validEntries.length) {
+    return null;
+  }
+
+  return validEntries.reduce((latest, current) =>
+    current.parsed.updatedAt > latest.parsed.updatedAt ? current : latest
+  ).parsed;
+};
+
 export const writeScreenCache = async <T,>(key: string, data: T) => {
   const payload: ScreenCacheEnvelope<T> = {
     data,
