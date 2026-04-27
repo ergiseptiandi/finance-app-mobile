@@ -36,7 +36,13 @@ import { ApiRequestError, login } from '@/lib/api/auth';
 import { getAuthSession, refreshStoredAuthSession, saveAuthSession } from '@/lib/auth-session';
 import { getDeviceName } from '@/lib/device-name';
 import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
-import { requestCsvExport, type ExportPeriodMode, type ExportScope } from '@/lib/api/export';
+import {
+  requestCsvExport,
+  requestXlsxExport,
+  type ExportFileFormat,
+  type ExportPeriodMode,
+  type ExportScope,
+} from '@/lib/api/export';
 
 const DEVICE_NAME = getDeviceName();
 const getCurrentMonthValue = () => new Date().toISOString().slice(0, 7);
@@ -158,9 +164,10 @@ export default function SettingsScreen() {
   const [biometricPassword, setBiometricPassword] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportingExport, setExportingExport] = useState(false);
   const [exportScope, setExportScope] = useState<ExportScope>('transactions');
   const [exportPeriodMode, setExportPeriodMode] = useState<ExportPeriodMode>('month');
+  const [exportFileFormat, setExportFileFormat] = useState<ExportFileFormat>('xlsx');
   const [exportMonthPickerState, setExportMonthPickerState] = useState<ExportMonthPickerState>(() =>
     getExportMonthPickerStateFromInput(getCurrentMonthValue())
   );
@@ -213,9 +220,9 @@ export default function SettingsScreen() {
     []
   );
 
-  const saveCsvExport = useCallback(async (csv: string, fileName: string) => {
+  const saveExportFile = useCallback(async (data: string | Uint8Array, fileName: string, mimeType: string) => {
     if (Platform.OS === 'web') {
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob([data], { type: mimeType });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -227,11 +234,11 @@ export default function SettingsScreen() {
 
     const safeFileName = fileName.replace(/[^A-Za-z0-9._-]/g, '_');
     const file = new File(Paths.cache, safeFileName);
-    file.write(csv);
+    file.write(data);
 
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(file.uri, {
-        mimeType: 'text/csv',
+        mimeType,
         dialogTitle: safeFileName,
       });
       return;
@@ -243,6 +250,7 @@ export default function SettingsScreen() {
   const openExportModal = useCallback(() => {
     setExportScope('transactions');
     setExportPeriodMode('month');
+    setExportFileFormat('xlsx');
     setExportMonthPickerState(getExportMonthPickerStateFromInput(getCurrentMonthValue()));
     setExportStartDate('');
     setExportEndDate('');
@@ -301,12 +309,12 @@ export default function SettingsScreen() {
     [exportEndDate, exportStartDate, handleExportCustomDateChange]
   );
 
-  const handleExportCsv = useCallback(async () => {
-    if (exportingCsv) {
+  const handleExportFile = useCallback(async () => {
+    if (exportingExport) {
       return;
     }
 
-    setExportingCsv(true);
+    setExportingExport(true);
 
     try {
       const selectedMonth = `${exportMonthPickerState.year}-${String(exportMonthPickerState.monthIndex + 1).padStart(
@@ -328,22 +336,44 @@ export default function SettingsScreen() {
         }
       }
 
-      const exportResult = await withAuthorizedRequest((accessToken) =>
-        requestCsvExport(accessToken, {
-          scope: exportScope,
-          month: exportPeriodMode === 'month' ? selectedMonth : undefined,
-          startDate: exportPeriodMode === 'custom' ? exportStartDate : undefined,
-          endDate: exportPeriodMode === 'custom' ? exportEndDate : undefined,
-          language: language.startsWith('id') ? 'id' : 'en',
-        })
-      );
+      const exportParams = {
+        scope: exportScope,
+        month: exportPeriodMode === 'month' ? selectedMonth : undefined,
+        startDate: exportPeriodMode === 'custom' ? exportStartDate : undefined,
+        endDate: exportPeriodMode === 'custom' ? exportEndDate : undefined,
+        language: language.startsWith('id') ? 'id' : 'en',
+      } as const;
+
+      if (exportFileFormat === 'csv') {
+        const exportResult = await withAuthorizedRequest((accessToken) => requestCsvExport(accessToken, exportParams));
+
+        if (exportResult.recordCount <= 0) {
+          Alert.alert(t('settings.exportDataTitle'), t('settings.exportEmpty'));
+          return;
+        }
+
+        await saveExportFile(exportResult.csv, exportResult.fileName, 'text/csv');
+
+        Alert.alert(
+          t('settings.exportDataTitle'),
+          exportResult.partial ? t('settings.exportPartial') : t('settings.exportSuccess')
+        );
+        setExportModalOpen(false);
+        return;
+      }
+
+      const exportResult = await withAuthorizedRequest((accessToken) => requestXlsxExport(accessToken, exportParams));
 
       if (exportResult.recordCount <= 0) {
         Alert.alert(t('settings.exportDataTitle'), t('settings.exportEmpty'));
         return;
       }
 
-      await saveCsvExport(exportResult.csv, exportResult.fileName);
+      await saveExportFile(
+        exportResult.xlsx,
+        exportResult.fileName,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
 
       Alert.alert(
         t('settings.exportDataTitle'),
@@ -351,7 +381,7 @@ export default function SettingsScreen() {
       );
       setExportModalOpen(false);
     } catch (error) {
-      console.error('Failed to export CSV', error);
+      console.error('Failed to export file', error);
       const message = error instanceof Error ? error.message : String(error);
       if (message === 'missing_session') {
         return;
@@ -359,18 +389,19 @@ export default function SettingsScreen() {
 
       Alert.alert(t('settings.exportDataTitle'), message === 'sharing_unavailable' ? t('settings.exportSuccess') : t('settings.exportError'));
     } finally {
-      setExportingCsv(false);
+      setExportingExport(false);
     }
   }, [
     exportEndDate,
+    exportFileFormat,
     exportMonthPickerState.monthIndex,
     exportMonthPickerState.year,
     exportPeriodMode,
     exportScope,
     exportStartDate,
-    exportingCsv,
+    exportingExport,
     language,
-    saveCsvExport,
+    saveExportFile,
     t,
     withAuthorizedRequest,
   ]);
@@ -798,6 +829,26 @@ export default function SettingsScreen() {
                 </View>
               </View>
 
+              <View style={styles.exportSection}>
+                <Text style={styles.exportSectionLabel}>{t('settings.exportFormat')}</Text>
+                <View style={styles.exportSegment}>
+                  <Pressable
+                    onPress={() => setExportFileFormat('xlsx')}
+                    style={[styles.exportPill, exportFileFormat === 'xlsx' && styles.exportPillActive]}>
+                    <Text style={[styles.exportPillText, exportFileFormat === 'xlsx' && styles.exportPillTextActive]}>
+                      {t('settings.exportFormatExcel')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setExportFileFormat('csv')}
+                    style={[styles.exportPill, exportFileFormat === 'csv' && styles.exportPillActive]}>
+                    <Text style={[styles.exportPillText, exportFileFormat === 'csv' && styles.exportPillTextActive]}>
+                      {t('settings.exportFormatCsv')}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
               {exportPeriodMode === 'month' ? (
                 <>
                   <View style={styles.exportYearRow}>
@@ -914,17 +965,19 @@ export default function SettingsScreen() {
                   <Text style={styles.exportSecondaryButtonText}>{t('common.cancel')}</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => void handleExportCsv()}
-                  disabled={exportingCsv}
+                  onPress={() => void handleExportFile()}
+                  disabled={exportingExport}
                   style={({ pressed }) => [
                     styles.exportPrimaryButton,
-                    pressed && !exportingCsv && styles.exportPrimaryButtonPressed,
-                    exportingCsv && styles.exportPrimaryButtonDisabled,
+                    pressed && !exportingExport && styles.exportPrimaryButtonPressed,
+                    exportingExport && styles.exportPrimaryButtonDisabled,
                   ]}>
-                  {exportingCsv ? (
+                  {exportingExport ? (
                     <ActivityIndicator size="small" color={colors.onPrimary} />
                   ) : (
-                    <Text style={styles.exportPrimaryButtonText}>{t('settings.exportAction')}</Text>
+                    <Text style={styles.exportPrimaryButtonText}>
+                      {exportFileFormat === 'xlsx' ? t('settings.exportActionExcel') : t('settings.exportActionCsv')}
+                    </Text>
                   )}
                 </Pressable>
               </View>

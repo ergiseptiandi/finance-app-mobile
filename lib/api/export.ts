@@ -3,6 +3,7 @@ import { ApiRequestError } from '@/lib/api/client';
 
 export type ExportScope = 'transactions' | 'debts' | 'reports';
 export type ExportPeriodMode = 'month' | 'custom';
+export type ExportFileFormat = 'csv' | 'xlsx';
 
 export type ExportCsvParams = {
   scope: ExportScope;
@@ -14,6 +15,13 @@ export type ExportCsvParams = {
 
 export type ExportCsvResult = {
   csv: string;
+  fileName: string;
+  partial: boolean;
+  recordCount: number;
+};
+
+export type ExportXlsxResult = {
+  xlsx: Uint8Array;
   fileName: string;
   partial: boolean;
   recordCount: number;
@@ -40,6 +48,55 @@ export const requestCsvExport = async (
   accessToken: string,
   params: ExportCsvParams
 ): Promise<ExportCsvResult> => {
+  const response = await fetch(buildExportUrl('exports/csv', params), {
+    method: 'GET',
+    headers: {
+      Accept: 'text/csv,application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const raw = await response.text();
+
+  if (!response.ok) {
+    throw createExportError(response.status, raw);
+  }
+
+  return {
+    csv: raw,
+    fileName: parseFileName(response.headers.get('content-disposition')) || `finance-go-${params.scope}.csv`,
+    partial: response.headers.get('x-export-partial') === 'true',
+    recordCount: Number(response.headers.get('x-export-record-count') ?? '0'),
+  };
+};
+
+export const requestXlsxExport = async (
+  accessToken: string,
+  params: ExportCsvParams
+): Promise<ExportXlsxResult> => {
+  const response = await fetch(buildExportUrl('exports/xlsx', params), {
+    method: 'GET',
+    headers: {
+      Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw createExportError(response.status, await response.text());
+  }
+
+  const raw = await response.arrayBuffer();
+
+  return {
+    xlsx: new Uint8Array(raw),
+    fileName: parseFileName(response.headers.get('content-disposition')) || `finance-go-${params.scope}.xlsx`,
+    partial: response.headers.get('x-export-partial') === 'true',
+    recordCount: Number(response.headers.get('x-export-record-count') ?? '0'),
+  };
+};
+
+const buildExportUrl = (path: string, params: ExportCsvParams) => {
   const searchParams = new URLSearchParams();
   searchParams.set('scope', params.scope);
 
@@ -59,32 +116,17 @@ export const requestCsvExport = async (
     searchParams.set('lang', params.language);
   }
 
-  const response = await fetch(`${buildApiUrl('exports/csv')}?${searchParams.toString()}`, {
-    method: 'GET',
-    headers: {
-      Accept: 'text/csv,application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
+  return `${buildApiUrl(path)}?${searchParams.toString()}`;
+};
 
-  const raw = await response.text();
-
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-    try {
-      const parsed = JSON.parse(raw) as { Message?: string; message?: string };
-      message = parsed.Message ?? parsed.message ?? message;
-    } catch {
-      message = raw || message;
-    }
-
-    throw new ApiRequestError(response.status, message, raw);
+const createExportError = (status: number, raw: string) => {
+  let message = `Request failed with status ${status}`;
+  try {
+    const parsed = JSON.parse(raw) as { Message?: string; message?: string };
+    message = parsed.Message ?? parsed.message ?? message;
+  } catch {
+    message = raw || message;
   }
 
-  return {
-    csv: raw,
-    fileName: parseFileName(response.headers.get('content-disposition')) || `finance-go-${params.scope}.csv`,
-    partial: response.headers.get('x-export-partial') === 'true',
-    recordCount: Number(response.headers.get('x-export-record-count') ?? '0'),
-  };
+  return new ApiRequestError(status, message, raw);
 };
