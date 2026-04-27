@@ -83,14 +83,6 @@ const formatCurrency = (value: number, locale: string) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-const formatCompactCurrency = (value: number, locale: string) =>
-  new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'IDR',
-    notation: 'compact',
-    maximumFractionDigits: 0,
-  }).format(value);
-
 const sanitizeCurrencyInput = (value: string) => value.replace(/[^\d]/g, '');
 
 const formatCurrencyInput = (value: string) => {
@@ -587,7 +579,6 @@ export default function WalletsScreen() {
 
   const totalWalletCount = resolvedWallets.length;
   const transferCount = resolvedTransfers.length;
-  const summaryLabel = formatCompactCurrency(totalBalance, locale);
 
   return (
     <View style={styles.screen}>
@@ -595,6 +586,7 @@ export default function WalletsScreen() {
         stickyHeaderIndices={[3]}
         style={styles.scroll}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -627,7 +619,7 @@ export default function WalletsScreen() {
               <View style={styles.heroCopy}>
                 <Text style={styles.heroLabel}>{t('wallets.summaryKicker')}</Text>
                 <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.heroAmount}>
-                  {summaryLabel}
+                  Kelola Wallet
                 </Text>
                 <Text style={styles.heroMeta}>
                   {t('wallets.walletCount', { count: totalWalletCount })} •{' '}
@@ -652,12 +644,14 @@ export default function WalletsScreen() {
         </View>
 
         <View style={styles.searchShell}>
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+          <View pointerEvents="none" style={styles.searchLeadingIcon}>
+            <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+          </View>
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder={t('wallets.searchPlaceholder')}
-            placeholderTextColor={colors.inputPlaceholder}
+            placeholderTextColor={colors.shellTextSoft}
             style={styles.searchInput}
             returnKeyType="search"
             autoCorrect={false}
@@ -1229,30 +1223,48 @@ const createStyles = (colors: AppColorTheme, topInset: number) => {
     searchInput: {
       color: colors.shellTextPrimary,
       fontSize: 14,
+      lineHeight: 20,
       fontWeight: '600',
       flex: 1,
-      minWidth: 0,
+      height: 52,
       paddingVertical: 0,
       paddingHorizontal: 0,
+      paddingLeft: 38,
+      paddingRight: 42,
+      includeFontPadding: false,
+      textAlignVertical: 'center',
     },
     searchShell: {
       minHeight: 52,
       borderRadius: 18,
-      backgroundColor: colors.shellCard,
+      backgroundColor: colors.shellCardSoft,
       borderWidth: 1,
       borderColor: colors.shellBorder,
       paddingHorizontal: 14,
-      flexDirection: 'row',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    searchLeadingIcon: {
+      position: 'absolute',
+      left: 10,
+      top: '50%',
+      width: 24,
+      height: 24,
       alignItems: 'center',
-      gap: 10,
+      justifyContent: 'center',
+      marginTop: -12,
     },
     searchClearButton: {
+      position: 'absolute',
+      right: 10,
+      top: '50%',
       width: 30,
       height: 30,
       borderRadius: 999,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.shellCardMuted,
+      marginTop: -15,
     },
     collapsedSection: {
       height: 0,

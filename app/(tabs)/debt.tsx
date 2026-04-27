@@ -368,8 +368,8 @@ export default function DebtScreen() {
       }
 
       setDebts(cached.data.debts);
-      setSelectedDebtId(cached.data.selectedDebtId);
-      setSelectedDebt(cached.data.selectedDebt);
+      setSelectedDebtId(null);
+      setSelectedDebt(null);
       setLoading(false);
     };
 
@@ -478,7 +478,7 @@ export default function DebtScreen() {
         const nextSelectedId =
           preferredDebtId && nextDebts.some((debt) => debt.id === preferredDebtId)
             ? preferredDebtId
-            : nextDebts[0]?.id ?? null;
+            : null;
 
         setSelectedDebtId(nextSelectedId);
 
@@ -512,7 +512,10 @@ export default function DebtScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadDebts(false, selectedDebtIdRef.current);
+      selectedDebtIdRef.current = null;
+      setSelectedDebtId(null);
+      setSelectedDebt(null);
+      loadDebts(false, null);
     }, [loadDebts])
   );
 
@@ -544,6 +547,12 @@ export default function DebtScreen() {
 
   const selectDebt = useCallback(
     (debtId: number) => {
+      if (selectedDebtId === debtId) {
+        setSelectedDebtId(null);
+        setSelectedDebt(null);
+        return;
+      }
+
       setSelectedDebtId(debtId);
       loadDebtDetail(debtId);
 
@@ -557,7 +566,7 @@ export default function DebtScreen() {
         );
       }, 300);
     },
-    [loadDebtDetail]
+    [loadDebtDetail, selectedDebtId]
   );
 
   const handleMarkPaid = useCallback(
@@ -1164,7 +1173,6 @@ export default function DebtScreen() {
                       style={({ pressed }) => [
                         styles.debtCard,
                         isSelected && styles.debtCardSelected,
-                        isSelected && searchActive && styles.debtCardSelectedSearch,
                         pressed && styles.debtCardPressed,
                       ]}>
                     <View style={styles.debtCardHeader}>
@@ -2342,10 +2350,6 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       borderColor: colors.shellBorder,
     },
     debtCardSelected: {
-      borderColor: alpha(colors.primary, 0.4),
-      backgroundColor: colors.shellCardStrong,
-    },
-    debtCardSelectedSearch: {
       borderColor: alpha(colors.secondaryAccent, 0.34),
       borderLeftWidth: 3,
       borderLeftColor: colors.secondaryAccent,

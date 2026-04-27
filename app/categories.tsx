@@ -248,6 +248,7 @@ export default function CategoriesScreen() {
       stickyHeaderIndices={[2]}
       style={styles.screen}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <View style={styles.topRow}>
         <Pressable onPress={navigateToSettings} style={styles.backButton}>
@@ -268,7 +269,9 @@ export default function CategoriesScreen() {
       </View>
 
       <View style={styles.searchShell}>
-        <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+        <View pointerEvents="none" style={styles.searchLeadingIcon}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+        </View>
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -557,9 +560,13 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       lineHeight: 20,
       fontWeight: '500',
       flex: 1,
-      minWidth: 0,
+      height: 52,
       paddingVertical: 0,
       paddingHorizontal: 0,
+      paddingLeft: 38,
+      paddingRight: 42,
+      includeFontPadding: false,
+      textAlignVertical: 'center',
     },
     searchShell: {
       minHeight: 52,
@@ -568,17 +575,30 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       borderWidth: 1,
       borderColor: colors.shellBorder,
       paddingHorizontal: 14,
-      flexDirection: 'row',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    searchLeadingIcon: {
+      position: 'absolute',
+      left: 10,
+      top: '50%',
+      width: 24,
+      height: 24,
       alignItems: 'center',
-      gap: 10,
+      justifyContent: 'center',
+      marginTop: -12,
     },
     searchClearButton: {
+      position: 'absolute',
+      right: 10,
+      top: '50%',
       width: 30,
       height: 30,
       borderRadius: 999,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.shellCardMuted,
+      marginTop: -15,
     },
     collapsedSection: {
       height: 0,
