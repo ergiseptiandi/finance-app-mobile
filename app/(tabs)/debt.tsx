@@ -307,6 +307,12 @@ const selectNextPendingInstallment = (installments: InstallmentRecord[]) =>
 
 const isMainWalletName = (value?: string | null) => value?.trim().toLowerCase() === 'main';
 
+const buildDebtDetailFromRecord = (debt: DebtRecord): DebtDetail => ({
+  ...debt,
+  installments: [],
+  payments: [],
+});
+
 export default function DebtScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -352,6 +358,7 @@ export default function DebtScreen() {
   const keyboardOpen = keyboardHeight > 0;
   const modalLift = keyboardOpen ? Math.max(18, keyboardHeight - insets.bottom + 10) : 0;
   const hasDebtSnapshot = Boolean(debts.length || selectedDebt);
+  const loadDebtsRef = useRef<((isRefresh?: boolean, preferredDebtId?: number | null) => Promise<void>) | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -432,7 +439,7 @@ export default function DebtScreen() {
 
         setSelectedDebt(nextDetail);
         return nextDetail;
-      } catch (err) {
+        } catch (err) {
         if (!(err instanceof Error && err.message === 'missing_session')) {
           if (isOffline && selectedDebt) {
             setDetailError('');
@@ -440,9 +447,6 @@ export default function DebtScreen() {
           }
 
           setDetailError(isOffline ? t('common.offlineLoadError') : t('debt.partialError'));
-          if (!isRefresh) {
-            setSelectedDebt(null);
-          }
         }
 
         return selectedDebt;
@@ -482,10 +486,13 @@ export default function DebtScreen() {
         setDebts(nextDebts);
         setWallets(walletResponse.status === 'fulfilled' ? walletResponse.value.Data ?? [] : []);
 
+        const currentSelectedId = selectedDebtIdRef.current;
         const nextSelectedId =
-          preferredDebtId && nextDebts.some((debt) => debt.id === preferredDebtId)
-            ? preferredDebtId
-            : null;
+          (currentSelectedId && nextDebts.some((debt) => debt.id === currentSelectedId)
+            ? currentSelectedId
+            : preferredDebtId && nextDebts.some((debt) => debt.id === preferredDebtId)
+              ? preferredDebtId
+              : null);
 
         setSelectedDebtId(nextSelectedId);
 
@@ -519,6 +526,10 @@ export default function DebtScreen() {
   );
 
   useEffect(() => {
+    loadDebtsRef.current = loadDebts;
+  }, [loadDebts]);
+
+  useEffect(() => {
     selectedDebtIdRef.current = selectedDebtId;
   }, [selectedDebtId]);
 
@@ -527,8 +538,8 @@ export default function DebtScreen() {
       selectedDebtIdRef.current = null;
       setSelectedDebtId(null);
       setSelectedDebt(null);
-      loadDebts(false, null);
-    }, [loadDebts])
+      void loadDebtsRef.current?.(false, null);
+    }, [])
   );
 
   useEffect(() => {
@@ -560,25 +571,35 @@ export default function DebtScreen() {
   const selectDebt = useCallback(
     (debtId: number) => {
       if (selectedDebtId === debtId) {
+        selectedDebtIdRef.current = null;
         setSelectedDebtId(null);
         setSelectedDebt(null);
         return;
       }
 
+      selectedDebtIdRef.current = debtId;
       setSelectedDebtId(debtId);
-      loadDebtDetail(debtId);
+      const optimisticDebt = debts.find((debt) => debt.id === debtId);
+      if (optimisticDebt) {
+        setSelectedDebt(buildDebtDetailFromRecord(optimisticDebt));
+      }
+      void loadDebtDetail(debtId);
+
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 80);
 
       setTimeout(() => {
         detailCardRef.current?.measureLayout(
           scrollRef.current as any,
-          (x, y) => {
+          (_x, y) => {
             scrollRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
           },
           () => {}
         );
-      }, 300);
+      }, 260);
     },
-    [loadDebtDetail, selectedDebtId]
+    [debts, loadDebtDetail, selectedDebtId]
   );
 
   const handleMarkPaid = useCallback(
