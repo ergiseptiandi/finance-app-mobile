@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
+  Animated,
+  Easing,
   Modal,
   Pressable,
   RefreshControl,
@@ -14,6 +16,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ReportsSkeleton } from '@/components/ui/skeleton';
@@ -43,6 +46,16 @@ type TrendMode = 'trend' | 'categories';
 type ReportsFilterMode = 'month' | 'year' | 'custom';
 type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger';
 type ReportsDateTarget = 'startDate' | 'endDate' | null;
+type ReportRingProps = {
+  accent: string;
+  label: string;
+  progress: number;
+  size?: number;
+  value: string;
+  valueLabel: string;
+  textColor: string;
+  trackColor: string;
+};
 
 type ReportsCacheState = {
   expenseByCategory: ExpenseByCategoryItem[];
@@ -209,6 +222,106 @@ const getNetCashflowTrendValue = (item: SpendingTrendItem) => toNumber(item.net_
 const getCategoryShare = (item: ExpenseByCategoryItem, total: number) =>
   total > 0 ? Math.max(0, Math.min(100, (toNumber(item.amount) / total) * 100)) : 0;
 
+const normalizeCategoryLabel = (category: string, language: string) => {
+  const normalized = category.trim().toLowerCase();
+
+  if (normalized === 'debt payment') {
+    return language === 'id' ? 'Pembayaran utang' : 'Debt payment';
+  }
+
+  return category.trim();
+};
+
+const getCategoryIcon = (category: string): keyof typeof MaterialCommunityIcons.glyphMap => {
+  const normalized = category.trim().toLowerCase();
+
+  if (normalized.includes('debt payment') || normalized.includes('pembayaran utang')) {
+    return 'bank-transfer';
+  }
+  if (normalized.includes('food') || normalized.includes('makan') || normalized.includes('dining')) {
+    return 'silverware-fork-knife';
+  }
+  if (normalized.includes('transport') || normalized.includes('transpor') || normalized.includes('travel')) {
+    return 'train-car';
+  }
+  if (normalized.includes('shopping') || normalized.includes('belanja')) {
+    return 'shopping-outline';
+  }
+  if (normalized.includes('health') || normalized.includes('kesehatan')) {
+    return 'heart-pulse';
+  }
+  if (normalized.includes('bill') || normalized.includes('tagihan') || normalized.includes('utility')) {
+    return 'receipt-text-outline';
+  }
+  if (normalized.includes('salary') || normalized.includes('income') || normalized.includes('pendapatan')) {
+    return 'cash-multiple';
+  }
+
+  return 'shape-outline';
+};
+
+const getCategoryTone = (index: number): MetricTone => {
+  if (index === 0) return 'primary';
+  if (index === 1) return 'secondary';
+  if (index === 2) return 'warning';
+  return 'danger';
+};
+
+const ReportRing = ({
+  accent,
+  label,
+  progress,
+  size = 120,
+  value,
+  valueLabel,
+  textColor,
+  trackColor,
+}: ReportRingProps) => {
+  const strokeWidth = 11;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const normalizedProgress = Math.max(0, Math.min(100, progress));
+  const strokeDashoffset = circumference * (1 - normalizedProgress / 100);
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <Defs>
+          <LinearGradient id="report-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor={accent} stopOpacity={0.96} />
+            <Stop offset="100%" stopColor={accent} stopOpacity={0.72} />
+          </LinearGradient>
+        </Defs>
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="url(#report-ring-gradient)"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={circumference + ' ' + circumference}
+          strokeDashoffset={strokeDashoffset}
+          rotation="-90"
+          originX={size / 2}
+          originY={size / 2}
+        />
+      </Svg>
+      <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: textColor, fontSize: size >= 120 ? 28 : 24, lineHeight: size >= 120 ? 30 : 26, fontWeight: '900', letterSpacing: -1 }}>
+          {value}
+        </Text>
+        <Text style={{ color: textColor, opacity: 0.82, fontSize: 10, fontWeight: '800', letterSpacing: 1.1, textTransform: 'uppercase' }}>
+          {label}
+        </Text>
+        <Text style={{ color: textColor, opacity: 0.7, fontSize: 9, fontWeight: '700' }}>
+          {valueLabel}
+        </Text>
+      </View>
+    </View>
+  );
+};
 export default function ReportsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -219,7 +332,7 @@ export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
   const compact = width < 380;
   const isDark = colorScheme === 'dark';
-  const styles = createStyles(colors, compact, insets.top);
+  const styles = createStyles(colors, compact, insets.top, isDark);
 
   const [trendMode, setTrendMode] = useState<TrendMode>('categories');
   const [loading, setLoading] = useState(true);
@@ -585,6 +698,42 @@ export default function ReportsScreen() {
   );
   const isEmpty =
     !loading && !expenseByCategory.length && !spendingTrends.length && !remainingBalance && !averageDaily && !highestCategory;
+  const sectionAnimations = useRef(
+    Array.from({ length: 6 }, () => new Animated.Value(0))
+  ).current;
+  const sectionRevealStyles = useMemo(
+    () =>
+      sectionAnimations.map((value) => ({
+        opacity: value,
+        transform: [
+          {
+            translateY: value.interpolate({
+              inputRange: [0, 1],
+              outputRange: [18, 0],
+            }),
+          },
+        ],
+      })),
+    [sectionAnimations]
+  );
+
+  useEffect(() => {
+    if (loading || isEmpty) {
+      sectionAnimations.forEach((value) => value.setValue(0));
+      return;
+    }
+
+    const animations = sectionAnimations.map((value) =>
+      Animated.timing(value, {
+        toValue: 1,
+        duration: 480,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      })
+    );
+
+    Animated.stagger(85, animations).start();
+  }, [filters.mode, isEmpty, loading, sectionAnimations, trendMode]);
 
   const metricCards = [
     {
@@ -659,43 +808,116 @@ export default function ReportsScreen() {
               </View>
             </View>
 
-            <View style={styles.heroCard}>
-              <View style={styles.heroTop}>
-                <View style={styles.heroBadge}>
-                  <MaterialCommunityIcons name="chart-pie" size={14} color={colors.secondaryAccent} />
-                  <Text style={styles.heroBadgeText}>{activePeriodLabel}</Text>
-                </View>
-                <Text style={styles.heroNumberLabel}>{t('reports.remainingBalance')}</Text>
-              </View>
+            <Animated.View style={[styles.heroCard, sectionRevealStyles[1]]}>
+              <View style={styles.heroLayout}>
+                <View style={styles.heroCopy}>
+                  <View style={[styles.heroBadge, isDark ? styles.heroBadgeDark : styles.heroBadgeLight]}>
+                    <MaterialCommunityIcons name="chart-pie" size={14} color={isDark ? colors.secondaryAccent : colors.primary} />
+                    <Text style={[styles.heroBadgeText, isDark ? styles.heroBadgeTextDark : styles.heroBadgeTextLight]}>
+                      {activePeriodLabel}
+                    </Text>
+                  </View>
+                  <Text style={[styles.heroNumberLabel, isDark ? styles.heroNumberLabelDark : styles.heroNumberLabelLight]}>
+                    {t('reports.remainingBalance')}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.62}
+                    style={[styles.heroValue, isDark ? styles.heroValueDark : styles.heroValueLight]}>
+                    {formatCompactCurrency(remaining, locale)}
+                  </Text>
 
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} style={styles.heroValue}>
-                {formatCompactCurrency(remaining, locale)}
-              </Text>
+                  <View style={styles.heroMetaRow}>
+                    <View style={[styles.heroMetaChip, isDark ? styles.heroMetaChipDark : styles.heroMetaChipLight]}>
+                      <MaterialCommunityIcons
+                        name="trending-up"
+                        size={12}
+                        color={isDark ? colors.secondaryAccent : colors.primary}
+                      />
+                      <Text style={[styles.heroMetaText, isDark ? styles.heroMetaTextDark : styles.heroMetaTextLight]}>
+                        {formatCompactCurrency(totalIncome, locale)} {t('reports.totalIncome')}
+                      </Text>
+                    </View>
+                    <View style={[styles.heroMetaChip, isDark ? styles.heroMetaChipDark : styles.heroMetaChipExpense]}>
+                      <MaterialCommunityIcons
+                        name="trending-down"
+                        size={12}
+                        color={isDark ? '#FFB4B4' : colors.danger}
+                      />
+                      <Text style={[styles.heroMetaText, isDark ? styles.heroMetaTextDark : styles.heroMetaTextLight]}>
+                        {formatCompactCurrency(totalExpense, locale)} {t('reports.totalExpense')}
+                      </Text>
+                    </View>
+                  </View>
 
-              <View style={styles.heroMetaRow}>
-                <View style={styles.heroMetaChip}>
-                  <MaterialCommunityIcons name="trending-up" size={12} color={colors.secondaryAccent} />
-                  <Text style={styles.heroMetaText}>
-                    {formatCompactCurrency(totalIncome, locale)} {t('reports.totalIncome')}
+                  <Text style={[styles.heroBody, isDark ? styles.heroBodyDark : styles.heroBodyLight]}>
+                    {topCategory
+                      ? t('reports.heroBodyPlain', {
+                          category: topCategory.category,
+                          amount: formatCompactCurrency(toNumber(topCategory.amount), locale),
+                        })
+                      : t('reports.heroBodyFallbackPlain')}
                   </Text>
                 </View>
-                <View style={styles.heroMetaChip}>
-                  <MaterialCommunityIcons name="trending-down" size={12} color={colors.danger} />
-                  <Text style={styles.heroMetaText}>
-                    {formatCompactCurrency(totalExpense, locale)} {t('reports.totalExpense')}
-                  </Text>
+
+                <View style={styles.heroVisual}>
+                  <ReportRing
+                    accent={isDark ? colors.secondaryAccent : colors.primary}
+                    label={language === 'id' ? 'Terpakai' : 'Used'}
+                    progress={expenseRatio}
+                    value={`${Math.round(expenseRatio)}%`}
+                    valueLabel={language === 'id' ? 'dari pendapatan' : 'of income'}
+                    textColor={isDark ? colors.onPrimary : colors.shellTextPrimary}
+                    trackColor={isDark ? alpha(colors.onPrimary, 0.16) : alpha(colors.shellTextPrimary, 0.12)}
+                  />
+                  <View style={styles.heroVisualLegend}>
+                    <View
+                      style={[
+                        styles.heroVisualLegendItem,
+                        isDark ? styles.heroVisualLegendItemDarkIncome : styles.heroVisualLegendItemLightIncome,
+                      ]}>
+                      <View style={[styles.heroVisualLegendIcon, isDark ? styles.heroVisualLegendIconDark : styles.heroVisualLegendIconLight]}>
+                        <MaterialCommunityIcons
+                          name="trending-up"
+                          size={12}
+                          color={isDark ? colors.secondaryAccent : colors.primary}
+                        />
+                      </View>
+                      <View style={styles.heroVisualLegendText}>
+                        <Text style={[styles.heroVisualLegendLabel, isDark ? styles.heroVisualLegendLabelDark : styles.heroVisualLegendLabelLight]}>
+                          {language === 'id' ? 'Pendapatan' : 'Income'}
+                        </Text>
+                        <Text style={[styles.heroVisualLegendValue, isDark ? styles.heroVisualLegendValueDark : styles.heroVisualLegendValueLight]}>
+                          {formatCompactCurrency(totalIncome, locale)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View
+                      style={[
+                        styles.heroVisualLegendItem,
+                        isDark ? styles.heroVisualLegendItemDarkBalance : styles.heroVisualLegendItemLightBalance,
+                      ]}>
+                      <View style={[styles.heroVisualLegendIcon, isDark ? styles.heroVisualLegendIconDark : styles.heroVisualLegendIconLight]}>
+                        <MaterialCommunityIcons
+                          name="wallet-outline"
+                          size={12}
+                          color={isDark ? colors.warning : colors.secondary}
+                        />
+                      </View>
+                      <View style={styles.heroVisualLegendText}>
+                        <Text style={[styles.heroVisualLegendLabel, isDark ? styles.heroVisualLegendLabelDark : styles.heroVisualLegendLabelLight]}>
+                          {language === 'id' ? 'Sisa' : 'Left'}
+                        </Text>
+                        <Text style={[styles.heroVisualLegendValue, isDark ? styles.heroVisualLegendValueDark : styles.heroVisualLegendValueLight]}>
+                          {formatCompactCurrency(remaining, locale)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
                 </View>
               </View>
-
-              <Text style={styles.heroBody}>
-                {topCategory
-                  ? t('reports.heroBodyPlain', {
-                      category: topCategory.category,
-                      amount: formatCompactCurrency(toNumber(topCategory.amount), locale),
-                    })
-                  : t('reports.heroBodyFallbackPlain')}
-              </Text>
-            </View>
+            </Animated.View>
 
             <View style={styles.metricGrid}>
               {metricCards.map((item) => (
@@ -711,7 +933,7 @@ export default function ReportsScreen() {
               ))}
             </View>
 
-            <View style={styles.card}>
+            <Animated.View style={[styles.card, sectionRevealStyles[2]]}>
               <View style={styles.cardHeader}>
                 <View style={styles.cardHeaderCopy}>
                   <Text style={styles.cardEyebrow}>{t('reports.expenseByCategory')}</Text>
@@ -724,20 +946,35 @@ export default function ReportsScreen() {
 
               <View style={styles.categoryList}>
                 {sortedCategories.length ? (
-                  sortedCategories.map((item) => {
+                  sortedCategories.map((item, index) => {
                     const share = getCategoryShare(item, categoryTotal);
+                    const tone = getCategoryTone(index);
+                    const palette = metricTonePalette(colors, tone);
+                    const icon = getCategoryIcon(item.category);
                     return (
                       <View key={item.category} style={styles.categoryItem}>
-                        <View style={styles.categoryTopRow}>
-                          <Text numberOfLines={1} style={styles.categoryName}>
-                            {item.category}
-                          </Text>
-                          <Text style={styles.categoryAmount}>{formatCompactCurrency(toNumber(item.amount), locale)}</Text>
+                        <View style={styles.categoryItemHeader}>
+                          <View style={[styles.categoryIcon, { backgroundColor: palette.iconBackground }]}>
+                            <MaterialCommunityIcons name={icon} size={16} color={palette.iconColor} />
+                          </View>
+                          <View style={styles.categoryItemCopy}>
+                            <View style={styles.categoryTopRow}>
+                              <Text numberOfLines={1} style={styles.categoryName}>
+                                {normalizeCategoryLabel(item.category, language)}
+                              </Text>
+                              <View style={[styles.categoryRank, { backgroundColor: palette.background }]}>
+                                <Text style={[styles.categoryRankText, { color: palette.iconColor }]}>#{index + 1}</Text>
+                              </View>
+                            </View>
+                            <View style={styles.categoryAmountRow}>
+                              <Text style={styles.categoryAmount}>{formatCompactCurrency(toNumber(item.amount), locale)}</Text>
+                              <Text style={styles.categoryMeta}>{share.toFixed(1)}%</Text>
+                            </View>
+                          </View>
                         </View>
                         <View style={styles.categoryTrack}>
-                          <View style={[styles.categoryFill, { width: `${Math.max(8, share)}%` }]} />
+                          <View style={[styles.categoryFill, { width: `${Math.max(8, share)}%`, backgroundColor: palette.iconColor }]} />
                         </View>
-                        <Text style={styles.categoryMeta}>{share.toFixed(1)}%</Text>
                       </View>
                     );
                   })
@@ -745,18 +982,26 @@ export default function ReportsScreen() {
                   <Text style={styles.emptyInline}>{t('reports.noCategoryData')}</Text>
                 )}
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.card}>
+            <Animated.View style={[styles.card, sectionRevealStyles[3]]}>
               <View style={styles.cardHeader}>
                 <View style={styles.cardHeaderCopy}>
                   <Text style={styles.cardEyebrow}>{t('reports.spendingTrends')}</Text>
                   <Text style={styles.cardTitle}>{t('reports.monthlyTrend')}</Text>
+                  <Text style={styles.trendCardHint}>
+                    {language === 'id' ? 'Pilih tampilan yang paling mudah dibaca.' : 'Pick the clearest view for your data.'}
+                  </Text>
                 </View>
                 <View style={styles.segmentedControl}>
                   <Pressable
                     onPress={() => setTrendMode('categories')}
                     style={[styles.segmentButton, trendMode === 'categories' && styles.segmentButtonActive]}>
+                    <MaterialCommunityIcons
+                      name="grid-large"
+                      size={12}
+                      color={trendMode === 'categories' ? colors.onPrimary : colors.shellTextMuted}
+                    />
                     <Text style={[styles.segmentLabel, trendMode === 'categories' && styles.segmentLabelActive]}>
                       {t('reports.categories')}
                     </Text>
@@ -764,6 +1009,11 @@ export default function ReportsScreen() {
                   <Pressable
                     onPress={() => setTrendMode('trend')}
                     style={[styles.segmentButton, trendMode === 'trend' && styles.segmentButtonActive]}>
+                    <MaterialCommunityIcons
+                      name="chart-line"
+                      size={12}
+                      color={trendMode === 'trend' ? colors.onPrimary : colors.shellTextMuted}
+                    />
                     <Text style={[styles.segmentLabel, trendMode === 'trend' && styles.segmentLabelActive]}>
                       {t('reports.trend')}
                     </Text>
@@ -831,14 +1081,25 @@ export default function ReportsScreen() {
                   )}
                 </View>
               )}
-            </View>
+            </Animated.View>
 
-            <View style={styles.insightCard}>
-              <Text style={styles.insightBadge}>{t('reports.insightBadge')}</Text>
-              <Text style={styles.insightTitle}>
+            <Animated.View style={[styles.insightCard, sectionRevealStyles[4]]}>
+              <View style={styles.insightHeaderRow}>
+                <View style={styles.insightHeaderBadge}>
+                  <MaterialCommunityIcons name="lightbulb-on-outline" size={14} color={colors.primary} />
+                  <Text style={styles.insightBadge}>{t('reports.insightBadge')}</Text>
+                </View>
+                <View style={styles.insightHeaderPill}>
+                  <MaterialCommunityIcons name="star-outline" size={12} color={colors.secondary} />
+                  <Text style={styles.insightHeaderPillText}>
+                    {language === 'id' ? 'Ringkas' : 'Compact'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.insightTitle} numberOfLines={1}>
                 {highestCategory ? highestCategory.category : t('reports.noSummaryTitle')}
               </Text>
-              <Text style={styles.insightText}>
+              <Text style={styles.insightText} numberOfLines={2}>
                 {highestCategory
                   ? t('reports.heroBodyPlain', {
                       category: highestCategory.category,
@@ -850,7 +1111,7 @@ export default function ReportsScreen() {
                 <InsightStat colors={colors} label={t('reports.averageDailyTitle')} value={formatCurrency(averageValue, locale)} />
                 <InsightStat colors={colors} label={t('reports.elapsedDaysTitle')} value={String(elapsedDays || 0)} />
               </View>
-            </View>
+            </Animated.View>
 
             {!!error && <Text style={styles.errorText}>{error}</Text>}
           </>
@@ -1171,7 +1432,7 @@ function InsightStat({
   );
 }
 
-const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number) =>
+const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number, isDark: boolean) =>
   StyleSheet.create({
     root: {
       flex: 1,
@@ -1622,9 +1883,26 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
     },
     heroCard: {
       borderRadius: 30,
-      backgroundColor: colors.primary,
+      backgroundColor: isDark ? colors.primary : colors.shellCardStrong,
       padding: compact ? 20 : 22,
       gap: 16,
+      borderWidth: 1,
+      borderColor: isDark ? alpha(colors.onPrimary, 0.12) : colors.shellBorder,
+      shadowColor: isDark ? colors.primary : alpha(colors.primary, 0.15),
+      shadowOpacity: isDark ? 0.28 : 0.18,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: isDark ? 6 : 2,
+    },
+    heroLayout: {
+      flexDirection: 'column',
+      alignItems: 'stretch',
+      gap: 16,
+    },
+    heroCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 10,
     },
     heroTop: {
       flexDirection: 'row',
@@ -1637,30 +1915,50 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       alignItems: 'center',
       gap: 6,
       borderRadius: 999,
-      backgroundColor: alpha(colors.onPrimary, 0.14),
       paddingHorizontal: 10,
       paddingVertical: 7,
     },
+    heroBadgeDark: {
+      backgroundColor: alpha(colors.onPrimary, 0.14),
+    },
+    heroBadgeLight: {
+      backgroundColor: alpha(colors.primary, 0.1),
+    },
     heroBadgeText: {
-      color: colors.onPrimary,
       fontSize: 10,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1.3,
     },
+    heroBadgeTextDark: {
+      color: colors.onPrimary,
+    },
+    heroBadgeTextLight: {
+      color: colors.primary,
+    },
     heroNumberLabel: {
-      color: alpha(colors.onPrimary, 0.82),
       fontSize: 10,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 2,
     },
+    heroNumberLabelDark: {
+      color: alpha(colors.onPrimary, 0.82),
+    },
+    heroNumberLabelLight: {
+      color: colors.shellTextSoft,
+    },
     heroValue: {
-      color: colors.onPrimary,
       fontSize: compact ? 40 : 48,
       lineHeight: compact ? 44 : 52,
       fontWeight: '900',
       letterSpacing: -1.8,
+    },
+    heroValueDark: {
+      color: colors.onPrimary,
+    },
+    heroValueLight: {
+      color: colors.shellTextPrimary,
     },
     heroMetaRow: {
       flexDirection: 'row',
@@ -1672,22 +1970,125 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       alignItems: 'center',
       gap: 6,
       borderRadius: 16,
-      backgroundColor: alpha(colors.onPrimary, 0.12),
       paddingHorizontal: 12,
       paddingVertical: 8,
     },
     heroMetaText: {
-      color: colors.onPrimary,
       fontSize: 11,
       fontWeight: '700',
       textTransform: 'uppercase',
       letterSpacing: 1,
     },
+    heroMetaChipDark: {
+      backgroundColor: alpha(colors.onPrimary, 0.12),
+    },
+    heroMetaChipLight: {
+      backgroundColor: alpha(colors.secondaryAccent, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.14),
+    },
+    heroMetaChipExpense: {
+      backgroundColor: alpha(colors.danger, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.danger, 0.16),
+    },
+    heroMetaTextDark: {
+      color: colors.onPrimary,
+    },
+    heroMetaTextLight: {
+      color: colors.shellTextPrimary,
+    },
     heroBody: {
-      color: alpha(colors.onPrimary, 0.9),
       fontSize: 14,
       lineHeight: 22,
       fontWeight: '500',
+    },
+    heroBodyDark: {
+      color: alpha(colors.onPrimary, 0.9),
+    },
+    heroBodyLight: {
+      color: colors.shellTextSecondary,
+    },
+    heroVisual: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      width: '100%',
+      alignSelf: 'stretch',
+    },
+    heroVisualLegend: {
+      flexDirection: 'row',
+      gap: 8,
+      width: '100%',
+    },
+    heroVisualLegendItem: {
+      flex: 1,
+      minWidth: 0,
+      borderRadius: 16,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+    },
+    heroVisualLegendIcon: {
+      width: 24,
+      height: 24,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    heroVisualLegendIconDark: {
+      backgroundColor: alpha(colors.onPrimary, 0.12),
+    },
+    heroVisualLegendIconLight: {
+      backgroundColor: alpha(colors.primary, 0.12),
+    },
+    heroVisualLegendText: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    heroVisualLegendLabel: {
+      fontSize: 9,
+      fontWeight: '800',
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    heroVisualLegendValue: {
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: -0.2,
+    },
+    heroVisualLegendItemDarkIncome: {
+      backgroundColor: alpha(colors.onPrimary, 0.1),
+      borderColor: alpha(colors.onPrimary, 0.08),
+    },
+    heroVisualLegendItemDarkBalance: {
+      backgroundColor: alpha(colors.onPrimary, 0.1),
+      borderColor: alpha(colors.onPrimary, 0.08),
+    },
+    heroVisualLegendItemLightIncome: {
+      backgroundColor: alpha(colors.secondaryAccent, 0.08),
+      borderColor: alpha(colors.secondaryAccent, 0.16),
+    },
+    heroVisualLegendItemLightBalance: {
+      backgroundColor: alpha(colors.primary, 0.08),
+      borderColor: alpha(colors.primary, 0.16),
+    },
+    heroVisualLegendLabelDark: {
+      color: alpha(colors.onPrimary, 0.78),
+    },
+    heroVisualLegendLabelLight: {
+      color: colors.shellTextSoft,
+    },
+    heroVisualLegendValueDark: {
+      color: colors.onPrimary,
+    },
+    heroVisualLegendValueLight: {
+      color: colors.shellTextPrimary,
     },
     metricGrid: {
       flexDirection: 'row',
@@ -1711,7 +2112,7 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
     cardHeaderCopy: {
       flex: 1,
       minWidth: 0,
-      gap: 4,
+      gap: 6,
     },
     cardEyebrow: {
       color: colors.secondary,
@@ -1726,6 +2127,12 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       lineHeight: compact ? 28 : 30,
       fontWeight: '900',
       letterSpacing: -0.9,
+    },
+    trendCardHint: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
     },
     cardChip: {
       borderRadius: 999,
@@ -1743,11 +2150,35 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       gap: 14,
     },
     categoryItem: {
-      gap: 8,
+      gap: 10,
+    },
+    categoryItemHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    categoryItemCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 6,
+    },
+    categoryIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
     },
     categoryTopRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    categoryAmountRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
       justifyContent: 'space-between',
       gap: 10,
     },
@@ -1762,6 +2193,19 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       color: colors.shellTextPrimary,
       fontSize: 13,
       fontWeight: '900',
+    },
+    categoryRank: {
+      minWidth: 34,
+      height: 22,
+      paddingHorizontal: 8,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    categoryRankText: {
+      fontSize: 10,
+      fontWeight: '900',
+      letterSpacing: 0.2,
     },
     categoryTrack: {
       height: 8,
@@ -1790,14 +2234,20 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
     },
     segmentButton: {
       minWidth: compact ? 62 : 72,
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: 14,
       paddingHorizontal: 12,
       paddingVertical: 8,
+      gap: 6,
     },
     segmentButtonActive: {
       backgroundColor: colors.primary,
+      shadowColor: alpha(colors.primary, 0.28),
+      shadowOpacity: 1,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
     },
     segmentLabel: {
       fontSize: 10,
@@ -1831,7 +2281,7 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
       backgroundColor: colors.shellCardMuted,
     },
     trendBarActive: {
-      backgroundColor: colors.primary,
+      backgroundColor: isDark ? colors.secondaryAccent : colors.primary,
       shadowColor: alpha(colors.primary, 0.3),
       shadowOpacity: 1,
       shadowRadius: 14,
@@ -1889,33 +2339,64 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number)
     },
     insightCard: {
       borderRadius: 24,
-      backgroundColor: colors.primary,
-      padding: compact ? 22 : 24,
-      gap: 14,
+      backgroundColor: colors.shellCardStrong,
+      padding: compact ? 18 : 20,
+      gap: 12,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    insightHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    insightHeaderBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flexShrink: 0,
+    },
+    insightHeaderPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardMuted,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      flexShrink: 0,
+    },
+    insightHeaderPillText: {
+      color: colors.shellTextPrimary,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
     },
     insightBadge: {
       alignSelf: 'flex-start',
       borderRadius: 8,
-      backgroundColor: alpha(colors.onPrimary, 0.16),
+      backgroundColor: alpha(colors.primary, 0.12),
       paddingHorizontal: 10,
       paddingVertical: 6,
-      color: colors.onPrimary,
+      color: colors.primary,
       fontSize: 10,
       fontWeight: '800',
       letterSpacing: 1.2,
       textTransform: 'uppercase',
     },
     insightTitle: {
-      color: colors.onPrimary,
-      fontSize: compact ? 22 : 24,
-      lineHeight: compact ? 30 : 32,
+      color: colors.shellTextPrimary,
+      fontSize: compact ? 20 : 22,
+      lineHeight: compact ? 26 : 28,
       fontWeight: '800',
       letterSpacing: -1,
     },
     insightText: {
-      color: alpha(colors.onPrimary, 0.9),
-      fontSize: 15,
-      lineHeight: 24,
+      color: colors.shellTextMuted,
+      fontSize: 13,
+      lineHeight: 20,
       fontWeight: '500',
     },
     insightStatsRow: {
@@ -2011,19 +2492,21 @@ const insightStatStyles = (colors: AppColorTheme) =>
       flexGrow: 1,
       minWidth: 132,
       borderRadius: 18,
-      backgroundColor: alpha(colors.onPrimary, 0.12),
+      backgroundColor: colors.shellCardMuted,
       padding: 14,
       gap: 6,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
     },
     label: {
-      color: alpha(colors.onPrimary, 0.82),
+      color: colors.shellTextSoft,
       fontSize: 10,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 1.2,
     },
     value: {
-      color: colors.onPrimary,
+      color: colors.shellTextPrimary,
       fontSize: 17,
       lineHeight: 22,
       fontWeight: '900',
