@@ -5,6 +5,8 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { DashboardSkeleton } from '@/components/ui/skeleton';
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
@@ -107,6 +110,106 @@ const createDefaultDashboardFilters = (): DashboardFilters => ({
   startDate: '',
   endDate: '',
 });
+
+type BudgetRingProps = {
+  accent: string;
+  label: string;
+  progress: number;
+  size?: number;
+  value: string;
+  valueLabel: string;
+  textColor: string;
+  trackColor: string;
+};
+
+const BudgetRing = ({
+  accent,
+  label,
+  progress,
+  size = 118,
+  value,
+  valueLabel,
+  textColor,
+  trackColor,
+}: BudgetRingProps) => {
+  const strokeWidth = 11;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const normalizedProgress = clampPercent(progress);
+  const strokeDashoffset = circumference * (1 - normalizedProgress / 100);
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <Defs>
+          <LinearGradient id="budget-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor={accent} stopOpacity={0.92} />
+            <Stop offset="100%" stopColor={accent} stopOpacity={0.72} />
+          </LinearGradient>
+        </Defs>
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="url(#budget-ring-gradient)"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={strokeDashoffset}
+          rotation="-90"
+          originX={size / 2}
+          originY={size / 2}
+        />
+      </Svg>
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 2,
+        }}>
+          <Text
+            numberOfLines={1}
+            style={{
+            color: textColor,
+            fontSize: 10,
+            fontWeight: '800',
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+          }}>
+          {label}
+        </Text>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            style={{
+            color: textColor,
+            fontSize: 20,
+            lineHeight: 24,
+            fontWeight: '900',
+            letterSpacing: -0.8,
+          }}>
+          {value}
+        </Text>
+          <Text
+            numberOfLines={1}
+            style={{
+            color: textColor,
+            fontSize: 12,
+            fontWeight: '700',
+            opacity: 0.8,
+          }}>
+          {valueLabel}
+        </Text>
+      </View>
+    </View>
+  );
+};
 
 const buildDashboardQueryParams = (filters: DashboardFilters): DashboardPeriodParams => {
   if (filters.dateMode === 'month') {
@@ -312,6 +415,17 @@ const formatExpenseCurrency = (value: number, locale: string) => {
 
 const formatPercentValue = (value: number) => `${Math.round(value)}%`;
 
+const getInsightTone = (severity?: string) => {
+  switch (severity) {
+    case 'critical':
+      return 'danger' as const;
+    case 'warning':
+      return 'warning' as const;
+    default:
+      return 'primary' as const;
+  }
+};
+
 const getInsightIcon = (severity?: string): keyof typeof MaterialCommunityIcons.glyphMap => {
   switch (severity) {
     case 'critical':
@@ -321,6 +435,44 @@ const getInsightIcon = (severity?: string): keyof typeof MaterialCommunityIcons.
     default:
       return 'information-outline';
   }
+};
+
+const normalizeCategoryLabel = (category: string, language: string) => {
+  const normalized = category.trim().toLowerCase();
+
+  if (normalized === 'debt payment') {
+    return language === 'id' ? 'Pembayaran utang' : 'Debt payment';
+  }
+
+  return category.trim();
+};
+
+const getCategoryIcon = (category: string): keyof typeof MaterialCommunityIcons.glyphMap => {
+  const normalized = category.trim().toLowerCase();
+
+  if (normalized.includes('debt payment') || normalized.includes('pembayaran utang')) {
+    return 'bank-transfer';
+  }
+  if (normalized.includes('food') || normalized.includes('makan') || normalized.includes('dining')) {
+    return 'silverware-fork-knife';
+  }
+  if (normalized.includes('transport') || normalized.includes('transpor') || normalized.includes('travel')) {
+    return 'train-car';
+  }
+  if (normalized.includes('shopping') || normalized.includes('belanja')) {
+    return 'shopping-outline';
+  }
+  if (normalized.includes('health') || normalized.includes('kesehatan')) {
+    return 'heart-pulse';
+  }
+  if (normalized.includes('bill') || normalized.includes('tagihan') || normalized.includes('utility')) {
+    return 'receipt-text-outline';
+  }
+  if (normalized.includes('salary') || normalized.includes('income') || normalized.includes('pendapatan')) {
+    return 'cash-multiple';
+  }
+
+  return 'shape-outline';
 };
 
 export default function DashboardScreen() {
@@ -356,10 +508,49 @@ export default function DashboardScreen() {
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const filtersRef = useRef<DashboardFilters>(createDefaultDashboardFilters());
   const hasDashboardSnapshot = Boolean(summary || comparison || dailySpending.length || monthlySpending.length);
+  const sectionAnimations = useMemo(
+    () => Array.from({ length: 10 }, () => new Animated.Value(0)),
+    []
+  );
+  const sectionRevealStyles = useMemo(
+    () =>
+      sectionAnimations.map((value) => ({
+        opacity: value,
+        transform: [
+          {
+            translateY: value.interpolate({
+              inputRange: [0, 1],
+              outputRange: [16, 0],
+            }),
+          },
+        ],
+      })),
+    [sectionAnimations]
+  );
 
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
+
+  useEffect(() => {
+    sectionAnimations.forEach((value) => value.setValue(0));
+
+    if (loading) {
+      return;
+    }
+
+    Animated.stagger(
+      70,
+      sectionAnimations.map((value) =>
+        Animated.timing(value, {
+          toValue: 1,
+          duration: 420,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        })
+      )
+    ).start();
+  }, [filters.dateMode, filters.endDate, filters.month, filters.startDate, loading, sectionAnimations]);
 
   useEffect(() => {
     let active = true;
@@ -704,6 +895,19 @@ export default function DashboardScreen() {
     (totalBalance > 0 ? (remainingDebt / totalBalance) * 100 : 0)
   );
   const debtCompletion = toNumber(dashboardDebt?.completion_rate);
+  const debtHealthScore = clampPercent(100 - Math.max(0, debtToIncome));
+  const debtHealthLabel =
+    debtHealthScore >= 75
+      ? language === 'id'
+        ? 'Sehat'
+        : 'Healthy'
+      : debtHealthScore >= 45
+        ? language === 'id'
+          ? 'Waspada'
+          : 'Watch'
+        : language === 'id'
+          ? 'Perlu perhatian'
+          : 'Needs attention';
   const todayExpense = extractComparisonWindowValue(comparison, 'today_vs_yesterday', 'current') ||
     extractComparisonValue(comparison, ['today_expense', 'today', 'todayAmount']);
   const yesterdayExpense = extractComparisonWindowValue(comparison, 'today_vs_yesterday', 'previous') ||
@@ -727,15 +931,43 @@ export default function DashboardScreen() {
     filters.dateMode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode');
   const budgetSummary = summary?.budget_summary ?? null;
   const budgetGoalsProgress = summary?.goals_progress ?? [];
-  const budgetPreview = budgetGoalsProgress.slice(0, 3);
+  const budgetPreview = budgetGoalsProgress.slice(0, 2);
   const budgetUsage = toNumber(budgetSummary?.usage_rate);
+  const budgetActiveGoals = budgetGoalsProgress.length;
+  const budgetOverBudgetCount = budgetGoalsProgress.filter((goal) => goal?.status === 'over_budget').length;
+  const budgetOnTrackCount = budgetGoalsProgress.filter((goal) => goal?.status === 'on_track').length;
+  const budgetActiveLabel = language === 'id' ? 'Aktif' : 'Active';
+  const budgetHealthyLabel = language === 'id' ? 'Sehat' : 'Healthy';
   const budgetStatusLabel = budgetSummary
     ? budgetSummary.is_over_budget
       ? t('dashboard.budgetOverBudget')
       : budgetUsage >= 80
         ? t('dashboard.budgetOnTrack')
-        : t('dashboard.budgetUnderBudget')
+      : t('dashboard.budgetUnderBudget')
     : t('dashboard.budgetEmptyState');
+  const categoryBreakdownPreview = summary?.category_breakdown_preview ?? [];
+  const categoryTopThree = categoryBreakdownPreview.slice(0, 3);
+  const cashflowSignalLabel =
+    savingsRate >= 0
+      ? language === 'id'
+        ? 'Arus kas positif'
+        : 'Positive cashflow'
+      : language === 'id'
+        ? 'Arus kas negatif'
+        : 'Negative cashflow';
+  const budgetSignalLabel =
+    budgetSummary?.is_over_budget
+      ? language === 'id'
+        ? 'Lewat batas'
+        : 'Over budget'
+      : budgetUsage >= 80
+        ? language === 'id'
+          ? 'Mendekati batas'
+          : 'Near limit'
+        : language === 'id'
+          ? 'Aman'
+          : 'Healthy';
+  const debtSignalLabel = debtHealthLabel;
 
   const trendPoints = useMemo<TrendPoint[]>(() => {
     if (trendMode === 'daily' && dailySpending.length > 0) {
@@ -781,6 +1013,7 @@ export default function DashboardScreen() {
       },
     ];
   }, [insights, locale, summary, t, totalBalance]);
+  const priorityInsights = dashboardInsights.slice(0, 3);
 
   const activityItems = useMemo<ActivityItem[]>(
     () => [
@@ -808,6 +1041,7 @@ export default function DashboardScreen() {
     ],
     [activePeriodLabel, locale, monthlyExpense, t, todayExpense, yesterdayExpense]
   );
+  const activityPreviewItems = activityItems.slice(0, 2);
 
   const summaryHighlights = useMemo(
     () => [
@@ -857,7 +1091,7 @@ export default function DashboardScreen() {
           />
         }
         showsVerticalScrollIndicator={false}>
-        <View style={styles.topBar}>
+        <Animated.View style={[styles.topBar, sectionRevealStyles[0]]}>
           <View style={styles.brandBlock}>
             <View style={styles.brandAvatar}>
               <MaterialCommunityIcons name="account-circle" size={20} color={colors.primary} />
@@ -877,13 +1111,13 @@ export default function DashboardScreen() {
               </View>
             ) : null}
           </Pressable>
-        </View>
+        </Animated.View>
 
         {loading ? (
           <DashboardSkeleton colors={colors} />
         ) : (
           <>
-            <View style={styles.heroBlock}>
+            <Animated.View style={[styles.heroBlock, sectionRevealStyles[1]]}>
               <Text style={styles.kicker}>{t('dashboard.kicker')}</Text>
               <Text
                 numberOfLines={1}
@@ -906,9 +1140,9 @@ export default function DashboardScreen() {
                   {t('dashboard.vsLastQuarterPeak')}
                 </Text>
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.filterCard}>
+            <Animated.View style={[styles.filterCard, sectionRevealStyles[2]]}>
               <View style={styles.filterCardHeader}>
                 <View style={styles.filterCardCopy}>
                   <Text style={styles.filterCardKicker}>{t('dashboard.filter.kicker')}</Text>
@@ -923,9 +1157,9 @@ export default function DashboardScreen() {
                   <Text style={styles.filterCardActionText}>{t('dashboard.filter.action')}</Text>
                 </Pressable>
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.liquidCard}>
+            <Animated.View style={[styles.liquidCard, sectionRevealStyles[3]]}>
               <View style={styles.sectionTitleRow}>
                 <View style={styles.sectionTitleWrap}>
                   <Text style={styles.cardEyebrow}>{t('dashboard.liquidCashFlow')}</Text>
@@ -954,16 +1188,13 @@ export default function DashboardScreen() {
                   {t('dashboard.burn')}: {formatPercentValue(Math.max(0, expenseRatio))}
                 </Text>
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.summaryCard}>
+            <Animated.View style={[styles.summaryCard, sectionRevealStyles[4]]}>
               <View style={styles.cardHeader}>
                 <View style={styles.cardHeaderCopy}>
                   <Text style={styles.cardEyebrow}>{t('dashboard.summary.title')}</Text>
                   <Text style={styles.cardTitle}>{activePeriodLabel}</Text>
-                </View>
-                <View style={styles.summaryBadge}>
-                  <Text style={styles.summaryBadgeLabel}>{t('dashboard.filter.currentPeriod')}</Text>
                 </View>
               </View>
 
@@ -998,22 +1229,57 @@ export default function DashboardScreen() {
                   <Text style={styles.summaryStatValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
                 </View>
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.summaryCard}>
+            <Animated.View style={[styles.summaryCard, sectionRevealStyles[5]]}>
               <View style={styles.cardHeader}>
                 <View style={styles.cardHeaderCopy}>
                   <Text style={styles.cardEyebrow}>{t('dashboard.budgetGoals')}</Text>
                   <Text style={styles.cardTitle}>{t('dashboard.budgetGoalsTitle')}</Text>
                 </View>
-                <View style={[styles.summaryBadge, budgetSummary?.is_over_budget && styles.summaryBadgeDanger]}>
-                  <Text
-                    style={[
-                      styles.summaryBadgeLabel,
-                      budgetSummary?.is_over_budget && styles.summaryBadgeLabelDanger,
-                    ]}>
-                    {budgetStatusLabel}
+              </View>
+
+              <View style={styles.budgetSnapshotRow}>
+                <View style={styles.budgetRingShell}>
+                  <BudgetRing
+                    accent={budgetSummary?.is_over_budget ? colors.danger : colors.primary}
+                    label={t('dashboard.budgetUsage')}
+                    progress={budgetUsage}
+                    value={formatPercentValue(budgetUsage)}
+                    valueLabel={budgetStatusLabel}
+                    textColor={colors.shellTextPrimary}
+                    trackColor={colors.shellCardSoft}
+                  />
+                </View>
+
+                <View style={styles.budgetSnapshotCopy}>
+                  <Text style={styles.budgetSnapshotEyebrow}>{t('dashboard.budgetGoals')}</Text>
+                  <Text style={styles.budgetSnapshotTitle}>{budgetStatusLabel}</Text>
+                  <Text style={styles.budgetSnapshotBody}>
+                    {budgetSummary
+                      ? language === 'id'
+                        ? `Sisa budget ${formatCompactCurrency(toNumber(budgetSummary.remaining), locale)} dari target bulan ini.`
+                        : `Budget left ${formatCompactCurrency(toNumber(budgetSummary.remaining), locale)} from this month target.`
+                      : t('dashboard.budgetEmptyBody')}
                   </Text>
+
+                  <View style={styles.budgetSnapshotStats}>
+                    <View style={styles.budgetSnapshotStat}>
+                      <Text style={styles.budgetSnapshotStatLabel}>{budgetActiveLabel}</Text>
+                      <Text style={styles.budgetSnapshotStatValue}>{budgetActiveGoals}</Text>
+                    </View>
+                    <View style={styles.budgetSnapshotStat}>
+                      <Text style={styles.budgetSnapshotStatLabel}>{budgetHealthyLabel}</Text>
+                      <Text style={styles.budgetSnapshotStatValue}>{budgetOnTrackCount}</Text>
+                    </View>
+                  </View>
+                  {budgetOverBudgetCount > 0 ? (
+                    <Text style={styles.budgetSnapshotNote}>
+                      {language === 'id'
+                        ? `${budgetOverBudgetCount} target melewati batas`
+                        : `${budgetOverBudgetCount} goals over budget`}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
 
@@ -1092,9 +1358,9 @@ export default function DashboardScreen() {
                 <Text style={styles.secondaryActionText}>{t('dashboard.manageBudgetGoals')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
               </Pressable>
-            </View>
+            </Animated.View>
 
-            <View style={styles.card}>
+            <Animated.View style={[styles.card, sectionRevealStyles[6]]}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>{t('dashboard.spendingTrends')}</Text>
                 <View style={styles.segmentedControl}>
@@ -1139,11 +1405,18 @@ export default function DashboardScreen() {
                   </View>
                 )}
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.card}>
-              <View style={styles.debtIconWrap}>
-                <MaterialCommunityIcons name="lightning-bolt" size={18} color={colors.danger} />
+            <Animated.View style={[styles.card, sectionRevealStyles[7]]}>
+              <View style={styles.debtStatusRow}>
+                <View style={[styles.debtStatusPill, { backgroundColor: alpha(colors.primary, isDark ? 0.16 : 0.1) }]}>
+                  <Text style={[styles.debtStatusPillText, { color: colors.primary }]}>{debtHealthLabel}</Text>
+                </View>
+                <Text style={styles.debtStatusMeta}>
+                  {language === 'id'
+                    ? `Skor kesehatan ${formatPercentValue(debtHealthScore)}`
+                    : `Health score ${formatPercentValue(debtHealthScore)}`}
+                </Text>
               </View>
               <Text style={styles.cardTitle}>{t('dashboard.debtHealth')}</Text>
               <Text style={styles.cardDescription}>
@@ -1155,6 +1428,23 @@ export default function DashboardScreen() {
                   })
                   : t('dashboard.noDebtData')}
               </Text>
+
+              <View style={styles.debtStatusTrack}>
+                <View
+                  style={[
+                    styles.debtStatusFill,
+                    {
+                      width: `${debtHealthScore}%`,
+                      backgroundColor:
+                        debtHealthScore >= 75
+                          ? colors.secondary
+                          : debtHealthScore >= 45
+                            ? colors.warning
+                            : colors.danger,
+                    },
+                  ]}
+                />
+              </View>
 
               <View style={styles.metricCard}>
                 <Text style={styles.cardEyebrow}>{t('dashboard.leverageRatio')}</Text>
@@ -1170,9 +1460,9 @@ export default function DashboardScreen() {
                 <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
               </Pressable>
-            </View>
+            </Animated.View>
 
-            <View style={styles.card}>
+            <Animated.View style={[styles.card, sectionRevealStyles[8]]}>
               <View style={styles.rowBetween}>
                 <Text style={styles.cardTitle}>{t('dashboard.kineticActivity')}</Text>
                 <Pressable
@@ -1185,7 +1475,7 @@ export default function DashboardScreen() {
               </View>
 
               <View style={styles.activityList}>
-                {activityItems.map((item) => (
+                {activityPreviewItems.map((item) => (
                   <View key={`${item.title}-${item.amount}`} style={styles.activityItem}>
                     <View style={styles.activityLeft}>
                       <View style={styles.activityIconWrap}>
@@ -1219,30 +1509,207 @@ export default function DashboardScreen() {
                   </View>
                 ))}
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.insightCard}>
-              <Text style={styles.insightBadge}>{t('dashboard.pulseInsight')}</Text>
-              <Text style={styles.insightTitle}>{t('dashboard.insightsSectionTitle')}</Text>
-              <Text style={styles.insightText}>{t('dashboard.insightsSectionBody')}</Text>
+            <Animated.View style={[styles.insightCard, sectionRevealStyles[9]]}>
+              <View style={styles.insightHero}>
+                <View style={styles.insightHeroTop}>
+                  <View style={styles.insightHeroBadge}>
+                    <MaterialCommunityIcons name="chart-box-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View style={styles.insightHeroCopy}>
+                    <Text style={styles.insightBadge}>{t('dashboard.pulseInsight')}</Text>
+                    <Text style={styles.insightTitle}>{t('dashboard.insightsSectionTitle')}</Text>
+                    <Text style={styles.insightText}>{t('dashboard.insightsSectionBody')}</Text>
+                  </View>
+                </View>
+                <View style={styles.insightHeroPill}>
+                  <MaterialCommunityIcons name="priority-high" size={12} color={colors.primary} />
+                  <Text style={styles.insightHeroPillText}>
+                    {language === 'id' ? '3 prioritas' : '3 priorities'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.insightSignalGrid}>
+                <View style={styles.insightSignalCard}>
+                  <View style={[styles.insightSignalIcon, { backgroundColor: alpha(colors.onPrimary, 0.12) }]}>
+                    <MaterialCommunityIcons name="bank-outline" size={16} color={colors.secondary} />
+                  </View>
+                  <Text style={styles.insightSignalLabel}>
+                    {language === 'id' ? 'Utang' : 'Debt'}
+                  </Text>
+                  <Text style={styles.insightSignalValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
+                  <Text style={styles.insightSignalMeta}>{debtSignalLabel}</Text>
+                </View>
+
+                <View style={styles.insightSignalCard}>
+                  <View style={[styles.insightSignalIcon, { backgroundColor: alpha(colors.onPrimary, 0.12) }]}>
+                    <MaterialCommunityIcons name="wallet-outline" size={16} color={colors.warning} />
+                  </View>
+                  <Text style={styles.insightSignalLabel}>
+                    {language === 'id' ? 'Budget' : 'Budget'}
+                  </Text>
+                  <Text style={styles.insightSignalValue}>{formatPercentValue(budgetUsage)}</Text>
+                  <Text style={styles.insightSignalMeta}>{budgetSignalLabel}</Text>
+                </View>
+              </View>
+
+              <View style={styles.insightCompareStrip}>
+                <View style={styles.insightCompareIcon}>
+                  <MaterialCommunityIcons name="chart-timeline-variant" size={15} color={colors.primary} />
+                </View>
+                <View style={styles.insightCompareCopy}>
+                  <Text style={styles.insightCompareTitle}>
+                    {language === 'id' ? 'Utang vs arus kas' : 'Debt vs cash flow'}
+                  </Text>
+                  <Text style={styles.insightCompareMeta}>
+                    {language === 'id'
+                      ? `Utang ${formatPercentValue(Math.max(0, debtToIncome))} · Arus kas ${formatPercentValue(Math.max(0, savingsRate))} · ${cashflowSignalLabel}`
+                      : `Debt ${formatPercentValue(Math.max(0, debtToIncome))} · Cash flow ${formatPercentValue(Math.max(0, savingsRate))} · ${cashflowSignalLabel}`}
+                  </Text>
+                </View>
+                <View style={styles.insightCompareChips}>
+                  <View style={[styles.insightCompareChip, { backgroundColor: colors.shellCardSoft, borderWidth: 1, borderColor: colors.shellBorder }]}>
+                    <Text style={[styles.insightCompareChipText, { color: colors.danger }]}>
+                      {formatPercentValue(Math.max(0, debtToIncome))}
+                    </Text>
+                  </View>
+                  <View style={[styles.insightCompareChip, { backgroundColor: colors.shellCardSoft, borderWidth: 1, borderColor: colors.shellBorder }]}>
+                    <Text style={[styles.insightCompareChipText, { color: colors.secondary }]}>
+                      {formatPercentValue(Math.max(0, savingsRate))}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.insightCategorySection}>
+                <View style={styles.insightSectionHeader}>
+                  <Text style={styles.insightSectionTitle}>
+                    {language === 'id' ? 'Komposisi pengeluaran' : 'Spending composition'}
+                  </Text>
+                  <Text style={styles.insightSectionMeta}>
+                    {language === 'id'
+                      ? '3 kategori terbesar periode aktif'
+                      : 'Top 3 categories for the active period'}
+                  </Text>
+                </View>
+
+                {categoryTopThree.length > 0 ? (
+                  <>
+                    <View style={styles.insightStackBar}>
+                      {categoryTopThree.map((item, index) => {
+                        const value = Math.max(0, toNumber(item.percentage));
+                        const tone =
+                          index === 0
+                            ? colors.primary
+                            : index === 1
+                              ? colors.secondary
+                              : colors.warning;
+
+                        return (
+                          <View
+                            key={`${item.category}-${index}`}
+                            style={[
+                              styles.insightStackSegment,
+                              {
+                                width: `${Math.max(8, value)}%`,
+                                backgroundColor: tone,
+                              },
+                            ]}
+                          />
+                        );
+                      })}
+                    </View>
+
+                    <View style={styles.insightCategoryList}>
+                      {categoryTopThree.map((item, index) => {
+                        const value = Math.max(0, toNumber(item.percentage));
+                        const icon = getCategoryIcon(item.category);
+                        const tone =
+                          index === 0
+                            ? colors.primary
+                            : index === 1
+                              ? colors.secondary
+                              : colors.warning;
+
+                        return (
+                          <View key={`${item.category}-${item.amount}`} style={styles.insightCategoryItem}>
+                            <View style={[styles.insightCategoryIcon, { backgroundColor: alpha(tone, 0.14) }]}>
+                              <MaterialCommunityIcons name={icon} size={15} color={tone} />
+                            </View>
+                            <View style={styles.insightCategoryCopy}>
+                              <Text numberOfLines={1} style={styles.insightCategoryTitle}>
+                                {normalizeCategoryLabel(item.category, language)}
+                              </Text>
+                              <Text style={styles.insightCategoryMeta}>
+                                {formatCompactCurrency(toNumber(item.amount), locale)}
+                              </Text>
+                            </View>
+                            <View style={styles.insightCategoryRight}>
+                              <Text style={styles.insightCategoryPercent}>{formatPercentValue(value)}</Text>
+                              <View style={styles.insightCategoryBarTrack}>
+                                <View
+                                  style={[
+                                    styles.insightCategoryBarFill,
+                                    {
+                                      width: `${Math.max(8, value)}%`,
+                                      backgroundColor: tone,
+                                    },
+                                  ]}
+                                />
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.insightEmptyText}>
+                    {language === 'id' ? 'Belum ada komposisi kategori untuk ditampilkan.' : 'No category composition is available yet.'}
+                  </Text>
+                )}
+              </View>
 
               <View style={styles.insightList}>
-                {dashboardInsights.length > 0 ? (
-                  dashboardInsights.map((item) => (
-                    <View key={`${item.code}-${item.title}`} style={styles.insightItem}>
-                      <View style={styles.insightItemIcon}>
-                        <MaterialCommunityIcons
-                          name={getInsightIcon(item.severity)}
-                          size={16}
-                          color={colors.onPrimary}
-                        />
+                {priorityInsights.length > 0 ? (
+                  priorityInsights.map((item) => {
+                    const toneKey = getInsightTone(item.severity);
+                    const tone =
+                      toneKey === 'danger'
+                        ? colors.danger
+                        : toneKey === 'warning'
+                          ? colors.warning
+                          : colors.primary;
+                    const label =
+                      toneKey === 'danger'
+                        ? language === 'id'
+                          ? 'Prioritas tinggi'
+                          : 'High priority'
+                        : toneKey === 'warning'
+                          ? language === 'id'
+                            ? 'Perlu perhatian'
+                            : 'Needs attention'
+                          : language === 'id'
+                            ? 'Informasi'
+                            : 'Info';
+
+                    return (
+                      <View key={`${item.code}-${item.title}`} style={styles.insightItem}>
+                        <View style={[styles.insightItemRail, { backgroundColor: tone }]} />
+                        <View style={[styles.insightItemIcon, { backgroundColor: alpha(tone, 0.14) }]}>
+                          <MaterialCommunityIcons name={getInsightIcon(item.severity)} size={15} color={tone} />
+                        </View>
+                        <View style={styles.insightItemCopy}>
+                          <View style={styles.insightItemHead}>
+                            <Text style={[styles.insightItemTag, { color: tone }]}>{label}</Text>
+                          </View>
+                          <Text style={styles.insightItemTitle}>{item.title}</Text>
+                          <Text style={styles.insightItemText}>{item.message}</Text>
+                        </View>
                       </View>
-                      <View style={styles.insightItemCopy}>
-                        <Text style={styles.insightItemTitle}>{item.title}</Text>
-                        <Text style={styles.insightItemText}>{item.message}</Text>
-                      </View>
-                    </View>
-                  ))
+                    );
+                  })
                 ) : (
                   <Text style={styles.insightEmptyText}>{t('dashboard.insightsEmptyBody')}</Text>
                 )}
@@ -1255,7 +1722,7 @@ export default function DashboardScreen() {
                 style={styles.primaryAction}>
                 <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>
               </Pressable>
-            </View>
+            </Animated.View>
 
             {!!error && <Text style={styles.errorText}>{error}</Text>}
           </>
@@ -1566,8 +2033,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       flex: 1,
       minWidth: 0,
       flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
+      alignItems: 'center',      gap: 12,
     },
     brandAvatar: {
       width: 36,
@@ -1618,13 +2084,13 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     loadingState: {
       marginTop: 20,
-      borderRadius: 30,
-      backgroundColor: colors.shellCard,
-      paddingVertical: 48,
-      paddingHorizontal: 20,
+      borderRadius: 24,
+      backgroundColor: colors.shellCardSoft,
+      paddingVertical: 40,
+      paddingHorizontal: 18,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 14,
+      gap: 12,
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
@@ -1634,12 +2100,17 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '600',
     },
     heroBlock: {
-      gap: 10,
+      gap: 12,
+      borderRadius: 24,
+      backgroundColor: colors.shellCard,
+      padding: compact ? 18 : 20,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
     },
     filterCard: {
-      borderRadius: 22,
-      backgroundColor: colors.shellCard,
-      padding: compact ? 16 : 18,
+      borderRadius: 20,
+      backgroundColor: colors.shellCardSoft,
+      padding: compact ? 14 : 16,
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
@@ -1692,7 +2163,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     kicker: {
       color: colors.secondary,
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: '800',
       textTransform: 'uppercase',
       letterSpacing: 3.2,
@@ -1708,7 +2179,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       flexDirection: 'row',
       alignItems: 'center',
       flexWrap: 'wrap',
-      gap: 10,
+      gap: 12,
     },
     momentumBadge: {
       flexDirection: 'row',
@@ -1721,7 +2192,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     momentumBadgeText: {
       color: colors.secondary,
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: '800',
       textTransform: 'uppercase',
     },
@@ -1732,26 +2203,26 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '500',
     },
     card: {
-      borderRadius: 24,
+      borderRadius: 22,
       backgroundColor: colors.shellCard,
-      padding: compact ? 18 : 20,
-      gap: 18,
+      padding: compact ? 17 : 19,
+      gap: 14,
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
     summaryCard: {
-      borderRadius: 28,
-      backgroundColor: alpha(colors.primary, isDark ? 0.14 : 0.08),
+      borderRadius: 22,
+      backgroundColor: colors.shellCard,
       padding: compact ? 18 : 20,
-      gap: 18,
+      gap: 14,
       borderWidth: 1,
-      borderColor: alpha(colors.primary, isDark ? 0.24 : 0.16),
+      borderColor: alpha(colors.primary, isDark ? 0.16 : 0.1),
     },
     liquidCard: {
-      borderRadius: 24,
-      backgroundColor: colors.shellCardStrong,
+      borderRadius: 22,
+      backgroundColor: colors.shellCardMuted,
       padding: compact ? 18 : 20,
-      gap: 18,
+      gap: 14,
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: colors.shellBorder,
@@ -1811,7 +2282,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       flexDirection: compact ? 'column' : 'row',
       alignItems: compact ? 'flex-start' : 'center',
       justifyContent: 'space-between',
-      gap: 10,
+      gap: 12,
     },
     cardMeta: {
       flex: 1,
@@ -1865,14 +2336,14 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     summaryGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 10,
+      gap: 12,
     },
     summaryMetric: {
       width: compact ? '100%' : '48%',
-      borderRadius: 20,
-      backgroundColor: colors.shellCard,
-      padding: 14,
-      gap: 8,
+      borderRadius: 16,
+      backgroundColor: colors.shellCardSoft,
+      padding: 13,
+      gap: 6,
       borderWidth: 1,
       borderColor: colors.shellBorder,
     },
@@ -1897,7 +2368,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     summaryMetricMeta: {
       color: colors.shellTextMuted,
-      fontSize: 11,
+      fontSize: 12,
       lineHeight: 16,
       fontWeight: '600',
       flexShrink: 1,
@@ -1919,8 +2390,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       lineHeight: 18,
       textAlign: 'center',
     },
-    budgetAlert: {
-      borderRadius: 18,
+    budgetAlert: {      borderRadius: 20,
       backgroundColor: alpha(colors.danger, isDark ? 0.14 : 0.1),
       paddingHorizontal: 14,
       paddingVertical: 12,
@@ -1932,19 +2402,19 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontWeight: '700',
     },
     budgetPreviewList: {
-      gap: 10,
+      gap: 8,
     },
     budgetPreviewItem: {
-      gap: 8,
-      borderRadius: 18,
+      gap: 6,
+      borderRadius: 16,
       backgroundColor: colors.shellCardMuted,
-      padding: 14,
+      padding: 12,
     },
     budgetPreviewHeader: {
       flexDirection: 'row',
       alignItems: 'flex-start',
       justifyContent: 'space-between',
-      gap: 10,
+      gap: 12,
     },
     budgetPreviewCopy: {
       flex: 1,
@@ -1958,7 +2428,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     budgetPreviewMeta: {
       color: colors.shellTextMuted,
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: '600',
     },
     budgetPreviewPill: {
@@ -1974,7 +2444,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       textTransform: 'uppercase',
     },
     budgetPreviewTrack: {
-      height: 4,
+      height: 3,
       borderRadius: 999,
       backgroundColor: colors.shellCard,
       overflow: 'hidden',
@@ -1985,16 +2455,16 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     summaryStatsRow: {
       flexDirection: compact ? 'column' : 'row',
-      gap: 10,
+      gap: 12,
     },
     summaryStatPill: {
       flex: 1,
       width: compact ? '100%' : undefined,
-      borderRadius: 18,
-      backgroundColor: colors.shellCardMuted,
+      borderRadius: 16,
+      backgroundColor: colors.shellCardSoft,
       paddingHorizontal: 14,
-      paddingVertical: 12,
-      gap: 4,
+      paddingVertical: 10,
+      gap: 3,
       alignItems: 'flex-start',
     },
     summaryStatLabel: {
@@ -2010,13 +2480,86 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       lineHeight: 18,
       fontWeight: '900',
     },
+    budgetSnapshotRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+      paddingVertical: 2,
+    },
+    budgetRingShell: {
+      width: 118,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    budgetSnapshotCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 8,
+    },
+    budgetSnapshotEyebrow: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1.1,
+      textTransform: 'uppercase',
+      lineHeight: 14,
+    },
+    budgetSnapshotTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 16,
+      lineHeight: 21,
+      fontWeight: '900',
+      letterSpacing: -0.4,
+    },
+    budgetSnapshotBody: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '500',
+    },
+    budgetSnapshotStats: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    budgetSnapshotStat: {
+      flexGrow: 1,
+      minWidth: 86,
+      borderRadius: 14,
+      backgroundColor: colors.shellCardSoft,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      gap: 4,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    budgetSnapshotStatLabel: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 0.9,
+      textTransform: 'uppercase',
+      lineHeight: 12,
+    },
+    budgetSnapshotStatValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 16,
+      lineHeight: 18,
+      fontWeight: '900',
+    },
+    budgetSnapshotNote: {
+      color: colors.warning,
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '700',
+    },
     segmentedControl: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 6,
       flexShrink: 0,
-      backgroundColor: colors.shellCardMuted,
-      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderRadius: 16,
       padding: 4,
     },
     segmentButton: {
@@ -2069,10 +2612,10 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     trendBarActive: {
       backgroundColor: colors.primary,
-      shadowColor: alpha(colors.primary, 0.35),
+      shadowColor: alpha(colors.primary, 0.2),
       shadowOpacity: 1,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
     },
     trendLabel: {
       color: colors.shellTextMuted,
@@ -2101,9 +2644,9 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       textAlign: 'center',
     },
     debtIconWrap: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
+      width: 36,
+      height: 36,
+      borderRadius: 10,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: alpha(colors.danger, isDark ? 0.16 : 0.1),
@@ -2114,9 +2657,47 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       lineHeight: 22,
       fontWeight: '500',
     },
+    debtStatusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    debtStatusPill: {
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    debtStatusPillText: {
+      fontSize: 10,
+      lineHeight: 12,
+      fontWeight: '900',
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    debtStatusMeta: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.shellTextMuted,      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '700',
+      textAlign: 'right',
+    },
+    debtStatusTrack: {
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardSoft,
+      overflow: 'hidden',
+      marginTop: 2,
+    },
+    debtStatusFill: {
+      height: '100%',
+      borderRadius: 999,
+    },
     metricCard: {
-      borderRadius: 24,
-      backgroundColor: colors.shellCardMuted,
+      borderRadius: 16,
+      backgroundColor: colors.shellCardSoft,
       paddingHorizontal: 16,
       paddingVertical: 14,
       gap: 4,
@@ -2129,13 +2710,13 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     metricMeta: {
       color: colors.shellTextMuted,
-      fontSize: 11,
+      fontSize: 12,
       lineHeight: 16,
       fontWeight: '600',
     },
     secondaryAction: {
       minHeight: 54,
-      borderRadius: 18,
+      borderRadius: 20,
       backgroundColor: colors.shellTextPrimary,
       flexDirection: 'row',
       alignItems: 'center',
@@ -2162,7 +2743,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       letterSpacing: 1.2,
     },
     activityList: {
-      gap: 18,
+      gap: 12,
     },
     activityItem: {
       flexDirection: 'row',
@@ -2177,9 +2758,9 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       gap: 12,
     },
     activityIconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 12,
+      width: 36,
+      height: 36,
+      borderRadius: 10,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.shellCardSoft,
@@ -2191,25 +2772,25 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     activityTitle: {
       color: colors.shellTextPrimary,
-      fontSize: 15,
-      lineHeight: 20,
+      fontSize: 14,
+      lineHeight: 18,
       fontWeight: '800',
     },
     activityMeta: {
       color: colors.shellTextMuted,
       fontSize: 12,
-      lineHeight: 18,
+      lineHeight: 16,
       fontWeight: '500',
     },
     activityRight: {
-      width: compact ? 92 : 106,
+      width: compact ? 84 : 96,
       alignItems: 'flex-end',
       gap: 3,
     },
     activityAmount: {
       color: colors.shellTextPrimary,
-      fontSize: compact ? 15 : 18,
-      lineHeight: compact ? 20 : 22,
+      fontSize: compact ? 14 : 16,
+      lineHeight: compact ? 18 : 20,
       fontWeight: '900',
       letterSpacing: -0.6,
     },
@@ -2218,44 +2799,282 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     activityKind: {
       color: colors.shellTextSoft,
-      fontSize: 10,
+      fontSize: 9,
       fontWeight: '700',
     },
     insightCard: {
-      borderRadius: 24,
-      backgroundColor: colors.primary,
-      padding: compact ? 22 : 24,
+      borderRadius: 22,
+      backgroundColor: colors.shellCardStrong,
+      padding: compact ? 18 : 20,
       gap: 16,
       overflow: 'hidden',
-      shadowColor: alpha(colors.primary, 0.32),
+      shadowColor: alpha(colors.shellTextPrimary, 0.08),
       shadowOpacity: 1,
-      shadowRadius: 24,
-      shadowOffset: { width: 0, height: 12 },
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 8 },
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
     },
     insightBadge: {
       alignSelf: 'flex-start',
       borderRadius: 8,
-      backgroundColor: alpha(colors.onPrimary, 0.16),
+      backgroundColor: colors.shellCardSoft,
       paddingHorizontal: 10,
       paddingVertical: 6,
-      color: colors.onPrimary,
+      color: colors.primary,
       fontSize: 10,
       fontWeight: '800',
       letterSpacing: 1.2,
       textTransform: 'uppercase',
     },
+    insightHero: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    insightHeroTop: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+      flex: 1,
+      minWidth: 0,
+    },
+    insightHeroBadge: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardSoft,
+      flexShrink: 0,
+    },
+    insightHeroCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 6,
+    },
+    insightHeroPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      backgroundColor: colors.shellCardSoft,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      flexShrink: 0,
+      marginTop: 4,
+    },
+    insightHeroPillText: {
+      color: colors.shellTextPrimary,
+      fontSize: 10,
+      lineHeight: 12,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
     insightTitle: {
-      color: colors.onPrimary,
+      color: colors.shellTextPrimary,
       fontSize: compact ? 22 : 24,
       lineHeight: compact ? 30 : 32,
       fontWeight: '800',
       letterSpacing: -1,
     },
     insightText: {
-      color: alpha(colors.onPrimary, 0.9),
-      fontSize: 16,
-      lineHeight: 26,
+      color: colors.shellTextMuted,
+      fontSize: 14,
+      lineHeight: 20,
       fontWeight: '500',
+    },
+    insightSignalGrid: {
+      flexDirection: compact ? 'column' : 'row',
+      gap: 12,
+    },
+    insightSignalCard: {
+      flex: 1,
+      borderRadius: 20,
+      backgroundColor: colors.shellCard,
+      padding: 14,
+      gap: 5,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      minHeight: 108,
+    },
+    insightSignalIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 2,
+    },
+    insightSignalLabel: {
+      color: colors.shellTextSoft,
+      fontSize: 10,
+      lineHeight: 12,
+      fontWeight: '800',
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    insightSignalValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 17,
+      lineHeight: 22,
+      fontWeight: '900',
+      letterSpacing: -0.4,
+    },
+    insightSignalMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '600',
+    },
+    insightCompareStrip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      borderRadius: 20,
+      backgroundColor: colors.shellCard,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    insightCompareIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardSoft,
+      flexShrink: 0,
+    },
+    insightCompareCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    insightCompareTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '800',
+      letterSpacing: -0.2,
+    },
+    insightCompareMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    insightCompareChips: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flexShrink: 0,
+    },
+    insightCompareChip: {
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+    },
+    insightCompareChipText: {
+      fontSize: 10,
+      lineHeight: 12,
+      fontWeight: '900',
+      letterSpacing: 0.5,
+    },
+    insightCategorySection: {
+      gap: 12,
+      borderRadius: 20,
+      backgroundColor: colors.shellCard,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    insightSectionHeader: {
+      gap: 2,
+    },
+    insightSectionTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '800',
+      letterSpacing: -0.2,
+    },
+    insightSectionMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '500',
+    },
+    insightStackBar: {
+      flexDirection: 'row',
+      height: 8,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardSoft,
+      overflow: 'hidden',
+      gap: 2,
+    },
+    insightStackSegment: {
+      height: '100%',
+      borderRadius: 999,
+    },
+    insightCategoryList: {
+      gap: 8,
+    },
+    insightCategoryItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    insightCategoryIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    insightCategoryCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    insightCategoryTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: '800',
+    },
+    insightCategoryMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 14,
+      fontWeight: '500',
+    },
+    insightCategoryRight: {
+      width: 108,
+      alignItems: 'flex-end',
+      gap: 4,
+    },
+    insightCategoryPercent: {
+      color: colors.onPrimary,
+      fontSize: 12,
+      lineHeight: 13,
+      fontWeight: '800',
+      letterSpacing: 0.6,
+    },
+    insightCategoryBarTrack: {
+      width: '100%',
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.shellCardSoft,
+      overflow: 'hidden',
+    },
+    insightCategoryBarFill: {
+      height: '100%',
+      borderRadius: 999,
     },
     insightList: {
       gap: 12,
@@ -2266,7 +3085,35 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       alignItems: 'flex-start',
       paddingVertical: 8,
       borderTopWidth: 1,
-      borderTopColor: alpha(colors.onPrimary, 0.14),
+      borderTopColor: alpha(colors.onPrimary, 0.12),
+    },
+    insightItemRail: {
+      width: 3,
+      alignSelf: 'stretch',
+      borderRadius: 999,
+      marginTop: 3,
+      opacity: 0.75,
+    },
+    insightItemCopy: {
+      flex: 1,
+      gap: 4,
+    },
+    insightItemHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    insightItemTag: {
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      backgroundColor: colors.shellCardSoft,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      fontSize: 9,
+      lineHeight: 11,
+      fontWeight: '900',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
     },
     insightItemIcon: {
       width: 30,
@@ -2274,29 +3121,25 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: alpha(colors.onPrimary, 0.16),
+      backgroundColor: colors.shellCardSoft,
       marginTop: 2,
       flexShrink: 0,
     },
-    insightItemCopy: {
-      flex: 1,
-      gap: 4,
-    },
     insightItemTitle: {
-      color: colors.onPrimary,
+      color: colors.shellTextPrimary,
       fontSize: 15,
       lineHeight: 21,
       fontWeight: '800',
       letterSpacing: -0.2,
     },
     insightItemText: {
-      color: alpha(colors.onPrimary, 0.88),
+      color: colors.shellTextMuted,
       fontSize: 13,
       lineHeight: 19,
       fontWeight: '500',
     },
     insightEmptyText: {
-      color: alpha(colors.onPrimary, 0.88),
+      color: colors.shellTextMuted,
       fontSize: 14,
       lineHeight: 20,
       fontWeight: '500',
@@ -2304,7 +3147,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     primaryAction: {
       alignSelf: 'flex-start',
       minHeight: 56,
-      borderRadius: 18,
+      borderRadius: 20,
       backgroundColor: colors.onPrimary,
       alignItems: 'center',
       justifyContent: 'center',
@@ -2441,7 +3284,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     filterModeRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 10,
+      gap: 12,
     },
     filterModeButton: {
       flexGrow: 1,
@@ -2483,7 +3326,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     filterFieldHelper: {
       color: colors.shellTextMuted,
-      fontSize: 11,
+      fontSize: 12,
       lineHeight: 16,
       fontWeight: '500',
     },
@@ -2526,12 +3369,12 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     filterPickerMeta: {
       color: colors.shellTextMuted,
-      fontSize: 11,
+      fontSize: 12,
       lineHeight: 16,
       fontWeight: '500',
     },
     filterDatePickerCard: {
-      borderRadius: 18,
+      borderRadius: 20,
       overflow: 'hidden',
       backgroundColor: colors.shellCard,
       borderWidth: 1,
@@ -2567,7 +3410,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     filterModalActions: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 10,
+      gap: 12,
     },
     filterSecondaryButton: {
       flex: 1,
@@ -2665,7 +3508,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: 12,
-      borderRadius: 18,
+      borderRadius: 20,
       backgroundColor: colors.shellCardMuted,
       padding: 10,
     },
@@ -2710,7 +3553,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     monthPickerActions: {
       flexDirection: 'row',
-      gap: 10,
+      gap: 12,
     },
     monthPickerSecondaryButton: {
       flex: 1,
@@ -2742,3 +3585,4 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
   });
 };
+

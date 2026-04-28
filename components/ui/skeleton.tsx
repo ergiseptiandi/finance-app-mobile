@@ -443,20 +443,20 @@ const skeletonStyles = StyleSheet.create({
     opacity: 0.9,
   },
   card: {
-    borderRadius: 24,
-    padding: 20,
-    gap: 16,
+    borderRadius: 20,
+    padding: 18,
+    gap: 14,
     borderWidth: 1,
   },
   hero: {
-    borderRadius: 30,
-    padding: 22,
-    gap: 16,
+    borderRadius: 24,
+    padding: 18,
+    gap: 14,
   },
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   metricCard: {
     width: '48%',

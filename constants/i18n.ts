@@ -269,8 +269,8 @@ const translations: Record<AppLanguage, TranslationDictionary> = {
     'dashboard.wealthAccelerating': 'Kondisi keuangan Anda membaik.',
     'dashboard.insightBody':
       'Berdasarkan data periode aktif, saldo total Anda saat ini {amount}. Buka laporan untuk melihat detail pemasukan, pengeluaran, dan tren yang memengaruhinya.',
-    'dashboard.insightsSectionTitle': 'Insight prioritas',
-    'dashboard.insightsSectionBody': 'Rekomendasi yang paling relevan untuk memperbaiki arus kas periode ini.',
+    'dashboard.insightsSectionTitle': 'Wawasan prioritas',
+    'dashboard.insightsSectionBody': 'Rekomendasi inti untuk memperbaiki arus kas periode ini.',
     'dashboard.insightsEmptyBody': 'Belum ada insight prioritas untuk periode ini.',
     'dashboard.optimizeStrategy': 'Lihat laporan',
     'dashboard.partialError': 'Sebagian data dashboard gagal dimuat. Tarik ke bawah untuk refresh.',
