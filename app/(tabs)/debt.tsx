@@ -346,6 +346,7 @@ export default function DebtScreen() {
   const [paymentTargetLocked, setPaymentTargetLocked] = useState(false);
   const [paymentEditingId, setPaymentEditingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [iosDebtDatePickerVisible, setIosDebtDatePickerVisible] = useState(false);
   const [iosPaymentDatePickerVisible, setIosPaymentDatePickerVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [error, setError] = useState('');
@@ -627,6 +628,7 @@ export default function DebtScreen() {
     setPaymentTargetDebtId(null);
     setPaymentTargetLocked(false);
     setPaymentEditingId(null);
+    setIosDebtDatePickerVisible(false);
     setIosPaymentDatePickerVisible(false);
     setSubmittingInstallmentId(null);
   }, []);
@@ -636,6 +638,8 @@ export default function DebtScreen() {
     setFormVisible(true);
     setFormError('');
     setDebtForm(createEmptyDebtForm());
+    setIosDebtDatePickerVisible(false);
+    setIosPaymentDatePickerVisible(false);
   }, []);
 
   const openEditDebtForm = useCallback(() => {
@@ -647,6 +651,8 @@ export default function DebtScreen() {
     setFormVisible(true);
     setFormError('');
     setDebtForm(createDebtFormFromRecord(selectedDebt));
+    setIosDebtDatePickerVisible(false);
+    setIosPaymentDatePickerVisible(false);
   }, [selectedDebt]);
 
   const openPaymentForm = useCallback((options: OpenPaymentFormOptions = {}) => {
@@ -747,6 +753,19 @@ export default function DebtScreen() {
     []
   );
 
+  const handleDebtDueDateChange = useCallback(
+    (_event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (selectedDate) {
+        setDebtForm((current) => ({ ...current, dueDate: selectedDate.toISOString().slice(0, 10) }));
+      }
+
+      if (Platform.OS === 'ios') {
+        setIosDebtDatePickerVisible(false);
+      }
+    },
+    []
+  );
+
   const openPaymentDatePicker = useCallback(() => {
     const currentDate = paymentForm.paymentDate ? new Date(`${paymentForm.paymentDate}T00:00:00`) : new Date();
 
@@ -761,6 +780,21 @@ export default function DebtScreen() {
 
     setIosPaymentDatePickerVisible(true);
   }, [handlePaymentDateChange, paymentForm.paymentDate]);
+
+  const openDebtDatePicker = useCallback(() => {
+    const currentDate = debtForm.dueDate ? new Date(`${debtForm.dueDate}T00:00:00`) : new Date();
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: currentDate,
+        mode: 'date',
+        onChange: handleDebtDueDateChange,
+      });
+      return;
+    }
+
+    setIosDebtDatePickerVisible(true);
+  }, [debtForm.dueDate, handleDebtDueDateChange]);
 
   const submitDebtForm = useCallback(async () => {
     setFormError('');
@@ -1693,18 +1727,29 @@ export default function DebtScreen() {
 
                         <View style={styles.fieldStack}>
                           <Text style={styles.fieldLabel}>{t('debt.form.dueDate')}</Text>
-                          <View style={styles.inputShell}>
+                          <Pressable
+                            onPress={openDebtDatePicker}
+                            style={({ pressed }) => [styles.datePickerButton, pressed && styles.datePickerButtonPressed]}>
                             <View style={styles.inputIconWrap}>
                               <MaterialCommunityIcons name="calendar-month-outline" size={18} color={modalAccent} />
                             </View>
-                            <TextInput
-                              value={debtForm.dueDate}
-                              onChangeText={(text) => setDebtForm((current) => ({ ...current, dueDate: text }))}
-                              placeholder="2026-04-16"
-                              placeholderTextColor={colors.shellTextSoft}
-                              style={styles.inputControl}
-                            />
-                          </View>
+                            <View style={styles.datePickerCopy}>
+                              <Text style={styles.datePickerValue}>{formatDate(debtForm.dueDate, locale)}</Text>
+                              <Text style={styles.datePickerMeta}>{t('debt.form.dueDateHelper')}</Text>
+                            </View>
+                            <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                          </Pressable>
+                          {Platform.OS === 'ios' && iosDebtDatePickerVisible ? (
+                            <View style={styles.datePickerCard}>
+                              <DateTimePicker
+                                value={parseDate(debtForm.dueDate) ?? new Date()}
+                                mode="date"
+                                display="spinner"
+                                onChange={handleDebtDueDateChange}
+                                accentColor={modalAccent}
+                              />
+                            </View>
+                          ) : null}
                         </View>
                       </View>
                     </View>
@@ -3120,6 +3165,50 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
+    },
+    actionButtonPressed: {
+      opacity: 0.92,
+      transform: [{ scale: 0.995 }],
+    },
+    datePickerButton: {
+      minHeight: 56,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardSoft,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    datePickerButtonPressed: {
+      opacity: 0.92,
+      transform: [{ scale: 0.995 }],
+    },
+    datePickerCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    datePickerValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '700',
+    },
+    datePickerMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '600',
+    },
+    datePickerCard: {
+      marginTop: 10,
+      borderRadius: 18,
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      overflow: 'hidden',
     },
     searchInput: {
       color: colors.shellTextPrimary,
