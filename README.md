@@ -1,8 +1,35 @@
-# Welcome to your Expo app 👋
+# Finance Go
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Personal finance mobile app built with Expo and React Native.
 
-## Get started
+## Overview
+
+Finance Go helps users track their money with a mobile-first experience. The app includes authentication, wallet management, category management, budgets, activity tracking, debt tracking, reports, notifications, and account settings.
+
+## Features
+
+- Onboarding flow
+- Register, login, logout, and password recovery
+- Biometric unlock
+- Wallet management
+- Category management
+- Budget tracking
+- Activity and transaction overview
+- Debt tracking
+- Reports and summaries
+- Notification inbox and settings
+- Profile and password settings
+- Push notification support
+
+## Requirements
+
+- Node.js LTS
+- npm
+- Expo CLI
+- Android Studio for Android development
+- Xcode for iOS development on macOS
+
+## Setup
 
 1. Install dependencies
 
@@ -10,74 +37,32 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm install
    ```
 
-2. Start the app
+2. Configure environment variables
+
+   Copy `.env.example` to `.env` and set the required values.
+
+3. Start the app
 
    ```bash
-   npx expo start
+   npm run start
    ```
 
-In the output, you'll find options to open the app in a
+## Available Scripts
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `npm run start` - start the Expo dev server
+- `npm run android` - run on Android
+- `npm run ios` - run on iOS
+- `npm run web` - run in the browser
+- `npm run lint` - run lint checks
 
 ## Environment
 
-Backend API default:
+The app reads configuration from environment variables defined in `.env`.
 
-```env
-EXPO_PUBLIC_API_BASE_URL=https://api-finance.paidev.my.id
-```
+- `EXPO_PUBLIC_API_BASE_URL` - backend API base URL
 
-Auth endpoints used by the app:
+## Notes
 
-- `https://api-finance.paidev.my.id/v1/auth/register`
-- `https://api-finance.paidev.my.id/v1/auth/login`
-- `https://api-finance.paidev.my.id/v1/auth/refresh`
-- `https://api-finance.paidev.my.id/v1/auth/logout`
-- `https://api-finance.paidev.my.id/v1/auth/me`
-- `https://api-finance.paidev.my.id/v1/auth/profile`
-- `https://api-finance.paidev.my.id/v1/auth/password`
-- `https://api-finance.paidev.my.id/v1/auth/forgot-password`
-- `https://api-finance.paidev.my.id/v1/auth/reset-password`
-
-Notification endpoints used by the app:
-
-- `GET /v1/notifications/settings`
-- `PATCH /v1/notifications/settings`
-- `POST /v1/notifications/generate`
-- `GET /v1/notifications`
-- `PATCH /v1/notifications/{id}/read`
-
-Backend contract notes:
-
-- `docs/backend-notifications.md`
-- `docs/mobile-firebase-push-setup.md`
+- The project uses Expo Router with file-based routing.
+- Push notifications use Firebase-based device tokens.
+- The backend and mobile app are maintained as separate repositories.
