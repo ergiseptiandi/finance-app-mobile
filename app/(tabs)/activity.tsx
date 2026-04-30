@@ -701,7 +701,7 @@ const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
   transfer: { icon: 'bank-transfer-outline', color: '#3498db' },
   transferbank: { icon: 'bank-transfer-outline', color: '#3498db' },
   setoran: { icon: 'bank-outline', color: '#27ae60' },
-  tarik tunai: { icon: 'cash-outline', color: '#7f8c8d' },
+  'tarik tunai': { icon: 'cash-outline', color: '#7f8c8d' },
   mutasi: { icon: 'swap-horizontal-outline', color: '#7f8c8d' },
 
   donasi: { icon: 'hand-heart-outline', color: '#e74c3c' },
