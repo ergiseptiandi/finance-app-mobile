@@ -1086,19 +1086,19 @@ export default function DashboardScreen() {
   const summaryHighlights = useMemo(
     () => [
       {
-        label: t('dashboard.summary.totalBalance'),
+        label: language === 'id' ? 'Saldo Total' : 'Total Balance',
         value: formatCompactCurrency(totalBalance, locale),
-        meta: t('dashboard.summary.totalBalanceMeta'),
+        meta: language === 'id' ? 'Seluruh saldo wallet' : 'All wallet balances',
       },
       {
-        label: language === 'id' ? 'Kekayaan Bersih' : 'Net Worth',
+        label: language === 'id' ? 'Saldo Tersedia' : 'Available Balance',
         value: formatCompactCurrency(Math.abs(netWorth), locale),
-        meta: language === 'id' ? 'Aset dikurangi utang' : 'Assets minus debt',
+        meta: language === 'id' ? 'Setelah dikurangi utang' : 'After debt deduction',
       },
       {
-        label: t('dashboard.summary.income'),
+        label: language === 'id' ? 'Pemasukan' : 'Income',
         value: formatCompactCurrency(monthlyIncome, locale),
-        meta: t('dashboard.summary.incomeMeta'),
+        meta: language === 'id' ? 'Total pemasukan periode' : 'Period total income',
       },
       {
         label: language === 'id' ? 'Pengeluaran Konsumsi' : 'Consumption',
@@ -1106,9 +1106,9 @@ export default function DashboardScreen() {
         meta: language === 'id' ? 'Tanpa bayar utang' : 'Excluding debt payments',
       },
       {
-        label: t('dashboard.summary.cashflow'),
+        label: language === 'id' ? 'Arus Kas Bersih' : 'Net Cashflow',
         value: formatSignedCurrency(netCashflow, locale),
-        meta: t('dashboard.summary.cashflowMeta'),
+        meta: language === 'id' ? 'Pemasukan dikurangi konsumsi' : 'Income minus consumption',
       },
     ],
     [consumptionExpense, locale, monthlyIncome, netCashflow, netWorth, t, totalBalance, language]
