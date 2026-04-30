@@ -340,6 +340,92 @@ const toDaySectionKey = (value: string) => {
 
 const isMainWalletName = (value?: string | null) => value?.trim().toLowerCase() === 'main';
 
+const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
+  makanan: { icon: 'food-outline', color: '#e67e22' },
+  'makan siang': { icon: 'food-outline', color: '#e67e22' },
+  'makan malam': { icon: 'food-outline', color: '#e67e22' },
+  sarapan: { icon: 'food-outline', color: '#e67e22' },
+  jajan: { icon: 'food-variant', color: '#f39c12' },
+  kopi: { icon: 'coffee-outline', color: '#8B4513' },
+  transportasi: { icon: 'car-outline', color: '#3498db' },
+  transport: { icon: 'car-outline', color: '#3498db' },
+  bensin: { icon: 'gas-station-outline', color: '#2980b9' },
+  parkir: { icon: 'car-parking-lights', color: '#2980b9' },
+  belanja: { icon: 'shopping-outline', color: '#9b59b6' },
+  shopping: { icon: 'shopping-outline', color: '#9b59b6' },
+  grocery: { icon: 'shopping-outline', color: '#9b59b6' },
+  groceries: { icon: 'shopping-outline', color: '#9b59b6' },
+  tagihan: { icon: 'receipt-text-outline', color: '#e74c3c' },
+  bills: { icon: 'receipt-text-outline', color: '#e74c3c' },
+  listrik: { icon: 'flash-outline', color: '#f1c40f' },
+  air: { icon: 'water-outline', color: '#3498db' },
+  internet: { icon: 'wifi-outline', color: '#1abc9c' },
+  pulsa: { icon: 'cellphone', color: '#1abc9c' },
+  hiburan: { icon: 'movie-open-outline', color: '#e91e63' },
+  entertainment: { icon: 'movie-open-outline', color: '#e91e63' },
+  kesehatan: { icon: 'hospital-box-outline', color: '#27ae60' },
+  health: { icon: 'hospital-box-outline', color: '#27ae60' },
+  obat: { icon: 'pill-outline', color: '#27ae60' },
+  pendidikan: { icon: 'school-outline', color: '#2c3e50' },
+  education: { icon: 'school-outline', color: '#2c3e50' },
+  gaji: { icon: 'briefcase-outline', color: '#27ae60' },
+  salary: { icon: 'briefcase-outline', color: '#27ae60' },
+  bonus: { icon: 'star-outline', color: '#f1c40f' },
+  investasi: { icon: 'chart-line', color: '#27ae60' },
+  investment: { icon: 'chart-line', color: '#27ae60' },
+  transfer: { icon: 'bank-transfer-outline', color: '#3498db' },
+  hadiah: { icon: 'gift-outline', color: '#e91e63' },
+  gift: { icon: 'gift-outline', color: '#e91e63' },
+  donasi: { icon: 'hand-heart-outline', color: '#e74c3c' },
+  donation: { icon: 'hand-heart-outline', color: '#e74c3c' },
+  utilitas: { icon: 'tools-outline', color: '#7f8c8d' },
+  utilities: { icon: 'tools-outline', color: '#7f8c8d' },
+  rumah: { icon: 'home-outline', color: '#8e44ad' },
+  house: { icon: 'home-outline', color: '#8e44ad' },
+  sewa: { icon: 'home-outline', color: '#8e44ad' },
+  olahraga: { icon: 'dumbbell', color: '#e67e22' },
+  sport: { icon: 'dumbbell', color: '#e67e22' },
+  gym: { icon: 'dumbbell', color: '#e67e22' },
+  pakaian: { icon: 'hanger', color: '#9b59b6' },
+  clothing: { icon: 'hanger', color: '#9b59b6' },
+  elektronik: { icon: 'cellphone-link', color: '#34495e' },
+  electronics: { icon: 'cellphone-link', color: '#34495e' },
+  kendaraan: { icon: 'car-outline', color: '#2c3e50' },
+  vehicle: { icon: 'car-outline', color: '#2c3e50' },
+  asuransi: { icon: 'shield-check-outline', color: '#2980b9' },
+  insurance: { icon: 'shield-check-outline', color: '#2980b9' },
+  Freelance: { icon: 'laptop-outline', color: '#3498db' },
+  freelance: { icon: 'laptop-outline', color: '#3498db' },
+  usaha: { icon: 'store-outline', color: '#27ae60' },
+  business: { icon: 'store-outline', color: '#27ae60' },
+  THR: { icon: 'cash-fast', color: '#f1c40f' },
+};
+
+const CATEGORY_DEFAULT = { icon: 'tag-outline', color: '#7f8c8d' };
+
+const getCategoryVisual = (name: string) => {
+  const normalized = name.trim().toLowerCase();
+  return CATEGORY_ICON_MAP[normalized] ?? CATEGORY_DEFAULT;
+};
+
+const toDayDateQuickValues = () => {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  const weekStart = startOfWeek.toISOString().slice(0, 10);
+
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = startOfMonth.toISOString().slice(0, 10);
+
+  return { today, yesterday: yesterdayStr, thisWeek: weekStart, startOfMonth: monthStart };
+};
+
 function SummaryStat({
   colors,
   title,
@@ -593,6 +679,7 @@ export default function ActivityScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [editDeleteConfirmVisible, setEditDeleteConfirmVisible] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState<TransactionFormState>(createEmptyTransactionForm);
   const [iosDatePickerVisible, setIosDatePickerVisible] = useState(false);
@@ -1284,9 +1371,6 @@ export default function ActivityScreen() {
               <Text style={styles.kicker}>{t('activity.transactions.overview')}</Text>
               <View style={styles.titleRow}>
                 <Text style={styles.title}>{t('activity.transactions.titleShort')}</Text>
-                <Pressable onPress={openCreateModal} style={styles.inlineCreateButton}>
-                  <MaterialCommunityIcons name="plus" size={18} color={colors.onPrimary} />
-                </Pressable>
               </View>
             </>
           ) : null}
@@ -1437,6 +1521,14 @@ export default function ActivityScreen() {
 
         {!!error && <Text style={styles.errorText}>{error}</Text>}
       </ScrollView>
+
+      <Pressable
+        onPress={openCreateModal}
+        style={({ pressed }) => [styles.fabContainer, pressed && styles.fabPressed]}>
+        <View style={styles.fab}>
+          <MaterialCommunityIcons name="plus" size={26} color={colors.onPrimary} />
+        </View>
+      </Pressable>
 
       <Modal
         visible={filterModalVisible}
@@ -1736,11 +1828,17 @@ export default function ActivityScreen() {
 
                         {filterCategories.map((category) => {
                           const active = draftFilters.category === category;
+                          const visual = getCategoryVisual(category);
                           return (
                             <Pressable
                               key={category}
                               onPress={() => setDraftFilters((current) => ({ ...current, category }))}
                               style={[styles.filterChip, active && styles.filterChipActive]}>
+                              <MaterialCommunityIcons
+                                name={visual.icon as any}
+                                size={12}
+                                color={active ? colors.primary : colors.shellTextMuted}
+                              />
                               <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
                                 {category}
                               </Text>
@@ -1997,12 +2095,21 @@ export default function ActivityScreen() {
                             <View style={styles.categoryWrap}>
                               {availableCategories.map((category) => {
                                 const active = form.category === category.name;
+                                const visual = getCategoryVisual(category.name);
+                                const chipBg = active ? alpha(visual.color, 0.14) : colors.shellCard;
+                                const chipBorder = active ? alpha(visual.color, 0.32) : colors.shellBorder;
+                                const textColor = active ? visual.color : colors.shellTextSecondary;
                                 return (
                                   <Pressable
                                     key={category.id}
                                     onPress={() => setForm((current) => ({ ...current, category: category.name }))}
-                                    style={[styles.categoryChip, active && styles.categoryChipActive]}>
-                                    <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
+                                    style={[styles.categoryChip, { backgroundColor: chipBg, borderColor: chipBorder }]}>
+                                    <MaterialCommunityIcons
+                                      name={visual.icon as any}
+                                      size={14}
+                                      color={textColor}
+                                    />
+                                    <Text style={[styles.categoryChipText, { color: textColor }]}>
                                       {category.name}
                                     </Text>
                                   </Pressable>
@@ -2099,6 +2206,36 @@ export default function ActivityScreen() {
                                 />
                               </View>
                             ) : null}
+
+                            <View style={styles.filterChipWrap}>
+                              {[
+                                { label: t('activity.transactions.dateQuickToday'), value: toDayDateQuickValues().today },
+                                { label: t('activity.transactions.dateQuickYesterday'), value: toDayDateQuickValues().yesterday },
+                                { label: t('activity.transactions.dateQuickThisWeek'), value: toDayDateQuickValues().thisWeek },
+                                { label: t('activity.transactions.dateQuickStartMonth'), value: toDayDateQuickValues().startOfMonth },
+                              ].map((preset) => {
+                                const active = form.date === preset.value;
+                                return (
+                                  <Pressable
+                                    key={preset.value}
+                                    onPress={() => setForm((current) => ({ ...current, date: preset.value }))}
+                                    style={({ pressed }) => [
+                                      styles.filterChip,
+                                      active && styles.filterChipActive,
+                                      pressed && styles.actionButtonPressed,
+                                    ]}>
+                                    <MaterialCommunityIcons
+                                      name="calendar-check-outline"
+                                      size={12}
+                                      color={active ? colors.primary : colors.shellTextMuted}
+                                    />
+                                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                                      {preset.label}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
                           </View>
                         </View>
 
@@ -2142,7 +2279,7 @@ export default function ActivityScreen() {
                         <View style={styles.modalActionsRow}>
                           {form.id ? (
                             <Pressable
-                              onPress={handleDeleteTransaction}
+                              onPress={() => setEditDeleteConfirmVisible(true)}
                               disabled={submitting || deleting}
                               style={({ pressed }) => [
                                 styles.deleteButton,
@@ -2420,6 +2557,52 @@ export default function ActivityScreen() {
                         pressed && styles.actionButtonPressed,
                       ]}>
                       <Text style={styles.deleteButtonText}>{t('activity.transactions.detailDeleteConfirmYes')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={editDeleteConfirmVisible}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setEditDeleteConfirmVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditDeleteConfirmVisible(false)} />
+            <View style={[styles.modalKeyboard, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }]}>
+              <View style={[styles.modalSheet, { maxHeight: 'auto', width: '100%', paddingBottom: 0 }]}>
+                <View style={[styles.modalBody, { gap: 16, paddingTop: 24 }]}>
+                  <View style={{ alignItems: 'center', gap: 12 }}>
+                    <View style={[styles.modalHeroIcon, { backgroundColor: alpha(colors.danger, 0.12), width: 56, height: 56, borderRadius: 20 }]}>
+                      <MaterialCommunityIcons name="trash-can-outline" size={26} color={colors.danger} />
+                    </View>
+                    <Text style={[styles.modalTitle, { textAlign: 'center', fontSize: 18 }]}>{t('activity.transactions.deleteConfirmTitle')}</Text>
+                    <Text style={[styles.modalSubtitle, { textAlign: 'center' }]}>{t('activity.transactions.deleteConfirmBody')}</Text>
+                  </View>
+
+                  <View style={styles.modalActionsRow}>
+                    <Pressable
+                      onPress={() => setEditDeleteConfirmVisible(false)}
+                      style={styles.secondaryActionButton}>
+                      <Text style={styles.secondaryActionButtonText}>{t('activity.transactions.deleteConfirmNo')}</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setEditDeleteConfirmVisible(false);
+                        handleDeleteTransaction();
+                      }}
+                      style={({ pressed }) => [
+                        styles.deleteButton,
+                        { flex: 1 },
+                        pressed && styles.actionButtonPressed,
+                      ]}>
+                      <Text style={styles.deleteButtonText}>{t('activity.transactions.deleteConfirmYes')}</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -2782,6 +2965,8 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       borderColor: colors.shellBorder,
       alignItems: 'center',
       justifyContent: 'center',
+      flexDirection: 'row',
+      gap: 6,
     },
     filterChipActive: {
       backgroundColor: alpha(colors.primary, 0.12),
@@ -3262,6 +3447,8 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       borderColor: colors.shellBorder,
       alignItems: 'center',
       justifyContent: 'center',
+      flexDirection: 'row',
+      gap: 6,
     },
     categoryChipActive: {
       backgroundColor: alpha(colors.primary, 0.12),
@@ -3387,5 +3574,28 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     },
     actionButtonDisabled: {
       opacity: 0.6,
+    },
+    fabContainer: {
+      position: 'absolute',
+      bottom: Math.max(bottomInset + 16, 32),
+      right: 18,
+      zIndex: 100,
+    },
+    fab: {
+      width: 60,
+      height: 60,
+      borderRadius: 20,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: colors.primary,
+      shadowOpacity: 0.32,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 8,
+    },
+    fabPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.95 }],
     },
   });
