@@ -44,7 +44,7 @@ import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/sc
 
 type TrendMode = 'trend' | 'categories';
 type ReportsFilterMode = 'month' | 'year' | 'custom';
-type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger';
+type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger' | 'teal';
 type ReportsDateTarget = 'startDate' | 'endDate' | null;
 type ReportRingProps = {
   accent: string;
@@ -754,7 +754,7 @@ export default function ReportsScreen() {
       icon: 'wallet-outline',
       label: t('reports.remainingBalance'),
       value: formatCompactCurrency(remaining, locale),
-      meta: activePeriodLabel,
+      meta: t('reports.remainingBalanceHelper'),
       tone: 'secondary' as MetricTone,
     },
     {
@@ -763,6 +763,20 @@ export default function ReportsScreen() {
       value: formatCurrency(averageValue, locale),
       meta: elapsedDays > 0 ? t('reports.elapsedDays', { count: elapsedDays }) : activePeriodLabel,
       tone: 'warning' as MetricTone,
+    },
+    {
+      icon: 'bank-transfer-outline',
+      label: t('reports.debtRepayment'),
+      value: formatCompactCurrency(toNumber(remainingBalance?.debt_repayment ?? 0), locale),
+      meta: t('reports.debtRepaymentHelper'),
+      tone: 'danger' as MetricTone,
+    },
+    {
+      icon: 'percent-outline',
+      label: t('reports.savingsRate'),
+      value: `${Math.round(toNumber(remainingBalance?.savings_rate ?? (totalIncome > 0 ? (remaining / totalIncome) * 100 : 0)))}%`,
+      meta: t('reports.savingsRateHelper'),
+      tone: 'teal' as MetricTone,
     },
   ];
 
@@ -826,6 +840,9 @@ export default function ReportsScreen() {
                     minimumFontScale={0.62}
                     style={[styles.heroValue, isDark ? styles.heroValueDark : styles.heroValueLight]}>
                     {formatCompactCurrency(remaining, locale)}
+                  </Text>
+                  <Text style={[styles.heroBody, isDark ? styles.heroBodyDark : styles.heroBodyLight, { fontSize: 11, marginTop: -4 }]}>
+                    {t('reports.remainingBalanceHelper')}
                   </Text>
 
                   <View style={styles.heroMetaRow}>
@@ -2439,6 +2456,11 @@ const metricTonePalette = (colors: AppColorTheme, tone: MetricTone) => {
       background: alpha(colors.danger, 0.08),
       iconBackground: alpha(colors.danger, 0.14),
       iconColor: colors.danger,
+    },
+    teal: {
+      background: alpha(colors.secondaryAccent, 0.08),
+      iconBackground: alpha(colors.secondaryAccent, 0.14),
+      iconColor: colors.secondaryAccent,
     },
   } as const;
 
