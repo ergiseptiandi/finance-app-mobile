@@ -587,9 +587,12 @@ export default function ActivityScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [transactionModalVisible, setTransactionModalVisible] = useState(false);
+  const [detailViewVisible, setDetailViewVisible] = useState(false);
+  const [selectedDetailRecord, setSelectedDetailRecord] = useState<TransactionRecord | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState<TransactionFormState>(createEmptyTransactionForm);
   const [iosDatePickerVisible, setIosDatePickerVisible] = useState(false);
@@ -873,6 +876,42 @@ export default function ActivityScreen() {
     },
     [t, withAuthorizedRequest]
   );
+
+  const openDetailModal = useCallback((record: TransactionRecord) => {
+    setSelectedDetailRecord(record);
+    setDetailViewVisible(true);
+  }, []);
+
+  const closeDetailModal = useCallback(() => {
+    setDetailViewVisible(false);
+    setSelectedDetailRecord(null);
+  }, []);
+
+  const handleEditFromDetail = useCallback(() => {
+    if (!selectedDetailRecord) return;
+    const recordId = selectedDetailRecord.id;
+    closeDetailModal();
+    openEditModal(recordId);
+  }, [selectedDetailRecord, closeDetailModal, openEditModal]);
+
+  const handleDeleteFromDetail = useCallback(async () => {
+    if (!selectedDetailRecord) return;
+    setDeleting(true);
+
+    try {
+      await withAuthorizedRequest((accessToken) => deleteTransaction(accessToken, selectedDetailRecord.id));
+      closeDetailModal();
+      await loadActivity();
+    } catch (deleteError) {
+      if (deleteError instanceof ApiRequestError) {
+        setFormError(deleteError.message);
+      } else if (!(deleteError instanceof Error && deleteError.message === 'missing_session')) {
+        setFormError(t('activity.transactions.deleteError'));
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedDetailRecord, closeDetailModal, loadActivity, t, withAuthorizedRequest]);
 
   const closeTransactionModal = useCallback(() => {
     setTransactionModalVisible(false);
@@ -1376,7 +1415,7 @@ export default function ActivityScreen() {
                         }
                         incomeLabel={t('activity.transactions.income')}
                         expenseLabel={t('activity.transactions.expense')}
-                        onPress={() => openEditModal(record.id)}
+                        onPress={() => openDetailModal(record)}
                       />
                     ))}
                   </View>
@@ -2008,6 +2047,37 @@ export default function ActivityScreen() {
                           </View>
 
                           <View style={styles.fieldGroup}>
+                            <Text style={styles.fieldLabel}>{t('activity.transactions.quickAmount')}</Text>
+                            <View style={styles.filterChipWrap}>
+                              {[
+                                { label: '50K', value: '50000' },
+                                { label: '100K', value: '100000' },
+                                { label: '200K', value: '200000' },
+                                { label: '500K', value: '500000' },
+                                { label: '1M', value: '1000000' },
+                                { label: '2M', value: '2000000' },
+                              ].map((preset) => (
+                                <Pressable
+                                  key={preset.value}
+                                  onPress={() => setForm((current) => ({ ...current, amount: formatCurrencyInput(preset.value) }))}
+                                  style={({ pressed }) => [
+                                    styles.filterChip,
+                                    form.amount === formatCurrencyInput(preset.value) && styles.filterChipActive,
+                                    pressed && styles.actionButtonPressed,
+                                  ]}>
+                                  <Text
+                                    style={[
+                                      styles.filterChipText,
+                                      form.amount === formatCurrencyInput(preset.value) && styles.filterChipTextActive,
+                                    ]}>
+                                    {preset.label}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </View>
+
+                          <View style={styles.fieldGroup}>
                             <Text style={styles.fieldLabel}>{t('activity.transactions.date')}</Text>
                             <Pressable
                               onPress={openDatePicker}
@@ -2124,6 +2194,239 @@ export default function ActivityScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={detailViewVisible}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={closeDetailModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeDetailModal} />
+            <View style={styles.modalKeyboard}>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <View style={styles.modalBody}>
+                  <View style={styles.modalHeader}>
+                    <View style={styles.modalHeaderCopy}>
+                      <Text style={[styles.modalKicker, { color: selectedDetailRecord?.type === 'income' ? (isLight ? LIGHT_INCOME_ACCENT : colors.secondary) : colors.primary }]}>
+                        {t('activity.transactions.detailKicker')}
+                      </Text>
+                      <Text style={styles.modalTitle}>{t('activity.transactions.detailTitle')}</Text>
+                    </View>
+                    <Pressable onPress={closeDetailModal} style={styles.closeButton}>
+                      <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
+                    </Pressable>
+                  </View>
+
+                  {selectedDetailRecord ? (
+                    <>
+                      <View
+                        style={[
+                          styles.modalHeroCard,
+                          {
+                            backgroundColor: selectedDetailRecord.type === 'income'
+                              ? alpha(isLight ? LIGHT_INCOME_ACCENT : colors.secondary, isLight ? 0.1 : 0.18)
+                              : alpha(colors.primary, isLight ? 0.1 : 0.18),
+                            borderColor: selectedDetailRecord.type === 'income'
+                              ? alpha(isLight ? LIGHT_INCOME_ACCENT : colors.secondary, isLight ? 0.16 : 0.28)
+                              : alpha(colors.primary, isLight ? 0.16 : 0.28),
+                          },
+                        ]}>
+                        <View style={styles.modalHeroMain}>
+                          <View
+                            style={[
+                              styles.modalHeroIcon,
+                              {
+                                backgroundColor: alpha(
+                                  selectedDetailRecord.type === 'income'
+                                    ? (isLight ? LIGHT_INCOME_ACCENT : colors.secondary)
+                                    : colors.primary,
+                                  isLight ? 0.14 : 0.18
+                                ),
+                              },
+                            ]}>
+                            <MaterialCommunityIcons
+                              name={selectedDetailRecord.type === 'income' ? 'trending-up' : 'trending-down'}
+                              size={22}
+                              color={selectedDetailRecord.type === 'income' ? (isLight ? LIGHT_INCOME_ACCENT : colors.secondary) : colors.primary}
+                            />
+                          </View>
+                          <View style={styles.modalHeroCopy}>
+                            <Text style={styles.modalHeroTitle}>
+                              {selectedDetailRecord.type === 'income' ? t('activity.transactions.income') : t('activity.transactions.expense')}
+                            </Text>
+                            <Text style={styles.modalHeroText}>{selectedDetailRecord.category}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.modalHeroMetrics}>
+                          <View style={styles.modalMetric}>
+                            <Text style={styles.modalMetricLabel}>{t('activity.transactions.detailAmount')}</Text>
+                            <Text numberOfLines={1} style={styles.modalMetricValue}>
+                              {toSignedCurrency(selectedDetailRecord.type === 'income' ? selectedDetailRecord.amount : -selectedDetailRecord.amount, locale)}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.modalSectionCard}>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                            <MaterialCommunityIcons name="information-outline" size={18} color={colors.primary} />
+                          </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('activity.transactions.detailTitle')}</Text>
+                          </View>
+                        </View>
+
+                        <View style={{ gap: 14 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextMuted }]}>{t('activity.transactions.detailType')}</Text>
+                            <View style={[rowStyles(colors).statusChip, { backgroundColor: alpha(selectedDetailRecord.type === 'income' ? (isLight ? LIGHT_INCOME_ACCENT : colors.secondary) : colors.primary, isLight ? 0.12 : 0.18) }]}>
+                              <Text style={[rowStyles(colors).statusText, { color: selectedDetailRecord.type === 'income' ? (isLight ? LIGHT_INCOME_ACCENT : colors.secondary) : colors.primary }]}>
+                                {selectedDetailRecord.type === 'income' ? t('activity.transactions.income') : t('activity.transactions.expense')}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={{ height: 1, backgroundColor: alpha(colors.surfaceContainerHighest, 0.2) }} />
+
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextMuted }]}>{t('activity.transactions.detailCategory')}</Text>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextPrimary }]}>{selectedDetailRecord.category}</Text>
+                          </View>
+
+                          <View style={{ height: 1, backgroundColor: alpha(colors.surfaceContainerHighest, 0.2) }} />
+
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextMuted }]}>{t('activity.transactions.detailWallet')}</Text>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextPrimary }]}>
+                              {walletMap.get(selectedDetailRecord.wallet_id ?? 0)?.name ?? t('activity.transactions.detailDefaultWallet')}
+                            </Text>
+                          </View>
+
+                          <View style={{ height: 1, backgroundColor: alpha(colors.surfaceContainerHighest, 0.2) }} />
+
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextMuted }]}>{t('activity.transactions.detailDate')}</Text>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextPrimary }]}>{toDateInputLabel(selectedDetailRecord.date, locale)}</Text>
+                          </View>
+
+                          {selectedDetailRecord.description?.trim() ? (
+                            <>
+                              <View style={{ height: 1, backgroundColor: alpha(colors.surfaceContainerHighest, 0.2) }} />
+                              <View style={{ gap: 6 }}>
+                                <Text style={[styles.fieldLabel, { color: colors.shellTextMuted }]}>{t('activity.transactions.detailNotes')}</Text>
+                                <Text style={[styles.fieldLabel, { color: colors.shellTextPrimary, fontWeight: '500' }]}>{selectedDetailRecord.description}</Text>
+                              </View>
+                            </>
+                          ) : null}
+
+                          <View style={{ height: 1, backgroundColor: alpha(colors.surfaceContainerHighest, 0.2) }} />
+
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextMuted }]}>{t('activity.transactions.detailCreated')}</Text>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextSecondary, fontSize: 12 }]}>
+                              {new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(selectedDetailRecord.created_at))}
+                            </Text>
+                          </View>
+
+                          <View style={{ height: 1, backgroundColor: alpha(colors.surfaceContainerHighest, 0.2) }} />
+
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextMuted }]}>{t('activity.transactions.detailUpdated')}</Text>
+                            <Text style={[styles.fieldLabel, { color: colors.shellTextSecondary, fontSize: 12 }]}>
+                              {new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(selectedDetailRecord.updated_at))}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </>
+                  ) : null}
+
+                  <View style={styles.modalFooter}>
+                    <View style={styles.modalActionsRow}>
+                      <Pressable
+                        onPress={() => {
+                          setDeleteConfirmVisible(true);
+                        }}
+                        disabled={deleting}
+                        style={({ pressed }) => [
+                          styles.deleteButton,
+                          pressed && !deleting && styles.actionButtonPressed,
+                          deleting && styles.actionButtonDisabled,
+                        ]}>
+                        {deleting ? (
+                          <ActivityIndicator color={colors.danger} />
+                        ) : (
+                          <Text style={styles.deleteButtonText}>{t('activity.transactions.detailDelete')}</Text>
+                        )}
+                      </Pressable>
+
+                      <Pressable
+                        onPress={handleEditFromDetail}
+                        disabled={deleting}
+                        style={({ pressed }) => [
+                          styles.submitButton,
+                          pressed && !deleting && styles.actionButtonPressed,
+                        ]}>
+                        <Text style={styles.submitButtonText}>{t('activity.transactions.detailEdit')}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={deleteConfirmVisible}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setDeleteConfirmVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setDeleteConfirmVisible(false)} />
+            <View style={[styles.modalKeyboard, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }]}>
+              <View style={[styles.modalSheet, { maxHeight: 'auto', width: '100%', paddingBottom: 0 }]}>
+                <View style={[styles.modalBody, { gap: 16, paddingTop: 24 }]}>
+                  <View style={{ alignItems: 'center', gap: 12 }}>
+                    <View style={[styles.modalHeroIcon, { backgroundColor: alpha(colors.danger, 0.12), width: 56, height: 56, borderRadius: 20 }]}>
+                      <MaterialCommunityIcons name="trash-can-outline" size={26} color={colors.danger} />
+                    </View>
+                    <Text style={[styles.modalTitle, { textAlign: 'center', fontSize: 18 }]}>{t('activity.transactions.detailDeleteConfirmTitle')}</Text>
+                    <Text style={[styles.modalSubtitle, { textAlign: 'center' }]}>{t('activity.transactions.detailDeleteConfirmBody')}</Text>
+                  </View>
+
+                  <View style={styles.modalActionsRow}>
+                    <Pressable
+                      onPress={() => setDeleteConfirmVisible(false)}
+                      style={styles.secondaryActionButton}>
+                      <Text style={styles.secondaryActionButtonText}>{t('activity.transactions.detailDeleteConfirmNo')}</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setDeleteConfirmVisible(false);
+                        handleDeleteFromDetail();
+                      }}
+                      style={({ pressed }) => [
+                        styles.deleteButton,
+                        { flex: 1 },
+                        pressed && styles.actionButtonPressed,
+                      ]}>
+                      <Text style={styles.deleteButtonText}>{t('activity.transactions.detailDeleteConfirmYes')}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
       </Modal>
     </>
   );
