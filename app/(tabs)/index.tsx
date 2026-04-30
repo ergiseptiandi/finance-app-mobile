@@ -512,6 +512,7 @@ export default function DashboardScreen() {
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
 
   const getTimeGreeting = () => {
     const hour = new Date().getHours();
@@ -1142,16 +1143,7 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Pressable onPress={() => router.push('/categories')} style={styles.iconButton}>
-              <MaterialCommunityIcons name="shape-outline" size={18} color={colors.shellTextPrimary} />
-            </Pressable>
-            <Pressable onPress={() => router.push('/wallets')} style={styles.iconButton}>
-              <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.shellTextPrimary} />
-            </Pressable>
-            <Pressable onPress={() => router.push('/budgets')} style={styles.iconButton}>
-              <MaterialCommunityIcons name="flag-outline" size={18} color={colors.shellTextPrimary} />
-            </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Pressable onPress={() => router.push('/notifications')} style={styles.iconButton}>
               <MaterialCommunityIcons name="bell-outline" size={20} color={colors.shellTextPrimary} />
               {unreadNotificationCount > 0 ? (
@@ -1891,6 +1883,51 @@ export default function DashboardScreen() {
           </>
         )}
       </ScrollView>
+
+      {fabMenuOpen ? (
+        <Pressable style={styles.fabOverlay} onPress={() => setFabMenuOpen(false)} />
+      ) : null}
+
+      <View style={styles.fabContainer}>
+        {fabMenuOpen ? (
+          <View style={styles.fabMenu}>
+            <Pressable
+              onPress={() => { setFabMenuOpen(false); router.push('/wallets'); }}
+              style={styles.fabMenuItem}>
+              <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
+              </View>
+              <Text style={styles.fabMenuLabel}>Wallet</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setFabMenuOpen(false); router.push('/categories'); }}
+              style={styles.fabMenuItem}>
+              <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.secondaryAccent, 0.12) }]}>
+                <MaterialCommunityIcons name="shape-outline" size={18} color={colors.secondaryAccent} />
+              </View>
+              <Text style={styles.fabMenuLabel}>Kategori</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setFabMenuOpen(false); router.push('/budgets'); }}
+              style={styles.fabMenuItem}>
+              <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.warning, 0.12) }]}>
+                <MaterialCommunityIcons name="flag-outline" size={18} color={colors.warning} />
+              </View>
+              <Text style={styles.fabMenuLabel}>Anggaran</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <Pressable
+          onPress={() => setFabMenuOpen(!fabMenuOpen)}
+          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}>
+          <MaterialCommunityIcons
+            name={fabMenuOpen ? 'close' : 'plus'}
+            size={26}
+            color={colors.onPrimary}
+          />
+        </Pressable>
+      </View>
 
       <Modal
         visible={filterModalVisible}
@@ -3772,6 +3809,44 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       bottom: Math.max(topInset + 16, 32),
       right: 18,
       zIndex: 100,
+      alignItems: 'flex-end',
+      gap: 12,
+    },
+    fabOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.3)',
+      zIndex: 99,
+    },
+    fabMenu: {
+      gap: 10,
+    },
+    fabMenuItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: colors.shellCard,
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      shadowColor: '#000',
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 4,
+    },
+    fabMenuIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    fabMenuLabel: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '700',
     },
     fab: {
       width: 60,
