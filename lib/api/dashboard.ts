@@ -11,12 +11,16 @@ type NumericLike = number | string | null;
 
 export type DashboardSummaryData = {
   total_balance: NumericLike;
+  net_worth?: NumericLike;
   period_balance?: NumericLike;
   monthly_income: NumericLike;
   monthly_expense: NumericLike;
+  consumption_expense?: NumericLike;
+  debt_repayment?: NumericLike;
   net_cashflow?: NumericLike;
   savings_rate?: NumericLike;
   expense_ratio?: NumericLike;
+  consumption_rate?: NumericLike;
   debt?: DashboardDebtData | null;
   budget_summary?: DashboardBudgetSummary | null;
   category_breakdown_preview?: DashboardCategoryBreakdownPreviewItem[];
