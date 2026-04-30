@@ -391,7 +391,7 @@ const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
   tol: { icon: 'highway', color: '#7f8c8d' },
   sewakendaraan: { icon: 'car-key', color: '#9b59b6' },
   rental: { icon: 'car-key', color: '#9b59b6' },
-  service motor: { icon: 'wrench-outline', color: '#e67e22' },
+  'service motor': { icon: 'wrench-outline', color: '#e67e22' },
   servismotor: { icon: 'wrench-outline', color: '#e67e22' },
   'service mobil': { icon: 'wrench-outline', color: '#3498db' },
   servismobil: { icon: 'wrench-outline', color: '#3498db' },
