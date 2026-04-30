@@ -910,10 +910,13 @@ export default function DashboardScreen() {
   }, [draftFilters, loadDashboard, t]);
 
   const totalBalance = toNumber(summary?.total_balance);
+  const netWorth = toNumber(summary?.net_worth ?? totalBalance);
   const periodBalance = toNumber(summary?.period_balance);
   const monthlyIncome = toNumber(summary?.monthly_income);
   const monthlyExpense = toNumber(summary?.monthly_expense);
-  const netCashflow = toNumber(summary?.net_cashflow ?? monthlyIncome - monthlyExpense);
+  const consumptionExpense = toNumber(summary?.consumption_expense ?? monthlyExpense);
+  const debtRepayment = toNumber(summary?.debt_repayment ?? 0);
+  const netCashflow = toNumber(summary?.net_cashflow ?? monthlyIncome - consumptionExpense);
   const savingsRate = toNumber(
     summary?.savings_rate ?? (monthlyIncome > 0 ? (netCashflow / monthlyIncome) * 100 : 0)
   );
@@ -1088,9 +1091,9 @@ export default function DashboardScreen() {
         meta: t('dashboard.summary.totalBalanceMeta'),
       },
       {
-        label: t('dashboard.summary.periodBalance'),
-        value: formatCompactCurrency(periodBalance, locale),
-        meta: t('dashboard.summary.periodBalanceMeta'),
+        label: language === 'id' ? 'Kekayaan Bersih' : 'Net Worth',
+        value: formatCompactCurrency(netWorth, locale),
+        meta: language === 'id' ? 'Aset dikurangi utang' : 'Assets minus debt',
       },
       {
         label: t('dashboard.summary.income'),
@@ -1098,9 +1101,9 @@ export default function DashboardScreen() {
         meta: t('dashboard.summary.incomeMeta'),
       },
       {
-        label: t('dashboard.summary.expense'),
-        value: formatCompactCurrency(monthlyExpense, locale),
-        meta: t('dashboard.summary.expenseMeta'),
+        label: language === 'id' ? 'Pengeluaran Konsumsi' : 'Consumption',
+        value: formatCompactCurrency(consumptionExpense, locale),
+        meta: language === 'id' ? 'Tanpa bayar utang' : 'Excluding debt payments',
       },
       {
         label: t('dashboard.summary.cashflow'),
@@ -1108,7 +1111,7 @@ export default function DashboardScreen() {
         meta: t('dashboard.summary.cashflowMeta'),
       },
     ],
-    [locale, monthlyExpense, monthlyIncome, netCashflow, periodBalance, t, totalBalance]
+    [consumptionExpense, locale, monthlyIncome, netCashflow, netWorth, t, totalBalance, language]
   );
 
   return (
