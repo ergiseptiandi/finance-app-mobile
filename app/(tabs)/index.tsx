@@ -3806,7 +3806,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     fabContainer: {
       position: 'absolute',
-      bottom: Math.max(topInset + 16, 32),
+      bottom: Math.max(topInset + 90, 110),
       right: 18,
       zIndex: 100,
       alignItems: 'flex-end',
