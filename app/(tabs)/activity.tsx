@@ -3577,7 +3577,7 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     },
     fabContainer: {
       position: 'absolute',
-      bottom: Math.max(bottomInset + 16, 32),
+      bottom: Math.max(bottomInset + 90, 100),
       right: 18,
       zIndex: 100,
     },
