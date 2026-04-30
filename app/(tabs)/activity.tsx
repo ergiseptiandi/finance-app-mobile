@@ -341,16 +341,21 @@ const toDaySectionKey = (value: string) => {
 const isMainWalletName = (value?: string | null) => value?.trim().toLowerCase() === 'main';
 
 const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
+  makan: { icon: 'food-outline', color: '#e67e22' },
   makanan: { icon: 'food-outline', color: '#e67e22' },
   'makan siang': { icon: 'food-outline', color: '#e67e22' },
   'makan malam': { icon: 'food-outline', color: '#e67e22' },
   sarapan: { icon: 'food-outline', color: '#e67e22' },
   jajan: { icon: 'food-variant', color: '#f39c12' },
+  minum: { icon: 'beer-outline', color: '#1abc9c' },
   kopi: { icon: 'coffee-outline', color: '#8B4513' },
+  'orang tua': { icon: 'account-group-outline', color: '#8e44ad' },
   transportasi: { icon: 'car-outline', color: '#3498db' },
   transport: { icon: 'car-outline', color: '#3498db' },
   bensin: { icon: 'gas-station-outline', color: '#2980b9' },
   parkir: { icon: 'car-parking-lights', color: '#2980b9' },
+  motor: { icon: 'motorbike', color: '#e67e22' },
+  mobil: { icon: 'car-outline', color: '#2c3e50' },
   belanja: { icon: 'shopping-outline', color: '#9b59b6' },
   shopping: { icon: 'shopping-outline', color: '#9b59b6' },
   grocery: { icon: 'shopping-outline', color: '#9b59b6' },
@@ -360,7 +365,9 @@ const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
   listrik: { icon: 'flash-outline', color: '#f1c40f' },
   air: { icon: 'water-outline', color: '#3498db' },
   internet: { icon: 'wifi-outline', color: '#1abc9c' },
+  server: { icon: 'server-network-outline', color: '#34495e' },
   pulsa: { icon: 'cellphone', color: '#1abc9c' },
+  langganan: { icon: 'refresh-outline', color: '#9b59b6' },
   hiburan: { icon: 'movie-open-outline', color: '#e91e63' },
   entertainment: { icon: 'movie-open-outline', color: '#e91e63' },
   kesehatan: { icon: 'hospital-box-outline', color: '#27ae60' },
@@ -369,6 +376,9 @@ const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
   pendidikan: { icon: 'school-outline', color: '#2c3e50' },
   education: { icon: 'school-outline', color: '#2c3e50' },
   gaji: { icon: 'briefcase-outline', color: '#27ae60' },
+  'gaji kerja': { icon: 'briefcase-outline', color: '#27ae60' },
+  'gaji freelance': { icon: 'laptop-outline', color: '#3498db' },
+  'gaji kos': { icon: 'home-heart', color: '#e91e63' },
   salary: { icon: 'briefcase-outline', color: '#27ae60' },
   bonus: { icon: 'star-outline', color: '#f1c40f' },
   investasi: { icon: 'chart-line', color: '#27ae60' },
@@ -383,6 +393,8 @@ const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
   rumah: { icon: 'home-outline', color: '#8e44ad' },
   house: { icon: 'home-outline', color: '#8e44ad' },
   sewa: { icon: 'home-outline', color: '#8e44ad' },
+  kosan: { icon: 'home-outline', color: '#8e44ad' },
+  cicilan: { icon: 'credit-card-outline', color: '#e74c3c' },
   olahraga: { icon: 'dumbbell', color: '#e67e22' },
   sport: { icon: 'dumbbell', color: '#e67e22' },
   gym: { icon: 'dumbbell', color: '#e67e22' },
@@ -394,14 +406,13 @@ const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
   vehicle: { icon: 'car-outline', color: '#2c3e50' },
   asuransi: { icon: 'shield-check-outline', color: '#2980b9' },
   insurance: { icon: 'shield-check-outline', color: '#2980b9' },
-  Freelance: { icon: 'laptop-outline', color: '#3498db' },
   freelance: { icon: 'laptop-outline', color: '#3498db' },
   usaha: { icon: 'store-outline', color: '#27ae60' },
   business: { icon: 'store-outline', color: '#27ae60' },
   THR: { icon: 'cash-fast', color: '#f1c40f' },
 };
 
-const CATEGORY_DEFAULT = { icon: 'tag-outline', color: '#7f8c8d' };
+const CATEGORY_DEFAULT = { icon: 'label-outline', color: '#7f8c8d' };
 
 const getCategoryVisual = (name: string) => {
   const normalized = name.trim().toLowerCase();
