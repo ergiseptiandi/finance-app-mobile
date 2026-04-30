@@ -486,7 +486,7 @@ export default function DashboardScreen() {
   const locale = language === 'id' ? 'id-ID' : 'en-US';
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const styles = createStyles(colors, width, insets.top);
+  const styles = createStyles(colors, width, insets.top, insets.bottom);
   const [trendMode, setTrendMode] = useState<TrendMode>('monthly');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -2204,7 +2204,7 @@ export default function DashboardScreen() {
   );
 }
 
-const createStyles = (colors: AppColorTheme, width: number, topInset: number) => {
+const createStyles = (colors: AppColorTheme, width: number, topInset: number, bottomInset: number) => {
   const compact = width < 360;
   const isDark = colors.background === Colors.dark.background;
 
@@ -3806,7 +3806,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
     },
     fabContainer: {
       position: 'absolute',
-      bottom: Math.max(topInset + 90, 110),
+      bottom: Math.max(bottomInset + 90, 100),
       right: 18,
       zIndex: 100,
       alignItems: 'flex-end',
