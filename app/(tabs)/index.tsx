@@ -1142,13 +1142,16 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {lastUpdated ? (
-              <View style={styles.lastUpdatedBadge}>
-                <MaterialCommunityIcons name="clock-outline" size={10} color={colors.shellTextMuted} />
-                <Text style={styles.lastUpdatedText}>{formatLastUpdated()}</Text>
-              </View>
-            ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Pressable onPress={() => router.push('/categories')} style={styles.iconButton}>
+              <MaterialCommunityIcons name="shape-outline" size={18} color={colors.shellTextPrimary} />
+            </Pressable>
+            <Pressable onPress={() => router.push('/wallets')} style={styles.iconButton}>
+              <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.shellTextPrimary} />
+            </Pressable>
+            <Pressable onPress={() => router.push('/budgets')} style={styles.iconButton}>
+              <MaterialCommunityIcons name="flag-outline" size={18} color={colors.shellTextPrimary} />
+            </Pressable>
             <Pressable onPress={() => router.push('/notifications')} style={styles.iconButton}>
               <MaterialCommunityIcons name="bell-outline" size={20} color={colors.shellTextPrimary} />
               {unreadNotificationCount > 0 ? (
@@ -1888,14 +1891,6 @@ export default function DashboardScreen() {
           </>
         )}
       </ScrollView>
-
-      <Pressable
-        onPress={() => router.push({ pathname: '/activity', params: { compose: 'expense' } })}
-        style={({ pressed }) => [styles.fabContainer, pressed && styles.fabPressed]}>
-        <View style={styles.fab}>
-          <MaterialCommunityIcons name="plus" size={26} color={colors.onPrimary} />
-        </View>
-      </Pressable>
 
       <Modal
         visible={filterModalVisible}
