@@ -38,6 +38,8 @@ import {
   MonthlySpendingItem,
   type DashboardPeriodParams,
 } from '@/lib/api/dashboard';
+import { listTransactions, type TransactionRecord } from '@/lib/api/transactions';
+import { listWallets, type WalletRecord } from '@/lib/api/wallets';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
@@ -496,6 +498,8 @@ export default function DashboardScreen() {
   const [insights, setInsights] = useState<DashboardInsightData[]>([]);
   const [displayName, setDisplayName] = useState('Kinetic Pulse');
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [recentTransactions, setRecentTransactions] = useState<TransactionRecord[]>([]);
+  const [wallets, setWallets] = useState<WalletRecord[]>([]);
   const [filters, setFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
   const [draftFilters, setDraftFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -506,10 +510,28 @@ export default function DashboardScreen() {
   );
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
+  const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const getTimeGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return t('dashboard.greeting.morning');
+    if (hour < 18) return t('dashboard.greeting.afternoon');
+    return t('dashboard.greeting.evening');
+  };
+
+  const formatLastUpdated = () => {
+    if (!lastUpdated) return '';
+    return new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(lastUpdated);
+  };
+
   const filtersRef = useRef<DashboardFilters>(createDefaultDashboardFilters());
   const hasDashboardSnapshot = Boolean(summary || comparison || dailySpending.length || monthlySpending.length);
   const sectionAnimations = useMemo(
-    () => Array.from({ length: 10 }, () => new Animated.Value(0)),
+    () => Array.from({ length: 14 }, () => new Animated.Value(0)),
     []
   );
   const sectionRevealStyles = useMemo(
@@ -681,6 +703,20 @@ export default function DashboardScreen() {
           insights: nextInsights,
           displayName: nextDisplayName,
         });
+
+        setLastUpdated(new Date());
+
+        listTransactions(session.token.access_token, { page: 1, per_page: 5 })
+          .then((txResponse) => {
+            setRecentTransactions(txResponse.Data.data ?? []);
+          })
+          .catch(() => {});
+
+        listWallets(session.token.access_token)
+          .then((walletResponse) => {
+            setWallets(walletResponse.Data ?? []);
+          })
+          .catch(() => {});
 
         const hasHardFailure = results.some(
           (result) =>
@@ -1096,21 +1132,34 @@ export default function DashboardScreen() {
             <View style={styles.brandAvatar}>
               <MaterialCommunityIcons name="account-circle" size={20} color={colors.primary} />
             </View>
-            <Text numberOfLines={1} style={styles.brandName}>
-              {displayName}
-            </Text>
+            <View style={{ gap: 2 }}>
+              <Text numberOfLines={1} style={styles.brandGreeting}>
+                {getTimeGreeting()}
+              </Text>
+              <Text numberOfLines={1} style={styles.brandName}>
+                {displayName}
+              </Text>
+            </View>
           </View>
 
-          <Pressable onPress={() => router.push('/notifications')} style={styles.iconButton}>
-            <MaterialCommunityIcons name="bell-outline" size={20} color={colors.shellTextPrimary} />
-            {unreadNotificationCount > 0 ? (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {lastUpdated ? (
+              <View style={styles.lastUpdatedBadge}>
+                <MaterialCommunityIcons name="clock-outline" size={10} color={colors.shellTextMuted} />
+                <Text style={styles.lastUpdatedText}>{formatLastUpdated()}</Text>
               </View>
             ) : null}
-          </Pressable>
+            <Pressable onPress={() => router.push('/notifications')} style={styles.iconButton}>
+              <MaterialCommunityIcons name="bell-outline" size={20} color={colors.shellTextPrimary} />
+              {unreadNotificationCount > 0 ? (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
         </Animated.View>
 
         {loading ? (
@@ -1383,19 +1432,31 @@ export default function DashboardScreen() {
 
               <View style={styles.trendChart}>
                 {trendPoints.length > 0 ? (
-                  trendPoints.map((point) => (
-                    <View key={`${point.label}-${point.value}`} style={styles.trendItem}>
+                  trendPoints.map((point, index) => (
+                    <Pressable
+                      key={`${point.label}-${point.value}`}
+                      onPress={() => setSelectedBarIndex(selectedBarIndex === index ? null : index)}
+                      style={styles.trendItem}>
+                      {selectedBarIndex === index ? (
+                        <View style={styles.tooltipContainer}>
+                          <Text style={styles.tooltipText}>
+                            {formatCompactCurrency(point.value, locale)}
+                          </Text>
+                          <View style={styles.tooltipArrow} />
+                        </View>
+                      ) : null}
                       <View
                         style={[
                           styles.trendBar,
                           { height: `${Math.max(26, (point.value / trendPeak) * 100)}%` },
                           point.active && styles.trendBarActive,
+                          selectedBarIndex === index && { backgroundColor: colors.primary },
                         ]}
                       />
                       <Text numberOfLines={1} style={styles.trendLabel}>
                         {point.label}
                       </Text>
-                    </View>
+                    </Pressable>
                   ))
                 ) : (
                   <View style={styles.trendEmpty}>
@@ -1464,54 +1525,153 @@ export default function DashboardScreen() {
 
             <Animated.View style={[styles.card, sectionRevealStyles[8]]}>
               <View style={styles.rowBetween}>
-                <Text style={styles.cardTitle}>{t('dashboard.kineticActivity')}</Text>
+                <Text style={styles.cardTitle}>{t('dashboard.recentTransactions')}</Text>
                 <Pressable
                   hitSlop={10}
                   onPress={() => {
                     router.navigate('/activity');
                   }}>
-                  <Text style={styles.linkText}>{t('dashboard.viewLedger')}</Text>
+                  <Text style={styles.linkText}>{t('dashboard.recentTransactionsViewAll')}</Text>
                 </Pressable>
               </View>
 
               <View style={styles.activityList}>
-                {activityPreviewItems.map((item) => (
-                  <View key={`${item.title}-${item.amount}`} style={styles.activityItem}>
-                    <View style={styles.activityLeft}>
-                      <View style={styles.activityIconWrap}>
-                        <MaterialCommunityIcons
-                          name={item.icon}
-                          size={18}
-                          color={item.positive ? colors.secondaryAccent : colors.primary}
-                        />
+                {recentTransactions.length > 0 ? (
+                  recentTransactions.map((tx) => {
+                    const isIncome = tx.type === 'income';
+                    const iconBg = alpha(isIncome ? colors.secondaryAccent : colors.primary, isDark ? 0.18 : 0.1);
+                    return (
+                      <View key={tx.id} style={styles.activityItem}>
+                        <View style={styles.activityLeft}>
+                          <View style={[styles.activityIconWrap, { backgroundColor: iconBg }]}>
+                            <MaterialCommunityIcons
+                              name={isIncome ? 'cash-fast' : 'cart-outline'}
+                              size={18}
+                              color={isIncome ? colors.secondaryAccent : colors.primary}
+                            />
+                          </View>
+                          <View style={styles.activityCopy}>
+                            <Text numberOfLines={1} style={styles.activityTitle}>
+                              {tx.category}
+                            </Text>
+                            <Text numberOfLines={1} style={styles.activityMeta}>
+                              {tx.description?.trim() || tx.category} • {new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }).format(new Date(tx.date))}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.activityRight}>
+                          <Text
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.75}
+                            style={[styles.activityAmount, isIncome && styles.activityAmountPositive]}>
+                            {isIncome ? '+' : '-'}{formatCompactCurrency(tx.amount, locale)}
+                          </Text>
+                          <Text numberOfLines={1} style={styles.activityKind}>
+                            {isIncome ? t('activity.transactions.income') : t('activity.transactions.expense')}
+                          </Text>
+                        </View>
                       </View>
-                      <View style={styles.activityCopy}>
-                        <Text numberOfLines={2} style={styles.activityTitle}>
-                          {item.title}
-                        </Text>
-                        <Text numberOfLines={2} style={styles.activityMeta}>
-                          {item.meta}
+                    );
+                  })
+                ) : (
+                  <View style={{ alignItems: 'center', paddingVertical: 20, gap: 8 }}>
+                    <MaterialCommunityIcons name="swap-horizontal" size={24} color={colors.shellTextMuted} />
+                    <Text style={{ color: colors.shellTextMuted, fontSize: 13, fontWeight: '600' }}>
+                      {t('dashboard.recentTransactionsEmpty')}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </Animated.View>
+
+            {summary?.upcoming_bills && Number(summary.upcoming_bills.count) > 0 ? (
+              <Animated.View style={[styles.card, sectionRevealStyles[9]]}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.cardTitle}>{t('dashboard.upcomingBills')}</Text>
+                  <MaterialCommunityIcons name="calendar-clock-outline" size={14} color={colors.danger} />
+                </View>
+                <View style={styles.billsRow}>
+                  <View style={styles.billsIconWrap}>
+                    <MaterialCommunityIcons name="receipt-text-outline" size={18} color={colors.danger} />
+                  </View>
+                  <View style={styles.billsCopy}>
+                    <Text style={styles.billsTitle}>
+                      {t('dashboard.upcomingBillsCount', { count: String(summary.upcoming_bills.count) })}
+                    </Text>
+                    {summary.upcoming_bills.next_due_date ? (
+                      <Text style={styles.billsMeta}>
+                        {t('dashboard.upcomingBillsNextDue')}: {new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }).format(new Date(summary.upcoming_bills.next_due_date))}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.billsRight}>
+                    <Text style={styles.billsAmount}>
+                      {formatCompactCurrency(Number(summary.upcoming_bills.total_amount) || 0, locale)}
+                    </Text>
+                    <Text style={styles.billsMeta}>{t('dashboard.upcomingBillsTotal')}</Text>
+                  </View>
+                </View>
+              </Animated.View>
+            ) : null}
+
+            {wallets.length > 0 ? (
+              <Animated.View style={[styles.card, sectionRevealStyles[10]]}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.cardTitle}>{t('dashboard.walletSummary')}</Text>
+                  <Text style={styles.cardEyebrow}>
+                    {formatCompactCurrency(
+                      wallets.reduce((sum, w) => sum + (Number(w.balance) || 0), 0),
+                      locale
+                    )}
+                  </Text>
+                </View>
+                {wallets.slice(0, 4).map((wallet) => (
+                  <View key={wallet.id} style={styles.walletItem}>
+                    <View style={styles.walletLeft}>
+                      <View style={styles.walletIconWrap}>
+                        <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
+                      </View>
+                      <Text numberOfLines={1} style={styles.walletName}>{wallet.name}</Text>
+                    </View>
+                    <Text style={styles.walletBalance}>
+                      {formatCompactCurrency(Number(wallet.balance) || 0, locale)}
+                    </Text>
+                  </View>
+                ))}
+              </Animated.View>
+            ) : null}
+
+            {summary?.top_merchants_preview && summary.top_merchants_preview.length > 0 ? (
+              <Animated.View style={[styles.card, sectionRevealStyles[11]]}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.cardTitle}>{t('dashboard.topMerchants')}</Text>
+                  <Text style={styles.cardEyebrow}>{t('dashboard.topMerchantsBody')}</Text>
+                </View>
+                {summary.top_merchants_preview.slice(0, 3).map((merchant, index) => (
+                  <View key={merchant.merchant_name} style={styles.merchantItem}>
+                    <View style={styles.merchantLeft}>
+                      <View style={styles.merchantRank}>
+                        <Text style={styles.merchantRankText}>{index + 1}</Text>
+                      </View>
+                      <View>
+                        <Text numberOfLines={1} style={styles.merchantName}>{merchant.merchant_name}</Text>
+                        <Text style={styles.merchantMeta}>
+                          {t('dashboard.topMerchantsCount', { count: String(merchant.transaction_count) })}
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.activityRight}>
-                      <Text
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.75}
-                        style={[styles.activityAmount, item.positive && styles.activityAmountPositive]}>
-                        {item.amount}
-                      </Text>
-                      <Text numberOfLines={1} style={styles.activityKind}>
-                        {item.kind}
+                    <View style={styles.merchantRight}>
+                      <Text style={styles.merchantAmount}>
+                        {formatCompactCurrency(Number(merchant.amount) || 0, locale)}
                       </Text>
                     </View>
                   </View>
                 ))}
-              </View>
-            </Animated.View>
+              </Animated.View>
+            ) : null}
 
-            <Animated.View style={[styles.insightCard, sectionRevealStyles[9]]}>
+            <Animated.View style={[styles.insightCard, sectionRevealStyles[12]]}>
               <View style={styles.insightHero}>
                 <View style={styles.insightHeroTop}>
                   <View style={styles.insightHeroBadge}>
@@ -1728,6 +1888,14 @@ export default function DashboardScreen() {
           </>
         )}
       </ScrollView>
+
+      <Pressable
+        onPress={() => router.push({ pathname: '/activity', params: { compose: 'expense' } })}
+        style={({ pressed }) => [styles.fabContainer, pressed && styles.fabPressed]}>
+        <View style={styles.fab}>
+          <MaterialCommunityIcons name="plus" size={26} color={colors.onPrimary} />
+        </View>
+      </Pressable>
 
       <Modal
         visible={filterModalVisible}
@@ -2050,6 +2218,26 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       fontSize: 22,
       fontWeight: '800',
       letterSpacing: -0.8,
+    },
+    brandGreeting: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      fontWeight: '600',
+      letterSpacing: 0.4,
+    },
+    lastUpdatedBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      backgroundColor: colors.shellCardMuted,
+    },
+    lastUpdatedText: {
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      fontWeight: '600',
     },
     iconButton: {
       position: 'relative',
@@ -2602,6 +2790,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       alignItems: 'center',
       justifyContent: 'flex-end',
       gap: 12,
+      position: 'relative',
     },
     trendBar: {
       width: '100%',
@@ -3582,6 +3771,173 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number) =>
       color: colors.onPrimary,
       fontSize: 13,
       fontWeight: '800',
+    },
+    fabContainer: {
+      position: 'absolute',
+      bottom: Math.max(topInset + 16, 32),
+      right: 18,
+      zIndex: 100,
+    },
+    fab: {
+      width: 60,
+      height: 60,
+      borderRadius: 20,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: colors.primary,
+      shadowOpacity: 0.32,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 8,
+    },
+    fabPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.95 }],
+    },
+    merchantItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: alpha(colors.surfaceContainerHighest, 0.2),
+    },
+    merchantLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      flex: 1,
+    },
+    merchantRank: {
+      width: 28,
+      height: 28,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.1),
+    },
+    merchantRankText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    merchantName: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    merchantMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      fontWeight: '500',
+    },
+    merchantRight: {
+      alignItems: 'flex-end',
+    },
+    merchantAmount: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    billsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: alpha(colors.surfaceContainerHighest, 0.2),
+    },
+    billsIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.danger, 0.1),
+    },
+    billsCopy: {
+      flex: 1,
+      gap: 2,
+    },
+    billsTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    billsMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    billsRight: {
+      alignItems: 'flex-end',
+    },
+    billsAmount: {
+      color: colors.danger,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    walletItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: alpha(colors.surfaceContainerHighest, 0.2),
+    },
+    walletLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    walletIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.1),
+    },
+    walletName: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    walletBalance: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    tooltipContainer: {
+      position: 'absolute',
+      top: -36,
+      left: '50%',
+      transform: [{ translateX: -40 }],
+      backgroundColor: colors.shellTextPrimary,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      alignItems: 'center',
+    },
+    tooltipText: {
+      color: colors.onPrimary,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    tooltipArrow: {
+      position: 'absolute',
+      bottom: -5,
+      left: '50%',
+      transform: [{ translateX: -3 }],
+      width: 0,
+      height: 0,
+      borderLeftWidth: 6,
+      borderRightWidth: 6,
+      borderTopWidth: 6,
+      borderLeftColor: 'transparent',
+      borderRightColor: 'transparent',
+      borderTopColor: colors.shellTextPrimary,
     },
   });
 };
