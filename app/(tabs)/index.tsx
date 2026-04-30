@@ -1092,8 +1092,8 @@ export default function DashboardScreen() {
       },
       {
         label: language === 'id' ? 'Kekayaan Bersih' : 'Net Worth',
-        value: formatCompactCurrency(netWorth, locale),
-        meta: '',
+        value: formatCompactCurrency(Math.abs(netWorth), locale),
+        meta: language === 'id' ? 'Aset dikurangi utang' : 'Assets minus debt',
       },
       {
         label: t('dashboard.summary.income'),
