@@ -1664,6 +1664,9 @@ export default function ActivityScreen() {
   }, [closeTransactionModal, form.id, loadActivity, t, withAuthorizedRequest]);
 
   const transactionBalance = summary.balance;
+  const consumptionExpense = summary.consumption_expense ?? 0;
+  const debtRepayment = summary.debt_repayment ?? 0;
+  const savingsRate = summary.savings_rate ?? 0;
   const searchActive = searchQuery.trim().length > 0;
   const visibleTransactions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -1902,6 +1905,15 @@ export default function ActivityScreen() {
                 metaTone="positive"
                 accent="primary"
               />
+              {debtRepayment > 0 ? (
+                <SummaryStat
+                  colors={colors}
+                  title={language === 'id' ? 'Bayar Utang' : 'Debt Repayment'}
+                  value={toCurrency(debtRepayment, locale)}
+                  meta={language === 'id' ? `${savingsRate.toFixed(1)}% tingkat tabungan` : `${savingsRate.toFixed(1)}% savings rate`}
+                  accent="secondary"
+                />
+              ) : null}
               <SummaryStat
                 colors={colors}
                 title={t('activity.transactions.activeStream')}
