@@ -80,9 +80,12 @@ export type RemainingBalanceData = {
   period?: ReportsPeriodData;
   total_income: NumericLike;
   total_expense: NumericLike;
+  consumption_expense?: NumericLike;
+  debt_repayment?: NumericLike;
   remaining_balance: NumericLike;
   savings_rate?: NumericLike;
   expense_ratio?: NumericLike;
+  consumption_rate?: NumericLike;
 };
 
 const buildReportsUrl = (path = '') => buildApiUrl(`reports${path ? `/${path}` : ''}`);

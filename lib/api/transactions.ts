@@ -33,8 +33,11 @@ export type TransactionListData = {
 export type TransactionSummaryData = {
   total_income: number;
   total_expense: number;
-  // Aggregated transaction balance: total_income - total_expense.
   balance: number;
+  consumption_expense?: number;
+  debt_repayment?: number;
+  savings_rate?: number;
+  consumption_rate?: number;
 };
 
 export type CreateTransactionPayload = {
