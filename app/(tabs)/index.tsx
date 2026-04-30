@@ -1091,11 +1091,6 @@ export default function DashboardScreen() {
         meta: language === 'id' ? 'Seluruh saldo wallet' : 'All wallet balances',
       },
       {
-        label: language === 'id' ? 'Saldo Tersedia' : 'Available Balance',
-        value: formatCompactCurrency(Math.abs(netWorth), locale),
-        meta: language === 'id' ? 'Setelah dikurangi utang' : 'After debt deduction',
-      },
-      {
         label: language === 'id' ? 'Pemasukan' : 'Income',
         value: formatCompactCurrency(monthlyIncome, locale),
         meta: language === 'id' ? 'Total pemasukan periode' : 'Period total income',
@@ -1111,7 +1106,7 @@ export default function DashboardScreen() {
         meta: language === 'id' ? 'Pemasukan dikurangi konsumsi' : 'Income minus consumption',
       },
     ],
-    [consumptionExpense, locale, monthlyIncome, netCashflow, netWorth, t, totalBalance, language]
+    [consumptionExpense, locale, monthlyIncome, netCashflow, t, totalBalance, language]
   );
 
   return (
