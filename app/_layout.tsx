@@ -24,6 +24,7 @@ import {
   syncDevicePushToken,
 } from '@/lib/push-notifications';
 import { getAuthSession } from '@/lib/auth-session';
+import { ToastContainer } from '@/components/ui/toast';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 registerNotificationHandler();
@@ -220,6 +221,8 @@ function RootNavigator() {
             options={{ presentation: 'modal', headerShown: true, title: t('common.modal') }}
           />
         </Stack>
+
+        <ToastContainer />
 
         {isOffline ? (
           <View
