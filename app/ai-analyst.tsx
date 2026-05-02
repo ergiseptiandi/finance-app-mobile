@@ -119,13 +119,14 @@ export default function AIAnalystScreen() {
       };
       setMessages((prev) => [...prev, aiMessage]);
       setChatCount((c) => c + 1);
-    } catch {
+    } catch (err) {
+      const serverMsg = err instanceof Error ? err.message : '';
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: language === 'id'
+        content: serverMsg || (language === 'id'
           ? 'Maaf, gagal mendapatkan analisis. Coba lagi nanti.'
-          : 'Sorry, failed to get analysis. Please try again.',
+          : 'Sorry, failed to get analysis. Please try again.'),
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
