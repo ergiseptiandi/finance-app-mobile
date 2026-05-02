@@ -44,6 +44,7 @@ import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { useAppLanguage } from '@/providers/language-provider';
 import { useNetworkStatus } from '@/providers/network-status-provider';
+import { toast } from '@/components/ui/toast';
 
 type ActivityFilterType = 'all' | TransactionType;
 type ActivityDateFilterMode = 'month' | 'range';
@@ -1450,6 +1451,7 @@ export default function ActivityScreen() {
     try {
       await withAuthorizedRequest((accessToken) => deleteTransaction(accessToken, selectedDetailRecord.id));
       closeDetailModal();
+      toast.success(language === 'id' ? 'Transaksi dihapus' : 'Transaction deleted');
       await loadActivity();
     } catch (deleteError) {
       if (deleteError instanceof ApiRequestError) {
@@ -1628,6 +1630,11 @@ export default function ActivityScreen() {
       }
 
       closeTransactionModal();
+      toast.success(
+        form.id
+          ? (language === 'id' ? 'Transaksi diperbarui' : 'Transaction updated')
+          : (language === 'id' ? 'Transaksi ditambahkan' : 'Transaction added')
+      );
       await loadActivity();
     } catch (saveError) {
       if (saveError instanceof ApiRequestError) {
@@ -1651,6 +1658,7 @@ export default function ActivityScreen() {
     try {
       await withAuthorizedRequest((accessToken) => deleteTransaction(accessToken, form.id!));
       closeTransactionModal();
+      toast.success(language === 'id' ? 'Transaksi dihapus' : 'Transaction deleted');
       await loadActivity();
     } catch (deleteError) {
       if (deleteError instanceof ApiRequestError) {

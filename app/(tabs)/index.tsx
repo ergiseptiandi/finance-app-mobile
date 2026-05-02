@@ -45,6 +45,7 @@ import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/sc
 import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
 import { useAppLanguage } from '@/providers/language-provider';
 import { useNetworkStatus } from '@/providers/network-status-provider';
+import { toast } from '@/components/ui/toast';
 
 type TrendMode = 'daily' | 'monthly';
 type DashboardDateFilterMode = 'month' | 'range';
@@ -1506,14 +1507,27 @@ export default function DashboardScreen() {
                 <Text style={styles.metricMeta}>{t('dashboard.debtBalanceRatio', { percent: formatPercentValue(Math.max(0, debtToBalance)) })}</Text>
               </View>
 
-              <Pressable
-                onPress={() => {
-                  router.navigate('/debt');
-                }}
-                style={styles.secondaryAction}>
-                <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
-                <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
-              </Pressable>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <Pressable
+                  onPress={() => {
+                    router.navigate('/debt');
+                  }}
+                  style={[styles.secondaryAction, { flex: 1 }]}>
+                  <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
+                  <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    toast.info(language === 'id' ? 'Buka halaman utang untuk bayar' : 'Open debt page to make payment');
+                    router.navigate('/debt');
+                  }}
+                  style={[styles.secondaryAction, { flex: 1, backgroundColor: colors.warning }]}>
+                  <MaterialCommunityIcons name="cash-fast" size={16} color={colors.onPrimary} />
+                  <Text style={styles.secondaryActionText}>
+                    {language === 'id' ? 'Bayar Utang' : 'Pay Debt'}
+                  </Text>
+                </Pressable>
+              </View>
             </Animated.View>
 
             <Animated.View style={[styles.card, sectionRevealStyles[8]]}>
