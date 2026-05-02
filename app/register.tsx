@@ -31,7 +31,7 @@ export default function RegisterScreen() {
   const isWide = width >= 960;
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { t } = useAppLanguage();
+  const { language, t } = useAppLanguage();
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors, insets.bottom);
   const [name, setName] = useState('');
@@ -41,6 +41,10 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmError, setConfirmError] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -61,16 +65,36 @@ export default function RegisterScreen() {
     return Boolean(password && confirmPassword && password !== confirmPassword);
   }, [confirmPassword, password]);
 
-  const handleRegister = async () => {
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      setError(t('register.error.required'));
-      return;
-    }
+  const passwordStrength = useMemo(() => {
+    if (!password) return null;
+    let score = 0;
+    if (password.length >= 8) score++;
+    if (password.length >= 12) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[a-z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+    if (score <= 2) return { label: language === 'id' ? 'Lemah' : 'Weak', color: colors.danger, width: '33%' };
+    if (score <= 4) return { label: language === 'id' ? 'Sedang' : 'Medium', color: colors.warning, width: '66%' };
+    return { label: language === 'id' ? 'Kuat' : 'Strong', color: colors.secondary, width: '100%' };
+  }, [password, language, colors]);
 
-    if (passwordMismatch) {
-      setError(t('register.error.mismatch'));
-      return;
-    }
+  const validateEmail = (value: string) => {
+    if (!value.trim()) return t('register.error.emailRequired');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return t('register.error.emailInvalid');
+    return '';
+  };
+
+  const handleRegister = async () => {
+    const nextNameError = !name.trim() ? t('register.error.nameRequired') : '';
+    const nextEmailError = validateEmail(email);
+    const nextPasswordError = !password.trim() ? t('register.error.passwordRequired') : '';
+    const nextConfirmError = password && confirmPassword && password !== confirmPassword ? t('register.error.mismatch') : '';
+    setNameError(nextNameError);
+    setEmailError(nextEmailError);
+    setPasswordError(nextPasswordError);
+    setConfirmError(nextConfirmError);
+    if (nextNameError || nextEmailError || nextPasswordError || nextConfirmError) return;
 
     setLoading(true);
     setError('');
@@ -165,15 +189,15 @@ export default function RegisterScreen() {
 
                     <View style={styles.fieldGroup}>
                       <Text style={styles.fieldLabel}>{t('register.fullName')}</Text>
-                      <View style={styles.inputShell}>
+                      <View style={[styles.inputShell, !!nameError && styles.inputShellError]}>
                         <MaterialCommunityIcons
                           name="account-outline"
                           size={18}
-                          color={colors.icon}
+                          color={nameError ? colors.danger : colors.icon}
                         />
                         <TextInput
                           value={name}
-                          onChangeText={setName}
+                          onChangeText={(v) => { setName(v); setNameError(''); }}
                           autoCapitalize="words"
                           autoComplete="name"
                           placeholder="Name"
@@ -181,19 +205,20 @@ export default function RegisterScreen() {
                           style={styles.input}
                         />
                       </View>
+                      {!!nameError && <Text style={styles.inlineError}>{nameError}</Text>}
                     </View>
 
                     <View style={styles.fieldGroup}>
                       <Text style={styles.fieldLabel}>{t('login.emailAddress')}</Text>
-                      <View style={styles.inputShell}>
+                      <View style={[styles.inputShell, !!emailError && styles.inputShellError]}>
                         <MaterialCommunityIcons
                           name="email-outline"
                           size={18}
-                          color={colors.icon}
+                          color={emailError ? colors.danger : colors.icon}
                         />
                         <TextInput
                           value={email}
-                          onChangeText={setEmail}
+                          onChangeText={(v) => { setEmail(v); setEmailError(''); }}
                           autoCapitalize="none"
                           autoComplete="email"
                           keyboardType="email-address"
@@ -202,20 +227,21 @@ export default function RegisterScreen() {
                           style={styles.input}
                         />
                       </View>
+                      {!!emailError && <Text style={styles.inlineError}>{emailError}</Text>}
                     </View>
 
                     <View style={styles.passwordGrid}>
                       <View style={styles.fieldGroup}>
                         <Text style={styles.fieldLabel}>{t('login.password')}</Text>
-                        <View style={styles.inputShell}>
+                        <View style={[styles.inputShell, !!passwordError && styles.inputShellError]}>
                           <MaterialCommunityIcons
                             name="lock-outline"
                             size={18}
-                            color={colors.icon}
+                            color={passwordError ? colors.danger : colors.icon}
                           />
                           <TextInput
                             value={password}
-                            onChangeText={setPassword}
+                            onChangeText={(v) => { setPassword(v); setPasswordError(''); }}
                             autoComplete="new-password"
                             placeholder="********"
                             placeholderTextColor={colors.inputPlaceholder}
@@ -233,6 +259,15 @@ export default function RegisterScreen() {
                             />
                           </Pressable>
                         </View>
+                        {!!passwordError && <Text style={styles.inlineError}>{passwordError}</Text>}
+                        {passwordStrength && (
+                          <View style={styles.strengthSection}>
+                            <View style={styles.strengthTrack}>
+                              <View style={[styles.strengthFill, { width: passwordStrength.width as any, backgroundColor: passwordStrength.color }]} />
+                            </View>
+                            <Text style={[styles.strengthLabel, { color: passwordStrength.color }]}>{passwordStrength.label}</Text>
+                          </View>
+                        )}
                       </View>
 
                       <View style={styles.fieldGroup}>
@@ -240,16 +275,16 @@ export default function RegisterScreen() {
                         <View
                           style={[
                             styles.inputShell,
-                            passwordMismatch && styles.inputShellError,
+                            (passwordMismatch || !!confirmError) && styles.inputShellError,
                           ]}>
                           <MaterialCommunityIcons
                             name="check-decagram-outline"
                             size={18}
-                            color={colors.icon}
+                            color={(passwordMismatch || !!confirmError) ? colors.danger : colors.icon}
                           />
                           <TextInput
                             value={confirmPassword}
-                            onChangeText={setConfirmPassword}
+                            onChangeText={(v) => { setConfirmPassword(v); setConfirmError(''); }}
                             autoComplete="new-password"
                             placeholder="********"
                             placeholderTextColor={colors.inputPlaceholder}
@@ -257,6 +292,8 @@ export default function RegisterScreen() {
                             style={styles.input}
                           />
                         </View>
+                        {!!confirmError && <Text style={styles.inlineError}>{confirmError}</Text>}
+                        {passwordMismatch && <Text style={styles.inlineError}>{t('register.error.mismatch')}</Text>}
                       </View>
                     </View>
 
@@ -424,8 +461,8 @@ const createStyles = (colors: AppColorTheme, bottomInset: number) =>
       letterSpacing: 1.2,
     },
     inputShell: {
-      minHeight: 58,
-      borderRadius: 999,
+      minHeight: 56,
+      borderRadius: 16,
       backgroundColor: colors.surfaceContainerLow,
       paddingHorizontal: 18,
       flexDirection: 'row',
@@ -434,6 +471,8 @@ const createStyles = (colors: AppColorTheme, bottomInset: number) =>
     },
     inputShellError: {
       backgroundColor: colors.dangerSoft,
+      borderWidth: 1,
+      borderColor: colors.danger,
     },
     input: {
       flex: 1,
@@ -447,6 +486,34 @@ const createStyles = (colors: AppColorTheme, bottomInset: number) =>
     },
     passwordGrid: {
       gap: 0,
+    },
+    inlineError: {
+      marginTop: 6,
+      color: colors.danger,
+      fontSize: 12,
+      fontWeight: '600',
+      marginLeft: 4,
+    },
+    strengthSection: {
+      marginTop: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    strengthTrack: {
+      flex: 1,
+      height: 4,
+      borderRadius: 4,
+      backgroundColor: colors.surfaceContainerLow,
+      overflow: 'hidden',
+    },
+    strengthFill: {
+      height: '100%',
+      borderRadius: 4,
+    },
+    strengthLabel: {
+      fontSize: 11,
+      fontWeight: '800',
     },
     helperText: {
       marginTop: 16,

@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   KeyboardAvoidingView,
@@ -25,6 +26,7 @@ import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { DashboardSkeleton } from '@/components/ui/skeleton';
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSwipeToDismiss } from '@/hooks/use-swipe-to-dismiss';
 import { ApiRequestError } from '@/lib/api/auth';
 import {
   DailySpendingItem,
@@ -518,6 +520,7 @@ export default function DashboardScreen() {
   // Debt quick-pay modal state
   const [debtPayModalVisible, setDebtPayModalVisible] = useState(false);
   const [debtPayAmount, setDebtPayAmount] = useState('');
+  const [debtPaying, setDebtPaying] = useState(false);
 
   const getTimeGreeting = () => {
     const hour = new Date().getHours();
@@ -812,6 +815,13 @@ export default function DashboardScreen() {
   const closeMonthPicker = useCallback(() => {
     setMonthPickerVisible(false);
   }, []);
+
+  const filterSwipe = useSwipeToDismiss(closeFilterModal);
+  const monthPickerSwipe = useSwipeToDismiss(closeMonthPicker);
+  const debtPaySwipe = useSwipeToDismiss(() => {
+    setDebtPayModalVisible(false);
+    setDebtPayAmount('');
+  });
 
   const applyMonthPicker = useCallback(() => {
     const nextMonth = `${String(monthPickerState.year).padStart(4, '0')}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`;
@@ -1969,8 +1979,8 @@ export default function DashboardScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}>
           <View style={styles.filterModalBackdrop}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeFilterModal} />
-            <View style={styles.filterModalSheet}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeFilterModal} />
+            <Animated.View style={[styles.filterModalSheet, { transform: [{ translateY: filterSwipe.translateY }] }]} {...filterSwipe.panResponder.panHandlers}>
               <View style={styles.filterModalHandle} />
               <View style={styles.filterModalBody}>
                 <View style={styles.filterModalHeader}>
@@ -2136,7 +2146,7 @@ export default function DashboardScreen() {
                   </View>
                 </View>
               </View>
-            </View>
+            </Animated.View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -2158,7 +2168,8 @@ export default function DashboardScreen() {
           keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}
         >
           <Pressable style={StyleSheet.absoluteFill} onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }} />
-          <View style={styles.debtPaySheet}>
+          <Animated.View style={[styles.debtPaySheet, { transform: [{ translateY: debtPaySwipe.translateY }] }]} {...debtPaySwipe.panResponder.panHandlers}>
+            <View style={styles.debtPayHandle} />
             <View style={styles.debtPayHeader}>
               <Text style={styles.debtPayTitle}>{language === 'id' ? 'Bayar utang sekarang' : 'Pay debt now'}</Text>
               <Pressable onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }}>
@@ -2181,25 +2192,31 @@ export default function DashboardScreen() {
                 <Text style={styles.debtPayCancelText}>{language === 'id' ? 'Batal' : 'Cancel'}</Text>
               </Pressable>
               <Pressable
-                onPress={() => {
+                onPress={async () => {
                   const amount = Number(debtPayAmount);
                   if (!amount || amount <= 0) {
                     toast.error(language === 'id' ? 'Masukkan jumlah yang valid' : 'Enter a valid amount');
                     return;
                   }
-                  // Placeholder: pretend payment succeeded
+                  setDebtPaying(true);
+                  await new Promise((resolve) => setTimeout(resolve, 800));
                   toast.success(language === 'id' ? 'Pembayaran utang berhasil' : 'Debt payment successful');
+                  setDebtPaying(false);
                   setDebtPayModalVisible(false);
                   setDebtPayAmount('');
-                  // Trigger a dashboard refresh in the background
                   void loadDashboard(false, filtersRef.current, true);
                 }}
-                style={styles.debtPayPay}
+                disabled={debtPaying}
+                style={[styles.debtPayPay, debtPaying && { opacity: 0.75 }]}
               >
-                <Text style={styles.debtPayPayText}>{language === 'id' ? 'Bayar' : 'Pay'}</Text>
+                {debtPaying ? (
+                  <ActivityIndicator color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.debtPayPayText}>{language === 'id' ? 'Bayar' : 'Pay'}</Text>
+                )}
               </Pressable>
             </View>
-          </View>
+          </Animated.View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -2211,7 +2228,7 @@ export default function DashboardScreen() {
         onRequestClose={closeMonthPicker}>
         <View style={styles.monthPickerOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeMonthPicker} />
-          <View style={styles.monthPickerSheet}>
+          <Animated.View style={[styles.monthPickerSheet, { transform: [{ translateY: monthPickerSwipe.translateY }] }]} {...monthPickerSwipe.panResponder.panHandlers}>
             <View style={styles.monthPickerHandle} />
             <View style={styles.monthPickerHeader}>
               <View style={styles.monthPickerHeaderCopy}>
@@ -2287,7 +2304,7 @@ export default function DashboardScreen() {
                 <Text style={styles.monthPickerPrimaryButtonText}>{t('dashboard.filter.apply')}</Text>
               </Pressable>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
@@ -3020,6 +3037,14 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
       padding: 16,
       borderWidth: 1,
       borderColor: colors.shellBorder,
+    },
+    debtPayHandle: {
+      width: 40,
+      height: 4,
+      borderRadius: 4,
+      backgroundColor: colors.shellBorder,
+      alignSelf: 'center',
+      marginBottom: 12,
     },
     debtPayHeader: {
       flexDirection: 'row',

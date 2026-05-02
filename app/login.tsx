@@ -39,12 +39,21 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  const validateEmail = (value: string) => {
+    if (!value.trim()) return t('login.error.emailRequired');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return t('login.error.emailInvalid');
+    return '';
+  };
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError(t('login.error.required'));
-      return;
-    }
+    const nextEmailError = validateEmail(email);
+    const nextPasswordError = !password.trim() ? t('login.error.passwordRequired') : '';
+    setEmailError(nextEmailError);
+    setPasswordError(nextPasswordError);
+    if (nextEmailError || nextPasswordError) return;
 
     setLoading(true);
     setError('');
@@ -137,15 +146,15 @@ export default function LoginScreen() {
 
                     <View style={styles.fieldGroup}>
                       <Text style={styles.fieldLabel}>{t('login.emailAddress')}</Text>
-                      <View style={styles.inputShell}>
+                      <View style={[styles.inputShell, !!emailError && styles.inputShellError]}>
                         <MaterialCommunityIcons
                           name="email-outline"
                           size={18}
-                          color={colors.icon}
+                          color={emailError ? colors.danger : colors.icon}
                         />
                         <TextInput
                           value={email}
-                          onChangeText={setEmail}
+                          onChangeText={(v) => { setEmail(v); setEmailError(''); }}
                           autoCapitalize="none"
                           autoComplete="email"
                           keyboardType="email-address"
@@ -154,6 +163,7 @@ export default function LoginScreen() {
                           style={styles.input}
                         />
                       </View>
+                      {!!emailError && <Text style={styles.inlineError}>{emailError}</Text>}
                     </View>
 
                     <View style={styles.fieldGroup}>
@@ -163,15 +173,15 @@ export default function LoginScreen() {
                           <Text style={styles.linkText}>{t('login.forgotPassword')}</Text>
                         </Pressable>
                       </View>
-                      <View style={styles.inputShell}>
+                      <View style={[styles.inputShell, !!passwordError && styles.inputShellError]}>
                         <MaterialCommunityIcons
                           name="lock-outline"
                           size={18}
-                          color={colors.icon}
+                          color={passwordError ? colors.danger : colors.icon}
                         />
                         <TextInput
                           value={password}
-                          onChangeText={setPassword}
+                          onChangeText={(v) => { setPassword(v); setPasswordError(''); }}
                           autoComplete="password"
                           placeholder="********"
                           placeholderTextColor={colors.inputPlaceholder}
@@ -189,6 +199,7 @@ export default function LoginScreen() {
                           />
                         </Pressable>
                       </View>
+                      {!!passwordError && <Text style={styles.inlineError}>{passwordError}</Text>}
                     </View>
 
                     {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -374,13 +385,18 @@ const createStyles = (colors: AppColorTheme, bottomInset: number) =>
       fontWeight: '700',
     },
     inputShell: {
-      minHeight: 58,
-      borderRadius: 999,
+      minHeight: 56,
+      borderRadius: 16,
       backgroundColor: colors.surfaceContainerLow,
       paddingHorizontal: 18,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
+    },
+    inputShellError: {
+      backgroundColor: colors.dangerSoft,
+      borderWidth: 1,
+      borderColor: colors.danger,
     },
     input: {
       flex: 1,
@@ -391,6 +407,13 @@ const createStyles = (colors: AppColorTheme, bottomInset: number) =>
     },
     iconButton: {
       padding: 4,
+    },
+    inlineError: {
+      marginTop: 6,
+      color: colors.danger,
+      fontSize: 12,
+      fontWeight: '600',
+      marginLeft: 4,
     },
     errorText: {
       marginTop: 14,
