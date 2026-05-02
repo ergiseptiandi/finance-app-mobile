@@ -780,6 +780,13 @@ export default function DashboardScreen() {
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Pressable
+              onPress={() => router.push('/ai-analyst')}
+              style={styles.iconButton}
+              accessibilityLabel={language === 'id' ? 'AI Analis' : 'AI Analyst'}
+              accessibilityRole="button">
+              <MaterialCommunityIcons name="lightning-bolt-outline" size={20} color={colors.primary} />
+            </Pressable>
+            <Pressable
               onPress={() => router.push('/notifications')}
               style={styles.iconButton}
               accessibilityLabel={language === 'id' ? 'Notifikasi' : 'Notifications'}

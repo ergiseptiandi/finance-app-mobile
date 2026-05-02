@@ -214,6 +214,7 @@ function RootNavigator() {
           <Stack.Screen name="biometric-unlock" options={{ animation: isDark ? 'none' : 'fade' }} />
           <Stack.Screen name="notifications" options={{ animation: isDark ? 'none' : 'simple_push' }} />
           <Stack.Screen name="(tabs)" options={{ animation: isDark ? 'none' : 'fade' }} />
+          <Stack.Screen name="ai-analyst" options={{ animation: isDark ? 'none' : 'slide_from_bottom' }} />
           <Stack.Screen name="categories" options={{ animation: isDark ? 'none' : 'simple_push' }} />
           <Stack.Screen name="wallets" options={{ animation: isDark ? 'none' : 'simple_push' }} />
           <Stack.Screen
