@@ -138,6 +138,7 @@ export default function DashboardScreen() {
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
+  const [showAllSections, setShowAllSections] = useState(false);
   // Debt quick-pay modal state
   const [debtPayModalVisible, setDebtPayModalVisible] = useState(false);
   const [debtPayAmount, setDebtPayAmount] = useState('');
@@ -1238,6 +1239,25 @@ export default function DashboardScreen() {
               </View>
             </Animated.View>
 
+            <Pressable
+              onPress={() => setShowAllSections(!showAllSections)}
+              style={({ pressed }) => [styles.showMoreButton, pressed && { opacity: 0.8 }]}
+              accessibilityRole="button"
+              accessibilityLabel={showAllSections ? (language === 'id' ? 'Tutup' : 'Show less') : (language === 'id' ? 'Lebih banyak' : 'Show more')}>
+              <Text style={styles.showMoreButtonText}>
+                {showAllSections
+                  ? (language === 'id' ? 'Tutup' : 'Show less')
+                  : (language === 'id' ? 'Tampilkan lebih banyak' : 'Show more')}
+              </Text>
+              <MaterialCommunityIcons
+                name={showAllSections ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={colors.primary}
+              />
+            </Pressable>
+
+            {showAllSections ? (
+            <>
             {summary?.upcoming_bills && Number(summary.upcoming_bills.count) > 0 ? (
               <Animated.View style={[styles.card, sectionRevealStyles[9]]}>
                 <View style={styles.rowBetween}>
@@ -1538,6 +1558,7 @@ export default function DashboardScreen() {
                 <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>
               </Pressable>
             </Animated.View>
+            </>) : null}
 
             {!!error && <Text style={styles.errorText}>{error}</Text>}
           </>
@@ -2188,6 +2209,22 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
       gap: 14,
       borderWidth: 1,
       borderColor: colors.shellBorder,
+    },
+    showMoreButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 14,
+      borderRadius: 16,
+      backgroundColor: alpha(colors.primary, isDark ? 0.1 : 0.06),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, isDark ? 0.18 : 0.1),
+    },
+    showMoreButtonText: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: '800',
     },
     summaryCard: {
       borderRadius: 22,
