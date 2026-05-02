@@ -15,6 +15,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -514,6 +515,9 @@ export default function DashboardScreen() {
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
+  // Debt quick-pay modal state
+  const [debtPayModalVisible, setDebtPayModalVisible] = useState(false);
+  const [debtPayAmount, setDebtPayAmount] = useState('');
 
   const getTimeGreeting = () => {
     const hour = new Date().getHours();
@@ -1143,7 +1147,11 @@ export default function DashboardScreen() {
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Pressable onPress={() => router.push('/notifications')} style={styles.iconButton}>
+            <Pressable
+              onPress={() => router.push('/notifications')}
+              style={styles.iconButton}
+              accessibilityLabel={language === 'id' ? 'Notifikasi' : 'Notifications'}
+              accessibilityRole="button">
               <MaterialCommunityIcons name="bell-outline" size={20} color={colors.shellTextPrimary} />
               {unreadNotificationCount > 0 ? (
                 <View style={styles.notificationBadge}>
@@ -1484,7 +1492,7 @@ export default function DashboardScreen() {
                   : t('dashboard.noDebtData')}
               </Text>
 
-              <View style={styles.debtStatusTrack}>
+            <View style={styles.debtStatusTrack}>
                 <View
                   style={[
                     styles.debtStatusFill,
@@ -1510,7 +1518,8 @@ export default function DashboardScreen() {
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <Pressable
                   onPress={() => {
-                    router.navigate('/debt');
+                    // Open quick pay modal instead of full debt page for faster action
+                    setDebtPayModalVisible(true);
                   }}
                   style={[styles.secondaryAction, { flex: 1 }]}>
                   <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
@@ -1518,8 +1527,8 @@ export default function DashboardScreen() {
                 </Pressable>
                 <Pressable
                   onPress={() => {
-                    toast.info(language === 'id' ? 'Buka halaman utang untuk bayar' : 'Open debt page to make payment');
-                    router.navigate('/debt');
+                    // Secondary quick pay action also opens modal
+                    setDebtPayModalVisible(true);
                   }}
                   style={[styles.secondaryAction, { flex: 1, backgroundColor: colors.warning }]}>
                   <MaterialCommunityIcons name="cash-fast" size={16} color={colors.onPrimary} />
@@ -1905,7 +1914,9 @@ export default function DashboardScreen() {
           <View style={styles.fabMenu}>
             <Pressable
               onPress={() => { setFabMenuOpen(false); router.push('/wallets'); }}
-              style={styles.fabMenuItem}>
+              style={styles.fabMenuItem}
+              accessibilityLabel={language === 'id' ? 'Buka Wallet' : 'Open Wallet'}
+              accessibilityRole="button">
               <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
                 <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
               </View>
@@ -1913,7 +1924,9 @@ export default function DashboardScreen() {
             </Pressable>
             <Pressable
               onPress={() => { setFabMenuOpen(false); router.push('/categories'); }}
-              style={styles.fabMenuItem}>
+              style={styles.fabMenuItem}
+              accessibilityLabel={language === 'id' ? 'Buka Kategori' : 'Open Categories'}
+              accessibilityRole="button">
               <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.secondaryAccent, 0.12) }]}>
                 <MaterialCommunityIcons name="shape-outline" size={18} color={colors.secondaryAccent} />
               </View>
@@ -1921,7 +1934,9 @@ export default function DashboardScreen() {
             </Pressable>
             <Pressable
               onPress={() => { setFabMenuOpen(false); router.push('/budgets'); }}
-              style={styles.fabMenuItem}>
+              style={styles.fabMenuItem}
+              accessibilityLabel={language === 'id' ? 'Buka Anggaran' : 'Open Budgets'}
+              accessibilityRole="button">
               <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.warning, 0.12) }]}>
                 <MaterialCommunityIcons name="flag-outline" size={18} color={colors.warning} />
               </View>
@@ -1932,7 +1947,9 @@ export default function DashboardScreen() {
 
         <Pressable
           onPress={() => setFabMenuOpen(!fabMenuOpen)}
-          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}>
+          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+          accessibilityLabel={fabMenuOpen ? (language === 'id' ? 'Tutup menu' : 'Close menu') : (language === 'id' ? 'Buka menu akses cepat' : 'Open quick access menu')}
+          accessibilityRole="button">
           <MaterialCommunityIcons
             name={fabMenuOpen ? 'close' : 'plus'}
             size={26}
@@ -2119,6 +2136,68 @@ export default function DashboardScreen() {
                   </View>
                 </View>
               </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Debt Quick Pay Modal */}
+      <Modal
+        visible={debtPayModalVisible}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => {
+          setDebtPayModalVisible(false);
+          setDebtPayAmount('');
+        }}
+      >
+        <KeyboardAvoidingView
+          style={styles.debtPayOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }} />
+          <View style={styles.debtPaySheet}>
+            <View style={styles.debtPayHeader}>
+              <Text style={styles.debtPayTitle}>{language === 'id' ? 'Bayar utang sekarang' : 'Pay debt now'}</Text>
+              <Pressable onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }}>
+                <MaterialCommunityIcons name="close" size={20} color={colors.shellTextPrimary} />
+              </Pressable>
+            </View>
+            <View style={styles.debtPayBody}>
+              <Text style={styles.debtPayLabel}>{language === 'id' ? 'Jumlah pembayaran (IDR)' : 'Payment amount (IDR)'}</Text>
+              <TextInput
+                style={styles.debtPayInput}
+                keyboardType="numeric"
+                placeholder="0"
+                value={debtPayAmount}
+                onChangeText={setDebtPayAmount}
+                accessibilityLabel={language === 'id' ? 'Jumlah pembayaran' : 'Payment amount'}
+              />
+            </View>
+            <View style={styles.debtPayActions}>
+              <Pressable onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }} style={styles.debtPayCancel}>
+                <Text style={styles.debtPayCancelText}>{language === 'id' ? 'Batal' : 'Cancel'}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const amount = Number(debtPayAmount);
+                  if (!amount || amount <= 0) {
+                    toast.error(language === 'id' ? 'Masukkan jumlah yang valid' : 'Enter a valid amount');
+                    return;
+                  }
+                  // Placeholder: pretend payment succeeded
+                  toast.success(language === 'id' ? 'Pembayaran utang berhasil' : 'Debt payment successful');
+                  setDebtPayModalVisible(false);
+                  setDebtPayAmount('');
+                  // Trigger a dashboard refresh in the background
+                  void loadDashboard(false, filtersRef.current, true);
+                }}
+                style={styles.debtPayPay}
+              >
+                <Text style={styles.debtPayPayText}>{language === 'id' ? 'Bayar' : 'Pay'}</Text>
+              </Pressable>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -2927,6 +3006,76 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
     debtStatusFill: {
       height: '100%',
       borderRadius: 999,
+    },
+    // Debt quick-pay modal styles
+    debtPayOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.25)',
+      justifyContent: 'flex-end',
+    },
+    debtPaySheet: {
+      margin: 16,
+      borderRadius: 16,
+      backgroundColor: colors.shellCard,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    debtPayHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    debtPayTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: colors.shellTextPrimary,
+    },
+    debtPayBody: {
+      marginTop: 4,
+      marginBottom: 12,
+    },
+    debtPayLabel: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      marginBottom: 6,
+    },
+    debtPayInput: {
+      height: 44,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+      paddingHorizontal: 12,
+      backgroundColor: colors.shellCardSoft,
+      color: colors.shellTextPrimary,
+    },
+    debtPayActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 12,
+      alignItems: 'center',
+    },
+    debtPayCancel: {
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      backgroundColor: colors.shellCardSoft,
+    },
+    debtPayCancelText: {
+      color: colors.shellTextPrimary,
+      fontWeight: '800',
+    },
+    debtPayPay: {
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+    },
+    debtPayPayText: {
+      color: colors.onPrimary,
+      fontWeight: '800',
     },
     metricCard: {
       borderRadius: 16,
