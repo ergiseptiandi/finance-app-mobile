@@ -1740,14 +1740,20 @@ export default function DebtScreen() {
                             <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
                           </Pressable>
                           {Platform.OS === 'ios' && iosDebtDatePickerVisible ? (
-                            <View style={styles.datePickerCard}>
-                              <DateTimePicker
-                                value={parseDate(debtForm.dueDate) ?? new Date()}
-                                mode="date"
-                                display="spinner"
-                                onChange={handleDebtDueDateChange}
-                                accentColor={modalAccent}
-                              />
+                            <View style={styles.iosDatePickerOverlay}>
+                              <Pressable style={StyleSheet.absoluteFill} onPress={() => setIosDebtDatePickerVisible(false)} />
+                              <View style={styles.iosDatePickerSheet}>
+                                <DateTimePicker
+                                  value={parseDate(debtForm.dueDate) ?? new Date()}
+                                  mode="date"
+                                  display="spinner"
+                                  onChange={handleDebtDueDateChange}
+                                  accentColor={modalAccent}
+                                />
+                                <Pressable onPress={() => setIosDebtDatePickerVisible(false)} style={styles.iosDatePickerDone}>
+                                  <Text style={styles.iosDatePickerDoneText}>OK</Text>
+                                </Pressable>
+                              </View>
                             </View>
                           ) : null}
                         </View>
@@ -3209,6 +3215,35 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       borderWidth: 1,
       borderColor: colors.shellBorder,
       overflow: 'hidden',
+    },
+    iosDatePickerOverlay: {
+      position: 'absolute',
+      inset: 0,
+      justifyContent: 'flex-end',
+      zIndex: 200,
+    },
+    iosDatePickerSheet: {
+      backgroundColor: colors.shellCard,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingBottom: 20,
+      shadowColor: '#000',
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: -4 },
+      elevation: 10,
+    },
+    iosDatePickerDone: {
+      alignItems: 'center',
+      paddingVertical: 12,
+      marginHorizontal: 16,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+    },
+    iosDatePickerDoneText: {
+      color: colors.onPrimary,
+      fontSize: 15,
+      fontWeight: '800',
     },
     searchInput: {
       color: colors.shellTextPrimary,

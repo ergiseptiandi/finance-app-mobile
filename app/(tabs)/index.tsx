@@ -21,25 +21,59 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
-
 import { DashboardSkeleton } from '@/components/ui/skeleton';
+import { BudgetRing } from '@/components/dashboard/budget-ring';
+import {
+  type TrendMode,
+  type TrendPoint,
+  type DashboardDateFilterMode,
+  type DashboardFilters,
+  type MonthPickerState,
+  MONTH_INPUT_PATTERN,
+  DATE_INPUT_PATTERN,
+  MONTH_INDEXES,
+  getCurrentMonthInputValue,
+  getMonthPickerStateFromInput,
+  createDefaultDashboardFilters,
+  buildDashboardQueryParams,
+  createDashboardCacheSuffix,
+  formatCompactCurrency,
+  formatDetailCurrency,
+  formatSignedCurrency,
+  clampPercent,
+  toNumber,
+  toDateInputLabel,
+  toMonthInputLabel,
+  getFilterRangeMonths,
+  getDashboardFilterLabel,
+  toDashboardFilterPickerValue,
+  parseDateValue,
+  toDayLabel,
+  toShortMonth,
+  extractComparisonValue,
+  extractComparisonWindowValue,
+  formatExpenseCurrency,
+  formatPercentValue,
+  getInsightTone,
+  getInsightIcon,
+  normalizeCategoryLabel,
+  getCategoryIcon,
+} from '@/components/dashboard/dashboard-utils';
 import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSwipeToDismiss } from '@/hooks/use-swipe-to-dismiss';
 import { ApiRequestError } from '@/lib/api/auth';
 import {
-  DailySpendingItem,
-  DashboardComparisonData,
-  DashboardInsightData,
-  DashboardSummaryData,
+  type DailySpendingItem,
+  type DashboardComparisonData,
+  type DashboardInsightData,
+  type DashboardSummaryData,
+  type MonthlySpendingItem,
   getDashboardInsights,
   getComparison,
   getDailySpending,
   getDashboardSummary,
   getMonthlySpending,
-  MonthlySpendingItem,
-  type DashboardPeriodParams,
 } from '@/lib/api/dashboard';
 import { listTransactions, type TransactionRecord } from '@/lib/api/transactions';
 import { listWallets, type WalletRecord } from '@/lib/api/wallets';
@@ -50,36 +84,6 @@ import { useAppLanguage } from '@/providers/language-provider';
 import { useNetworkStatus } from '@/providers/network-status-provider';
 import { toast } from '@/components/ui/toast';
 
-type TrendMode = 'daily' | 'monthly';
-type DashboardDateFilterMode = 'month' | 'range';
-
-type TrendPoint = {
-  label: string;
-  value: number;
-  active?: boolean;
-};
-
-type ActivityItem = {
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  title: string;
-  meta: string;
-  amount: string;
-  kind: string;
-  positive?: boolean;
-};
-
-type DashboardFilters = {
-  dateMode: DashboardDateFilterMode;
-  month: string;
-  startDate: string;
-  endDate: string;
-};
-
-type MonthPickerState = {
-  year: number;
-  monthIndex: number;
-};
-
 type DashboardCacheState = {
   summary: DashboardSummaryData | null;
   dailySpending: DailySpendingItem[];
@@ -89,396 +93,13 @@ type DashboardCacheState = {
   displayName: string;
 };
 
-const MONTH_INPUT_PATTERN = /^\d{4}-\d{2}$/;
-const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
-
-const getMonthPickerStateFromInput = (value: string): MonthPickerState => {
-  if (/^\d{4}-\d{2}$/.test(value)) {
-    const [year, month] = value.split('-').map(Number);
-    return {
-      year: Number.isFinite(year) ? year : new Date().getFullYear(),
-      monthIndex: Number.isFinite(month) ? Math.min(11, Math.max(0, month - 1)) : new Date().getMonth(),
-    };
-  }
-
-  const now = new Date();
-  return {
-    year: now.getFullYear(),
-    monthIndex: now.getMonth(),
-  };
-};
-
-const createDefaultDashboardFilters = (): DashboardFilters => ({
-  dateMode: 'month',
-  month: getCurrentMonthInputValue(),
-  startDate: '',
-  endDate: '',
-});
-
-type BudgetRingProps = {
-  accent: string;
-  label: string;
-  progress: number;
-  size?: number;
-  value: string;
-  valueLabel: string;
-  textColor: string;
-  trackColor: string;
-};
-
-const BudgetRing = ({
-  accent,
-  label,
-  progress,
-  size = 118,
-  value,
-  valueLabel,
-  textColor,
-  trackColor,
-}: BudgetRingProps) => {
-  const strokeWidth = 11;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const normalizedProgress = clampPercent(progress);
-  const strokeDashoffset = circumference * (1 - normalizedProgress / 100);
-
-  return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', width: size, height: size }}>
-      <Svg width={size} height={size}>
-        <Defs>
-          <LinearGradient id="budget-ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor={accent} stopOpacity={0.92} />
-            <Stop offset="100%" stopColor={accent} stopOpacity={0.72} />
-          </LinearGradient>
-        </Defs>
-        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="url(#budget-ring-gradient)"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          fill="none"
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={strokeDashoffset}
-          rotation="-90"
-          originX={size / 2}
-          originY={size / 2}
-        />
-      </Svg>
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 2,
-        }}>
-          <Text
-            numberOfLines={1}
-            style={{
-            color: textColor,
-            fontSize: 10,
-            fontWeight: '800',
-            letterSpacing: 1,
-            textTransform: 'uppercase',
-          }}>
-          {label}
-        </Text>
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            style={{
-            color: textColor,
-            fontSize: 20,
-            lineHeight: 24,
-            fontWeight: '900',
-            letterSpacing: -0.8,
-          }}>
-          {value}
-        </Text>
-          <Text
-            numberOfLines={1}
-            style={{
-            color: textColor,
-            fontSize: 12,
-            fontWeight: '700',
-            opacity: 0.8,
-          }}>
-          {valueLabel}
-        </Text>
-      </View>
-    </View>
-  );
-};
-
-const buildDashboardQueryParams = (filters: DashboardFilters): DashboardPeriodParams => {
-  if (filters.dateMode === 'month') {
-    return {
-      month: filters.month,
-    };
-  }
-
-  return {
-    start_date: filters.startDate,
-    end_date: filters.endDate,
-  };
-};
-
-const createDashboardCacheSuffix = (filters: DashboardFilters) =>
-  [
-    filters.dateMode,
-    filters.month,
-    filters.startDate,
-    filters.endDate,
-  ].join('|');
-
-const formatCompactCurrency = (value: number, locale: string) =>
-  new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'IDR',
-    notation: 'compact',
-    maximumFractionDigits: 0,
-  }).format(value);
-
-const formatDetailCurrency = (value: number, locale: string) =>
-  new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(value);
-
-const formatSignedCurrency = (value: number, locale: string) => {
-  const formatted = formatDetailCurrency(Math.abs(value), locale);
-  return value >= 0 ? formatted : `-${formatted}`;
-};
-
-const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
-
-const toNumber = (value: unknown) => {
-  const nextValue = typeof value === 'number' ? value : Number(value ?? 0);
-  return Number.isFinite(nextValue) ? nextValue : 0;
-};
-
-const parseDateValue = (value: string) => {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  }
-
-  if (/^\d{4}-\d{2}$/.test(value)) {
-    const [year, month] = value.split('-').map(Number);
-    return new Date(year, month - 1, 1);
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date;
-};
-
-const toPickerDate = (value: string) => {
-  const parsed = parseDateValue(value);
-
-  if (!parsed) {
-    return new Date();
-  }
-
-  return parsed;
-};
-
-const toDateInputLabel = (value: string, locale: string) => {
-  const parsed = toPickerDate(value);
-  return new Intl.DateTimeFormat(locale, {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  }).format(parsed);
-};
-
-const toMonthInputLabel = (value: string, locale: string) => {
-  if (!MONTH_INPUT_PATTERN.test(value)) {
-    return value;
-  }
-
-  const parsed = new Date(`${value}-01T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(locale, {
-    month: 'long',
-    year: 'numeric',
-  }).format(parsed);
-};
-
-const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
-
-const getFilterRangeMonths = (startDate: string, endDate: string) => {
-  const start = parseDateValue(startDate);
-  const end = parseDateValue(endDate);
-
-  if (!start || !end) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-};
-
-const getDashboardFilterLabel = (filters: DashboardFilters, locale: string) => {
-  if (filters.dateMode === 'month') {
-    return toMonthInputLabel(filters.month, locale);
-  }
-
-  if (!DATE_INPUT_PATTERN.test(filters.startDate) || !DATE_INPUT_PATTERN.test(filters.endDate)) {
-    return '';
-  }
-
-  return `${toDateInputLabel(filters.startDate, locale)} - ${toDateInputLabel(filters.endDate, locale)}`;
-};
-
-const toDashboardFilterPickerValue = (filters: DashboardFilters, target: 'month' | 'startDate' | 'endDate') => {
-  if (target === 'month') {
-    return toPickerDate(`${filters.month}-01`);
-  }
-
-  if (target === 'startDate') {
-    return toPickerDate(filters.startDate);
-  }
-
-  return toPickerDate(filters.endDate);
-};
-
-const toDayLabel = (value: string, fallback: string, locale: string) => {
-  const date = parseDateValue(value);
-  if (!date) {
-    return fallback;
-  }
-
-  return new Intl.DateTimeFormat(locale, {
-    day: '2-digit',
-  }).format(date);
-};
-
-const toShortMonth = (value: string, fallback: string, locale: string) => {
-  const date = parseDateValue(value);
-  if (!date) {
-    return fallback;
-  }
-
-  return new Intl.DateTimeFormat(locale, {
-    month: 'short',
-  })
-    .format(date)
-    .toUpperCase();
-};
-
-const extractComparisonValue = (data: DashboardComparisonData | null, keys: string[]) => {
-  if (!data) {
-    return 0;
-  }
-
-  for (const key of keys) {
-    const value = (data as Record<string, unknown>)[key];
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    if (typeof value === 'string' && value.trim().length > 0) {
-      const parsed = Number(value);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  return 0;
-};
-
-const extractComparisonWindowValue = (
-  data: DashboardComparisonData | null,
-  windowKey: keyof Pick<DashboardComparisonData, 'today_vs_yesterday' | 'this_month_vs_last_month'>,
-  field: keyof NonNullable<DashboardComparisonData['today_vs_yesterday']>
-) => {
-  const windowData = data?.[windowKey];
-  return toNumber(windowData?.[field]);
-};
-
-const formatExpenseCurrency = (value: number, locale: string) => {
-  if (value <= 0) {
-    return formatDetailCurrency(0, locale);
-  }
-
-  return formatSignedCurrency(-Math.abs(value), locale);
-};
-
-const formatPercentValue = (value: number) => `${Math.round(value)}%`;
-
-const getInsightTone = (severity?: string) => {
-  switch (severity) {
-    case 'critical':
-      return 'danger' as const;
-    case 'warning':
-      return 'warning' as const;
-    default:
-      return 'primary' as const;
-  }
-};
-
-const getInsightIcon = (severity?: string): keyof typeof MaterialCommunityIcons.glyphMap => {
-  switch (severity) {
-    case 'critical':
-      return 'alert-octagon-outline';
-    case 'warning':
-      return 'alert-outline';
-    default:
-      return 'information-outline';
-  }
-};
-
-const normalizeCategoryLabel = (category: string, language: string) => {
-  const normalized = category.trim().toLowerCase();
-
-  if (normalized === 'debt payment') {
-    return language === 'id' ? 'Pembayaran utang' : 'Debt payment';
-  }
-
-  return category.trim();
-};
-
-const getCategoryIcon = (category: string): keyof typeof MaterialCommunityIcons.glyphMap => {
-  const normalized = category.trim().toLowerCase();
-
-  if (normalized.includes('debt payment') || normalized.includes('pembayaran utang')) {
-    return 'bank-transfer';
-  }
-  if (normalized.includes('food') || normalized.includes('makan') || normalized.includes('dining')) {
-    return 'silverware-fork-knife';
-  }
-  if (normalized.includes('transport') || normalized.includes('transpor') || normalized.includes('travel')) {
-    return 'train-car';
-  }
-  if (normalized.includes('shopping') || normalized.includes('belanja')) {
-    return 'shopping-outline';
-  }
-  if (normalized.includes('health') || normalized.includes('kesehatan')) {
-    return 'heart-pulse';
-  }
-  if (normalized.includes('bill') || normalized.includes('tagihan') || normalized.includes('utility')) {
-    return 'receipt-text-outline';
-  }
-  if (normalized.includes('salary') || normalized.includes('income') || normalized.includes('pendapatan')) {
-    return 'cash-multiple';
-  }
-
-  return 'shape-outline';
+type ActivityItem = {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  title: string;
+  meta: string;
+  amount: string;
+  kind: string;
+  positive?: boolean;
 };
 
 export default function DashboardScreen() {
@@ -1213,7 +834,7 @@ export default function DashboardScreen() {
                   <Text style={styles.filterCardMeta}>{filterModeLabel}</Text>
                 </View>
 
-                <Pressable onPress={openFilterModal} style={styles.filterCardAction}>
+                <Pressable onPress={openFilterModal} accessibilityRole="button" accessibilityLabel={t('dashboard.filter.action')} style={styles.filterCardAction}>
                   <MaterialCommunityIcons name="tune-variant" size={16} color={colors.onPrimary} />
                   <Text style={styles.filterCardActionText}>{t('dashboard.filter.action')}</Text>
                 </Pressable>
@@ -1415,8 +1036,8 @@ export default function DashboardScreen() {
                 </View>
               ) : null}
 
-              <Pressable onPress={() => router.push('/budgets')} style={styles.secondaryAction}>
-                <Text style={styles.secondaryActionText}>{t('dashboard.manageBudgetGoals')}</Text>
+                <Pressable onPress={() => router.push('/budgets')} accessibilityRole="button" accessibilityLabel={t('dashboard.manageBudgetGoals')} style={styles.secondaryAction}>
+                  <Text style={styles.secondaryActionText}>{t('dashboard.manageBudgetGoals')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
               </Pressable>
             </Animated.View>
@@ -1427,6 +1048,8 @@ export default function DashboardScreen() {
                 <View style={styles.segmentedControl}>
                   <Pressable
                     onPress={() => setTrendMode('daily')}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('dashboard.daily')}
                     style={[styles.segmentButton, trendMode === 'daily' && styles.segmentButtonMuted]}>
                     <Text style={[styles.segmentLabel, trendMode === 'daily' && styles.segmentLabelActive]}>
                       {t('dashboard.daily')}
@@ -1434,6 +1057,8 @@ export default function DashboardScreen() {
                   </Pressable>
                   <Pressable
                     onPress={() => setTrendMode('monthly')}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('dashboard.monthly')}
                     style={[styles.segmentButton, trendMode === 'monthly' && styles.segmentButtonActive]}>
                     <Text style={[styles.segmentLabel, trendMode === 'monthly' && styles.segmentLabelSelected]}>
                       {t('dashboard.monthly')}
@@ -1448,6 +1073,8 @@ export default function DashboardScreen() {
                     <Pressable
                       key={`${point.label}-${point.value}`}
                       onPress={() => setSelectedBarIndex(selectedBarIndex === index ? null : index)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${point.label}: ${formatCompactCurrency(point.value, locale)}`}
                       style={styles.trendItem}>
                       {selectedBarIndex === index ? (
                         <View style={styles.tooltipContainer}>
@@ -1527,19 +1154,17 @@ export default function DashboardScreen() {
 
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <Pressable
-                  onPress={() => {
-                    // Open quick pay modal instead of full debt page for faster action
-                    setDebtPayModalVisible(true);
-                  }}
+                  onPress={() => setDebtPayModalVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('dashboard.consolidate')}
                   style={[styles.secondaryAction, { flex: 1 }]}>
                   <Text style={styles.secondaryActionText}>{t('dashboard.consolidate')}</Text>
                   <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
                 </Pressable>
                 <Pressable
-                  onPress={() => {
-                    // Secondary quick pay action also opens modal
-                    setDebtPayModalVisible(true);
-                  }}
+                  onPress={() => setDebtPayModalVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={language === 'id' ? 'Bayar Utang' : 'Pay Debt'}
                   style={[styles.secondaryAction, { flex: 1, backgroundColor: colors.warning }]}>
                   <MaterialCommunityIcons name="cash-fast" size={16} color={colors.onPrimary} />
                   <Text style={styles.secondaryActionText}>
@@ -1556,7 +1181,9 @@ export default function DashboardScreen() {
                   hitSlop={10}
                   onPress={() => {
                     router.navigate('/activity');
-                  }}>
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('dashboard.recentTransactionsViewAll')}>
                   <Text style={styles.linkText}>{t('dashboard.recentTransactionsViewAll')}</Text>
                 </Pressable>
               </View>
@@ -1905,6 +1532,8 @@ export default function DashboardScreen() {
                 onPress={() => {
                   router.navigate('/reports');
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('dashboard.optimizeStrategy')}
                 style={styles.primaryAction}>
                 <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>
               </Pressable>
@@ -1989,7 +1618,7 @@ export default function DashboardScreen() {
                     <Text style={styles.filterModalTitle}>{t('dashboard.filter.title')}</Text>
                     <Text style={styles.filterModalSubtitle}>{t('dashboard.filter.helper')}</Text>
                   </View>
-                  <Pressable onPress={closeFilterModal} style={styles.filterModalClose}>
+                  <Pressable onPress={closeFilterModal} accessibilityRole="button" accessibilityLabel={t('common.cancel')} style={styles.filterModalClose}>
                     <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
                   </Pressable>
                 </View>
@@ -2026,6 +1655,8 @@ export default function DashboardScreen() {
                                 endDate: mode === 'range' ? current.endDate : '',
                               }))
                             }
+                            accessibilityRole="radio"
+                            accessibilityLabel={mode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode')}
                             style={[
                               styles.filterModeButton,
                               active && {
@@ -2057,6 +1688,8 @@ export default function DashboardScreen() {
                         <Text style={styles.filterFieldLabel}>{t('dashboard.filter.monthLabel')}</Text>
                         <Pressable
                           onPress={openMonthPicker}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('dashboard.filter.monthLabel')}
                           style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
                           <View style={styles.filterPickerIcon}>
                             <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.primary} />
@@ -2075,6 +1708,8 @@ export default function DashboardScreen() {
                           <Text style={styles.filterFieldLabel}>{t('dashboard.filter.startDate')}</Text>
                           <Pressable
                             onPress={() => openFilterDatePicker('startDate')}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('dashboard.filter.startDate')}
                             style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
                             <View style={styles.filterPickerIcon}>
                               <MaterialCommunityIcons name="calendar-start" size={18} color={colors.primary} />
@@ -2095,6 +1730,8 @@ export default function DashboardScreen() {
                           <Text style={styles.filterFieldLabel}>{t('dashboard.filter.endDate')}</Text>
                           <Pressable
                             onPress={() => openFilterDatePicker('endDate')}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('dashboard.filter.endDate')}
                             style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
                             <View style={styles.filterPickerIcon}>
                               <MaterialCommunityIcons name="calendar-end" size={18} color={colors.primary} />
@@ -2112,15 +1749,21 @@ export default function DashboardScreen() {
                         </View>
 
                         {Platform.OS === 'ios' && iosFilterDatePickerVisible && filterDateTarget ? (
-                          <View style={styles.filterDatePickerCard}>
-                            <DateTimePicker
-                              value={toDashboardFilterPickerValue(draftFilters, filterDateTarget)}
-                              mode="date"
-                              display="spinner"
-                              onChange={handleFilterDateChange}
-                              accentColor={colors.primary}
-                              themeVariant={isDark ? 'dark' : 'light'}
-                            />
+                          <View style={styles.iosDatePickerOverlay}>
+                            <Pressable style={StyleSheet.absoluteFill} onPress={() => setIosFilterDatePickerVisible(false)} />
+                            <View style={styles.iosDatePickerSheet}>
+                              <DateTimePicker
+                                value={toDashboardFilterPickerValue(draftFilters, filterDateTarget)}
+                                mode="date"
+                                display="spinner"
+                                onChange={handleFilterDateChange}
+                                accentColor={colors.primary}
+                                themeVariant={isDark ? 'dark' : 'light'}
+                              />
+                              <Pressable onPress={() => setIosFilterDatePickerVisible(false)} style={styles.iosDatePickerDone}>
+                                <Text style={styles.iosDatePickerDoneText}>{t('dashboard.filter.apply')}</Text>
+                              </Pressable>
+                            </View>
                           </View>
                         ) : null}
                       </>
@@ -2137,10 +1780,10 @@ export default function DashboardScreen() {
 
                 <View style={styles.filterModalFooter}>
                   <View style={styles.filterModalActions}>
-                    <Pressable onPress={resetFilters} style={styles.filterSecondaryButton}>
+                    <Pressable onPress={resetFilters} accessibilityRole="button" accessibilityLabel={t('dashboard.filter.reset')} style={styles.filterSecondaryButton}>
                       <Text style={styles.filterSecondaryButtonText}>{t('dashboard.filter.reset')}</Text>
                     </Pressable>
-                    <Pressable onPress={applyFilters} style={styles.filterPrimaryButton}>
+                    <Pressable onPress={applyFilters} accessibilityRole="button" accessibilityLabel={t('dashboard.filter.apply')} style={styles.filterPrimaryButton}>
                       <Text style={styles.filterPrimaryButtonText}>{t('dashboard.filter.apply')}</Text>
                     </Pressable>
                   </View>
@@ -2172,7 +1815,7 @@ export default function DashboardScreen() {
             <View style={styles.debtPayHandle} />
             <View style={styles.debtPayHeader}>
               <Text style={styles.debtPayTitle}>{language === 'id' ? 'Bayar utang sekarang' : 'Pay debt now'}</Text>
-              <Pressable onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }}>
+              <Pressable onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }} accessibilityRole="button" accessibilityLabel={t('common.cancel')}>
                 <MaterialCommunityIcons name="close" size={20} color={colors.shellTextPrimary} />
               </Pressable>
             </View>
@@ -2188,7 +1831,7 @@ export default function DashboardScreen() {
               />
             </View>
             <View style={styles.debtPayActions}>
-              <Pressable onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }} style={styles.debtPayCancel}>
+              <Pressable onPress={() => { setDebtPayModalVisible(false); setDebtPayAmount(''); }} accessibilityRole="button" accessibilityLabel={language === 'id' ? 'Batal' : 'Cancel'} style={styles.debtPayCancel}>
                 <Text style={styles.debtPayCancelText}>{language === 'id' ? 'Batal' : 'Cancel'}</Text>
               </Pressable>
               <Pressable
@@ -2207,6 +1850,8 @@ export default function DashboardScreen() {
                   void loadDashboard(false, filtersRef.current, true);
                 }}
                 disabled={debtPaying}
+                accessibilityRole="button"
+                accessibilityLabel={language === 'id' ? 'Bayar' : 'Pay'}
                 style={[styles.debtPayPay, debtPaying && { opacity: 0.75 }]}
               >
                 {debtPaying ? (
@@ -2236,33 +1881,37 @@ export default function DashboardScreen() {
                 <Text style={styles.monthPickerTitle}>{t('dashboard.filter.monthLabel')}</Text>
                 <Text style={styles.monthPickerSubtitle}>{t('dashboard.filter.monthHelper')}</Text>
               </View>
-              <Pressable onPress={closeMonthPicker} style={styles.monthPickerClose}>
+              <Pressable onPress={closeMonthPicker} accessibilityRole="button" accessibilityLabel={t('common.cancel')} style={styles.monthPickerClose}>
                 <MaterialCommunityIcons name="close" size={18} color={colors.shellTextPrimary} />
               </Pressable>
             </View>
 
             <View style={styles.monthPickerYearRow}>
-              <Pressable
-                onPress={() =>
-                  setMonthPickerState((current) => ({
-                    ...current,
-                    year: current.year - 1,
-                  }))
-                }
-                style={styles.monthPickerYearButton}>
-                <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
-              </Pressable>
-              <Text style={styles.monthPickerYearText}>{monthPickerState.year}</Text>
-              <Pressable
-                onPress={() =>
-                  setMonthPickerState((current) => ({
-                    ...current,
-                    year: current.year + 1,
-                  }))
-                }
-                style={styles.monthPickerYearButton}>
-                <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
-              </Pressable>
+                <Pressable
+                  onPress={() =>
+                    setMonthPickerState((current) => ({
+                      ...current,
+                      year: current.year - 1,
+                    }))
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={language === 'id' ? 'Tahun sebelumnya' : 'Previous year'}
+                  style={styles.monthPickerYearButton}>
+                  <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
+                </Pressable>
+                <Text style={styles.monthPickerYearText}>{monthPickerState.year}</Text>
+                <Pressable
+                  onPress={() =>
+                    setMonthPickerState((current) => ({
+                      ...current,
+                      year: current.year + 1,
+                    }))
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={language === 'id' ? 'Tahun berikutnya' : 'Next year'}
+                  style={styles.monthPickerYearButton}>
+                  <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
+                </Pressable>
             </View>
 
             <View style={styles.monthPickerGrid}>
@@ -2281,6 +1930,8 @@ export default function DashboardScreen() {
                         monthIndex,
                       }))
                     }
+                    accessibilityRole="button"
+                    accessibilityLabel={monthLabel}
                     style={[
                       styles.monthPickerChip,
                       selected && {
@@ -2297,10 +1948,10 @@ export default function DashboardScreen() {
             </View>
 
             <View style={styles.monthPickerActions}>
-              <Pressable onPress={closeMonthPicker} style={styles.monthPickerSecondaryButton}>
+              <Pressable onPress={closeMonthPicker} accessibilityRole="button" accessibilityLabel={t('dashboard.filter.reset')} style={styles.monthPickerSecondaryButton}>
                 <Text style={styles.monthPickerSecondaryButtonText}>{t('dashboard.filter.reset')}</Text>
               </Pressable>
-              <Pressable onPress={applyMonthPicker} style={styles.monthPickerPrimaryButton}>
+              <Pressable onPress={applyMonthPicker} accessibilityRole="button" accessibilityLabel={t('dashboard.filter.apply')} style={styles.monthPickerPrimaryButton}>
                 <Text style={styles.monthPickerPrimaryButtonText}>{t('dashboard.filter.apply')}</Text>
               </Pressable>
             </View>
@@ -3787,6 +3438,35 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
       borderWidth: 1,
       borderColor: colors.shellBorder,
       marginTop: 4,
+    },
+    iosDatePickerOverlay: {
+      position: 'absolute',
+      inset: 0,
+      justifyContent: 'flex-end',
+      zIndex: 100,
+    },
+    iosDatePickerSheet: {
+      backgroundColor: colors.shellCard,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingBottom: 20,
+      shadowColor: '#000',
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: -4 },
+      elevation: 10,
+    },
+    iosDatePickerDone: {
+      alignItems: 'center',
+      paddingVertical: 12,
+      marginHorizontal: 16,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+    },
+    iosDatePickerDoneText: {
+      color: colors.onPrimary,
+      fontSize: 15,
+      fontWeight: '800',
     },
     filterErrorCard: {
       flexDirection: 'row',

@@ -2196,15 +2196,21 @@ export default function ActivityScreen() {
                           </View>
 
                           {Platform.OS === 'ios' && iosFilterDatePickerVisible && filterDateTarget ? (
-                            <View style={styles.datePickerCard}>
-                              <DateTimePicker
-                                value={toPickerDate(draftFilters[filterDateTarget] || getTodayInputValue())}
-                                mode="date"
-                                display="spinner"
-                                onChange={handleFilterDateChange}
-                                accentColor={colors.primary}
-                                themeVariant={isLight ? 'light' : 'dark'}
-                              />
+                            <View style={styles.iosDatePickerOverlay}>
+                              <Pressable style={StyleSheet.absoluteFill} onPress={() => setIosFilterDatePickerVisible(false)} />
+                              <View style={styles.iosDatePickerSheet}>
+                                <DateTimePicker
+                                  value={toPickerDate(draftFilters[filterDateTarget] || getTodayInputValue())}
+                                  mode="date"
+                                  display="spinner"
+                                  onChange={handleFilterDateChange}
+                                  accentColor={colors.primary}
+                                  themeVariant={isLight ? 'light' : 'dark'}
+                                />
+                                <Pressable onPress={() => setIosFilterDatePickerVisible(false)} style={styles.iosDatePickerDone}>
+                                  <Text style={styles.iosDatePickerDoneText}>{t('common.cancel')}</Text>
+                                </Pressable>
+                              </View>
                             </View>
                           ) : null}
                         </>
@@ -2677,15 +2683,21 @@ export default function ActivityScreen() {
                               <Text style={styles.inputDisplayText}>{dateInputLabel}</Text>
                             </Pressable>
                             {Platform.OS === 'ios' && iosDatePickerVisible ? (
-                              <View style={styles.datePickerCard}>
-                                <DateTimePicker
-                                  value={toPickerDate(form.date)}
-                                  mode="date"
-                                  display="spinner"
-                                  onChange={handleDateChange}
-                                  accentColor={modalAccent}
-                                  themeVariant={isLight ? 'light' : 'dark'}
-                                />
+                              <View style={styles.iosDatePickerOverlay}>
+                                <Pressable style={StyleSheet.absoluteFill} onPress={() => setIosDatePickerVisible(false)} />
+                                <View style={styles.iosDatePickerSheet}>
+                                  <DateTimePicker
+                                    value={toPickerDate(form.date)}
+                                    mode="date"
+                                    display="spinner"
+                                    onChange={handleDateChange}
+                                    accentColor={modalAccent}
+                                    themeVariant={isLight ? 'light' : 'dark'}
+                                  />
+                                  <Pressable onPress={() => setIosDatePickerVisible(false)} style={styles.iosDatePickerDone}>
+                                    <Text style={styles.iosDatePickerDoneText}>{t('common.cancel')}</Text>
+                                  </Pressable>
+                                </View>
                               </View>
                             ) : null}
 
@@ -3904,6 +3916,35 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       borderColor: colors.shellBorder,
       paddingHorizontal: 6,
       paddingVertical: 4,
+    },
+    iosDatePickerOverlay: {
+      position: 'absolute',
+      inset: 0,
+      justifyContent: 'flex-end',
+      zIndex: 200,
+    },
+    iosDatePickerSheet: {
+      backgroundColor: colors.shellCard,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingBottom: 20,
+      shadowColor: '#000',
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+      shadowOffset: { width: 0, height: -4 },
+      elevation: 10,
+    },
+    iosDatePickerDone: {
+      alignItems: 'center',
+      paddingVertical: 12,
+      marginHorizontal: 16,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+    },
+    iosDatePickerDoneText: {
+      color: colors.onPrimary,
+      fontSize: 15,
+      fontWeight: '800',
       overflow: 'hidden',
     },
     textareaShell: {
