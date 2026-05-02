@@ -162,8 +162,8 @@ export default function AIAnalystScreen() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}>
         <FlatList
           ref={flatListRef}
           data={allItems}
@@ -171,28 +171,23 @@ export default function AIAnalystScreen() {
           contentContainerStyle={styles.listContent}
           onContentSizeChange={() => !showSuggestions && flatListRef.current?.scrollToEnd()}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => {
             if (isSuggestion(item)) {
-              return (
-                <View style={styles.suggestionBlock}>
-                  <SuggestionCard label={item.label} items={item.items} onSelect={(label) => handleSend(label)} colors={colors} />
-                </View>
-              );
+              return <View style={styles.suggestionBlock}>
+                <SuggestionCard label={item.label} items={item.items} onSelect={(label) => handleSend(label)} colors={colors} />
+              </View>;
             }
             return <AIMessage role={item.role} content={item.content} colors={colors} />;
           }}
-          ListFooterComponent={
-            loading ? (
-              <View style={styles.typingIndicator}>
-                <View style={[styles.typingAvatar, { backgroundColor: alpha(colors.primary, 0.1) }]}>
-                  <MaterialCommunityIcons name="lightning-bolt-outline" size={14} color={colors.primary} />
-                </View>
-                <View style={styles.typingBubble}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              </View>
-            ) : null
-          }
+          ListFooterComponent={loading ? <View style={styles.typingIndicator}>
+            <View style={[styles.typingAvatar, { backgroundColor: alpha(colors.primary, 0.1) }]}>
+              <MaterialCommunityIcons name="lightning-bolt-outline" size={14} color={colors.primary} />
+            </View>
+            <View style={styles.typingBubble}>
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          </View> : null}
         />
 
         <View style={styles.inputBar}>
