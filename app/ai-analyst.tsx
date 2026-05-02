@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -90,6 +90,8 @@ export default function AIAnalystScreen() {
       setMaxChats(usage.max_chats);
     } catch {}
   }, []);
+
+  useEffect(() => { loadUsage(); }, [loadUsage]);
 
   const handleSend = useCallback(async (text?: string) => {
     const messageText = text || input;
