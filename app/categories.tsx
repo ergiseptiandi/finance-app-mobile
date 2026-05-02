@@ -438,9 +438,9 @@ const cardStyles = (colors: AppColorTheme) =>
       gap: 8,
     },
     iconButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 12,
+      width: 44,
+      height: 44,
+      borderRadius: 14,
       backgroundColor: colors.shellCardMuted,
       alignItems: 'center',
       justifyContent: 'center',

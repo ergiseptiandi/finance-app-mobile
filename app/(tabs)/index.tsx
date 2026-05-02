@@ -1915,32 +1915,32 @@ export default function DashboardScreen() {
             <Pressable
               onPress={() => { setFabMenuOpen(false); router.push('/wallets'); }}
               style={styles.fabMenuItem}
-              accessibilityLabel={language === 'id' ? 'Buka Wallet' : 'Open Wallet'}
+              accessibilityLabel={t('fab.wallet')}
               accessibilityRole="button">
               <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
                 <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
               </View>
-              <Text style={styles.fabMenuLabel}>Wallet</Text>
+              <Text style={styles.fabMenuLabel}>{t('fab.wallet')}</Text>
             </Pressable>
             <Pressable
               onPress={() => { setFabMenuOpen(false); router.push('/categories'); }}
               style={styles.fabMenuItem}
-              accessibilityLabel={language === 'id' ? 'Buka Kategori' : 'Open Categories'}
+              accessibilityLabel={t('fab.categories')}
               accessibilityRole="button">
               <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.secondaryAccent, 0.12) }]}>
                 <MaterialCommunityIcons name="shape-outline" size={18} color={colors.secondaryAccent} />
               </View>
-              <Text style={styles.fabMenuLabel}>Kategori</Text>
+              <Text style={styles.fabMenuLabel}>{t('fab.categories')}</Text>
             </Pressable>
             <Pressable
               onPress={() => { setFabMenuOpen(false); router.push('/budgets'); }}
               style={styles.fabMenuItem}
-              accessibilityLabel={language === 'id' ? 'Buka Anggaran' : 'Open Budgets'}
+              accessibilityLabel={t('fab.budgets')}
               accessibilityRole="button">
               <View style={[styles.fabMenuIcon, { backgroundColor: alpha(colors.warning, 0.12) }]}>
                 <MaterialCommunityIcons name="flag-outline" size={18} color={colors.warning} />
               </View>
-              <Text style={styles.fabMenuLabel}>Anggaran</Text>
+              <Text style={styles.fabMenuLabel}>{t('fab.budgets')}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -1948,7 +1948,7 @@ export default function DashboardScreen() {
         <Pressable
           onPress={() => setFabMenuOpen(!fabMenuOpen)}
           style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-          accessibilityLabel={fabMenuOpen ? (language === 'id' ? 'Tutup menu' : 'Close menu') : (language === 'id' ? 'Buka menu akses cepat' : 'Open quick access menu')}
+          accessibilityLabel={fabMenuOpen ? t('dashboard.closeMenu') : t('dashboard.openMenu')}
           accessibilityRole="button">
           <MaterialCommunityIcons
             name={fabMenuOpen ? 'close' : 'plus'}
@@ -2364,9 +2364,9 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
     },
     iconButton: {
       position: 'relative',
-      width: 40,
-      height: 40,
-      borderRadius: 12,
+      width: 44,
+      height: 44,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.shellCard,
@@ -3998,9 +3998,9 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
       elevation: 4,
     },
     fabMenuIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 12,
+      width: 40,
+      height: 40,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
     },

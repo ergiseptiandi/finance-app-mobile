@@ -569,8 +569,8 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       opacity: 0.92,
     },
     iconWrap: {
-      width: 42,
-      height: 42,
+      width: 44,
+      height: 44,
       borderRadius: 14,
       backgroundColor: colors.shellCardMuted,
       alignItems: 'center',

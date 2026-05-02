@@ -3556,9 +3556,9 @@ const metricStyles = (colors: AppColorTheme) =>
       borderColor: colors.shellBorder,
     },
     iconWrap: {
-      width: 34,
-      height: 34,
-      borderRadius: 12,
+      width: 44,
+      height: 44,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
     },
