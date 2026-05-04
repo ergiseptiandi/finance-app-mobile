@@ -352,6 +352,7 @@ export default function ReportsScreen() {
   );
   const [iosCustomDatePickerVisible, setIosCustomDatePickerVisible] = useState(false);
   const [customDateTarget, setCustomDateTarget] = useState<ReportsDateTarget>(null);
+  const customDateTargetRef = useRef<ReportsDateTarget>(null);
   const filtersRef = useRef<ReportsFilters>(createDefaultReportsFilters());
   const hasReportsSnapshot = Boolean(
     expenseByCategory.length || spendingTrends.length || highestCategory || averageDaily || remainingBalance
@@ -442,16 +443,17 @@ export default function ReportsScreen() {
         return;
       }
 
-      if (!selectedDate || !customDateTarget) {
+      const target = customDateTargetRef.current;
+      if (!selectedDate || !target) {
         return;
       }
 
       setDraftFilters((current) => ({
         ...current,
-        [customDateTarget]: selectedDate.toISOString().slice(0, 10),
+        [target]: selectedDate.toISOString().slice(0, 10),
       }));
     },
-    [customDateTarget]
+    []
   );
 
   const openCustomDatePicker = useCallback(
@@ -459,6 +461,7 @@ export default function ReportsScreen() {
       const current = target === 'startDate' ? draftFilters.startDate : draftFilters.endDate;
       const currentDate = parseDateValue(current) ?? new Date();
       setCustomDateTarget(target);
+      customDateTargetRef.current = target;
 
       if (Platform.OS === 'android') {
         DateTimePickerAndroid.open({

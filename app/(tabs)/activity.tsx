@@ -1148,6 +1148,7 @@ export default function ActivityScreen() {
   const [iosDatePickerVisible, setIosDatePickerVisible] = useState(false);
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
+  const filterDateTargetRef = useRef<'startDate' | 'endDate' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
   const searchInputRef = useRef<TextInput>(null);
@@ -1525,14 +1526,15 @@ export default function ActivityScreen() {
         return;
       }
 
-      if (!selectedDate || !filterDateTarget) {
+      const target = filterDateTargetRef.current;
+      if (!selectedDate || !target) {
         return;
       }
 
       const nextDate = selectedDate.toISOString().slice(0, 10);
-      setDraftFilters((current) => ({ ...current, [filterDateTarget]: nextDate }));
+      setDraftFilters((current) => ({ ...current, [target]: nextDate }));
     },
-    [filterDateTarget]
+    []
   );
 
   const openFilterDatePicker = useCallback(
@@ -1541,6 +1543,7 @@ export default function ActivityScreen() {
       const currentDate = toPickerDate(currentValue);
 
       setFilterDateTarget(target);
+      filterDateTargetRef.current = target;
 
       if (Platform.OS === 'android') {
         DateTimePickerAndroid.open({

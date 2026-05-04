@@ -135,6 +135,7 @@ export default function DashboardScreen() {
   );
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
+  const filterDateTargetRef = useRef<'startDate' | 'endDate' | null>(null);
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
@@ -460,22 +461,24 @@ export default function DashboardScreen() {
         return;
       }
 
-      if (!selectedDate || !filterDateTarget) {
+      const target = filterDateTargetRef.current;
+      if (!selectedDate || !target) {
         return;
       }
 
       setDraftFilters((current) => ({
         ...current,
-        [filterDateTarget]: selectedDate.toISOString().slice(0, 10),
+        [target]: selectedDate.toISOString().slice(0, 10),
       }));
     },
-    [filterDateTarget]
+    []
   );
 
   const openFilterDatePicker = useCallback(
     (target: 'startDate' | 'endDate') => {
       const currentDate = toDashboardFilterPickerValue(draftFilters, target);
       setFilterDateTarget(target);
+      filterDateTargetRef.current = target;
 
       if (Platform.OS === 'android') {
         DateTimePickerAndroid.open({

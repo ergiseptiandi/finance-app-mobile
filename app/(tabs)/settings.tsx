@@ -174,6 +174,7 @@ export default function SettingsScreen() {
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
   const [exportDateTarget, setExportDateTarget] = useState<ExportDateTarget>(null);
+  const exportDateTargetRef = useRef<ExportDateTarget>(null);
   const [iosExportDatePickerVisible, setIosExportDatePickerVisible] = useState(false);
   const refreshUnreadNotificationCount = useCallback(async (accessToken: string) => {
     try {
@@ -271,12 +272,13 @@ export default function SettingsScreen() {
         return;
       }
 
-      if (!selectedDate || !exportDateTarget) {
+      const target = exportDateTargetRef.current;
+      if (!selectedDate || !target) {
         return;
       }
 
       const nextValue = selectedDate.toISOString().slice(0, 10);
-      if (exportDateTarget === 'startDate') {
+      if (target === 'startDate') {
         setExportStartDate(nextValue);
       } else {
         setExportEndDate(nextValue);
@@ -286,7 +288,7 @@ export default function SettingsScreen() {
         setIosExportDatePickerVisible(false);
       }
     },
-    [exportDateTarget]
+    []
   );
 
   const openExportCustomDatePicker = useCallback(
@@ -294,6 +296,7 @@ export default function SettingsScreen() {
       const currentValue = target === 'startDate' ? exportStartDate : exportEndDate;
       const currentDate = parseExportDateValue(currentValue) ?? new Date();
       setExportDateTarget(target);
+      exportDateTargetRef.current = target;
 
       if (Platform.OS === 'android') {
         DateTimePickerAndroid.open({
