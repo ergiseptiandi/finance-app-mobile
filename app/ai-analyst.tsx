@@ -16,9 +16,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AIMessage } from '@/components/ai/ai-message';
 import { SuggestionCard, type SuggestionItem } from '@/components/ai/suggestion-card';
+import { computeSalaryCycleDates } from '@/components/dashboard/dashboard-utils';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getChatUsage, sendChatMessage } from '@/lib/api/ai';
+import { getNotificationSettings } from '@/lib/api/notifications';
 import { getAuthSession } from '@/lib/auth-session';
 import { useAppLanguage } from '@/providers/language-provider';
 
