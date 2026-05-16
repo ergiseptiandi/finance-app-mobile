@@ -22,11 +22,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { computeSalaryCycleDates, toLocalDateString } from '@/components/dashboard/dashboard-utils';
 import { ActivitySkeleton } from '@/components/ui/skeleton';
+import { toast } from '@/components/ui/toast';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError } from '@/lib/api/auth';
 import { listCategories, type CategoryRecord } from '@/lib/api/categories';
+import { getNotificationSettings } from '@/lib/api/notifications';
 import {
   createTransaction,
   deleteTransaction,
@@ -35,8 +38,8 @@ import {
   listTransactions,
   updateTransaction,
   type TransactionRecord,
-  type TransactionSummaryParams,
   type TransactionSummaryData,
+  type TransactionSummaryParams,
   type TransactionType,
 } from '@/lib/api/transactions';
 import { listWallets, type WalletRecord } from '@/lib/api/wallets';
@@ -44,10 +47,9 @@ import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
 import { useAppLanguage } from '@/providers/language-provider';
 import { useNetworkStatus } from '@/providers/network-status-provider';
-import { toast } from '@/components/ui/toast';
 
 type ActivityFilterType = 'all' | TransactionType;
-type ActivityDateFilterMode = 'month' | 'range';
+type ActivityDateFilterMode = 'month' | 'range' | 'cycle';
 
 type PaginationState = {
   page: number;
@@ -141,14 +143,14 @@ const createTransactionListParams = (filters: ActivityListFilters, page: number,
   type: filters.type === 'all' ? undefined : filters.type,
   category: filters.category || undefined,
   month: filters.dateMode === 'month' ? filters.month : undefined,
-  start_date: filters.dateMode === 'range' ? filters.startDate : undefined,
-  end_date: filters.dateMode === 'range' ? filters.endDate : undefined,
+  start_date: filters.dateMode === 'range' || filters.dateMode === 'cycle' ? filters.startDate : undefined,
+  end_date: filters.dateMode === 'range' || filters.dateMode === 'cycle' ? filters.endDate : undefined,
 });
 
 const createTransactionSummaryParams = (filters: ActivityListFilters): TransactionSummaryParams => ({
   month: filters.dateMode === 'month' ? filters.month : undefined,
-  start_date: filters.dateMode === 'range' ? filters.startDate : undefined,
-  end_date: filters.dateMode === 'range' ? filters.endDate : undefined,
+  start_date: filters.dateMode === 'range' || filters.dateMode === 'cycle' ? filters.startDate : undefined,
+  end_date: filters.dateMode === 'range' || filters.dateMode === 'cycle' ? filters.endDate : undefined,
 });
 
 const createActivityCacheSuffix = (filters: ActivityListFilters) =>
@@ -699,8 +701,8 @@ const CATEGORY_ICON_MAP: Record<string, { icon: string; color: string }> = {
 
   investasi: { icon: 'chart-line', color: '#27ae60' },
   investment: { icon: 'chart-line', color: '#27ae60' },
-  transfer: { icon: 'bank-transfer-outline', color: '#3498db' },
-  transferbank: { icon: 'bank-transfer-outline', color: '#3498db' },
+  transfer: { icon: 'bank-transfer', color: '#3498db' },
+  transferbank: { icon: 'bank-transfer', color: '#3498db' },
   setoran: { icon: 'bank-outline', color: '#27ae60' },
   'tarik tunai': { icon: 'cash-outline', color: '#7f8c8d' },
   mutasi: { icon: 'swap-horizontal-outline', color: '#7f8c8d' },
@@ -1149,6 +1151,7 @@ export default function ActivityScreen() {
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const filterDateTargetRef = useRef<'startDate' | 'endDate' | null>(null);
+  const [salaryDay, setSalaryDay] = useState<number>(25);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
   const searchInputRef = useRef<TextInput>(null);
@@ -1158,11 +1161,11 @@ export default function ActivityScreen() {
   const modalLift = keyboardOpen ? Math.max(36, keyboardHeight - insets.bottom + 28) : 0;
   const hasActivitySnapshot = Boolean(
     transactions.length ||
-      categories.length ||
-      pagination.total ||
-      summary.total_income ||
-      summary.total_expense ||
-      summary.balance
+    categories.length ||
+    pagination.total ||
+    summary.total_income ||
+    summary.total_expense ||
+    summary.balance
   );
   const clearSearch = useCallback(() => {
     setSearchQuery('');
@@ -1171,6 +1174,25 @@ export default function ActivityScreen() {
     requestAnimationFrame(() => {
       scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     });
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const fetchSalaryDay = async () => {
+      try {
+        const session = await getAuthSession();
+        if (!session || !active) return;
+        const response = await getNotificationSettings(session.token.access_token);
+        const day = Number(response.Data?.salary_day);
+        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
+          setSalaryDay(day);
+        }
+      } catch {
+        // keep default
+      }
+    };
+    fetchSalaryDay();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -1531,7 +1553,7 @@ export default function ActivityScreen() {
         return;
       }
 
-      const nextDate = selectedDate.toISOString().slice(0, 10);
+      const nextDate = toLocalDateString(selectedDate);
       setDraftFilters((current) => ({ ...current, [target]: nextDate }));
     },
     []
@@ -1594,15 +1616,29 @@ export default function ActivityScreen() {
       }
     }
 
+    let nextFilters: ActivityListFilters;
+
+    if (draftFilters.dateMode === 'cycle') {
+      const cycleDates = computeSalaryCycleDates(salaryDay);
+      nextFilters = {
+        ...draftFilters,
+        month: '',
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate,
+      };
+    } else {
+      nextFilters = draftFilters;
+    }
+
     setFilterError('');
     setLoading(true);
     setTransactions([]);
     setPagination(DEFAULT_PAGINATION);
-    setFilters(draftFilters);
+    setFilters(nextFilters);
     setFilterModalVisible(false);
     setIosFilterDatePickerVisible(false);
     setFilterDateTarget(null);
-  }, [draftFilters, t]);
+  }, [draftFilters, salaryDay, t]);
 
   const handleSaveTransaction = useCallback(async () => {
     const normalizedCategory = form.category.trim();
@@ -1788,8 +1824,8 @@ export default function ActivityScreen() {
     isIncomeForm
       ? form.walletId ?? mainWallet?.id ?? null
       : form.walletId && walletMap.get(form.walletId) && !isMainWalletName(walletMap.get(form.walletId)?.name)
-      ? form.walletId
-      : null;
+        ? form.walletId
+        : null;
   const selectedWalletLabel =
     form.walletId && walletMap.get(form.walletId)
       ? walletMap.get(form.walletId)?.name ?? t('activity.transactions.walletDefault')
@@ -1812,7 +1848,9 @@ export default function ActivityScreen() {
   const activeFilterChips = [
     filters.dateMode === 'month'
       ? toMonthInputLabel(filters.month, locale)
-      : `${toDateInputLabel(filters.startDate, locale)} - ${toDateInputLabel(filters.endDate, locale)}`,
+      : filters.dateMode === 'cycle'
+        ? t('activity.transactions.filterCycleMode')
+        : `${toDateInputLabel(filters.startDate, locale)} - ${toDateInputLabel(filters.endDate, locale)}`,
     activeFilterWalletLabel,
     filters.type !== 'all'
       ? filters.type === 'income'
@@ -1893,14 +1931,36 @@ export default function ActivityScreen() {
             {!searchActive ? <View style={styles.filterSummaryCard}>
               <View style={styles.filterSummaryHeader}>
                 <View style={styles.filterSummaryCopy}>
-                  <Text style={styles.filterSummaryKicker}>{t('activity.transactions.filterTitle')}</Text>
-                  <Text style={styles.filterSummaryText}>{t('activity.transactions.filterHelper')}</Text>
+                  <Text style={styles.filterSummaryKicker}>{t('activity.transactions.filterKicker')}</Text>
+                  <Text numberOfLines={1} style={styles.filterSummaryTitle}>
+                    {filters.dateMode === 'month'
+                      ? toMonthInputLabel(filters.month, locale)
+                      : filters.dateMode === 'cycle'
+                        ? t('activity.transactions.filterCycleMode')
+                        : `${toDateInputLabel(filters.startDate, locale)} - ${toDateInputLabel(filters.endDate, locale)}`}
+                  </Text>
+                  <Text style={styles.filterSummaryText}>
+                    {filters.dateMode === 'month'
+                      ? t('activity.transactions.filterMonthMode')
+                      : filters.dateMode === 'cycle'
+                        ? t('activity.transactions.filterCycleMode')
+                        : t('activity.transactions.filterRangeMode')}
+                  </Text>
                 </View>
+                <Pressable onPress={openFilterModal} style={styles.filterSummaryAction}>
+                  <MaterialCommunityIcons name="tune-variant" size={16} color={colors.onPrimary} />
+                  <Text style={styles.filterSummaryActionText}>{t('activity.transactions.filterAction')}</Text>
+                </Pressable>
               </View>
 
               <View style={styles.filterChipWrap}>
-                {activeFilterChips.map((label) => (
+                {activeFilterChips.map((label, idx) => (
                   <View key={label} style={styles.filterChip}>
+                    <MaterialCommunityIcons
+                      name={idx === 0 ? (filters.dateMode === 'month' ? 'calendar-month-outline' : filters.dateMode === 'cycle' ? 'calendar-sync-outline' : 'calendar-range-outline') : 'tag-outline'}
+                      size={12}
+                      color={colors.primary}
+                    />
                     <Text style={styles.filterChipText}>{label}</Text>
                   </View>
                 ))}
@@ -2061,7 +2121,7 @@ export default function ActivityScreen() {
                       </View>
 
                       <View style={styles.typeSegment}>
-                        {(['month', 'range'] as ActivityDateFilterMode[]).map((mode) => {
+                        {(['month', 'range', 'cycle'] as ActivityDateFilterMode[]).map((mode) => {
                           const active = draftFilters.dateMode === mode;
                           return (
                             <Pressable
@@ -2088,7 +2148,13 @@ export default function ActivityScreen() {
                                   { backgroundColor: active ? alpha(colors.primary, 0.16) : colors.shellCardMuted },
                                 ]}>
                                 <MaterialCommunityIcons
-                                  name={mode === 'month' ? 'calendar-month-outline' : 'calendar-range-outline'}
+                                  name={
+                                    mode === 'month'
+                                      ? 'calendar-month-outline'
+                                      : mode === 'cycle'
+                                        ? 'calendar-sync-outline'
+                                        : 'calendar-range-outline'
+                                  }
                                   size={16}
                                   color={active ? colors.primary : colors.shellTextMuted}
                                 />
@@ -2096,14 +2162,41 @@ export default function ActivityScreen() {
                               <Text style={[styles.typePillText, active && { color: colors.primary }]}>
                                 {mode === 'month'
                                   ? t('activity.transactions.filterMonthMode')
-                                  : t('activity.transactions.filterRangeMode')}
+                                  : mode === 'cycle'
+                                    ? t('activity.transactions.filterCycleMode')
+                                    : t('activity.transactions.filterRangeMode')}
                               </Text>
                             </Pressable>
                           );
                         })}
                       </View>
 
-                      {draftFilters.dateMode === 'month' ? (
+                      {draftFilters.dateMode === 'cycle' ? (
+                        <View style={styles.cycleInfoCard}>
+                          <View style={[styles.typePillIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                            <MaterialCommunityIcons name="cash" size={16} color={colors.primary} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.cycleInfoText}>
+                              {t('activity.transactions.filterCycleDescription', { day: salaryDay })}
+                            </Text>
+                            <Text style={styles.cycleInfoMeta}>
+                              {t('activity.transactions.filterCyclePeriod', {
+                                start: toDateInputLabel(computeSalaryCycleDates(salaryDay).startDate, locale),
+                                end: toDateInputLabel(computeSalaryCycleDates(salaryDay).endDate, locale),
+                              })}
+                            </Text>
+                          </View>
+                          <Pressable
+                            onPress={() => {
+                              setFilterModalVisible(false);
+                              router.push('/notification-settings');
+                            }}
+                            style={styles.cycleEditButton}>
+                            <MaterialCommunityIcons name="pencil-outline" size={14} color={colors.primary} />
+                          </Pressable>
+                        </View>
+                      ) : draftFilters.dateMode === 'month' ? (
                         <View style={styles.fieldGroup}>
                           <Text style={styles.fieldLabel}>{t('activity.transactions.filterMonthLabel')}</Text>
                           <View style={styles.monthSummaryCard}>
@@ -2455,12 +2548,12 @@ export default function ActivityScreen() {
                                 {t('activity.transactions.modalCategoryCount', { count: availableCategories.length })}
                               </Text>
                             </View>
+                          </View>
                         </View>
-                      </View>
 
                         <View style={styles.modalSectionCard}>
                           <View style={styles.modalSectionHeader}>
-                            <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}> 
+                            <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
                               <MaterialCommunityIcons name="wallet-outline" size={18} color={modalAccent} />
                             </View>
                             <View style={styles.modalSectionCopy}>
@@ -2524,13 +2617,13 @@ export default function ActivityScreen() {
                                 <Pressable
                                   key={type}
                                   onPress={() =>
-                                      setForm((current) => ({
-                                        ...current,
-                                        type,
-                                        walletId: type === 'income' ? current.walletId ?? mainWallet?.id ?? null : current.walletId,
-                                        category:
-                                          current.type === type
-                                            ? current.category
+                                    setForm((current) => ({
+                                      ...current,
+                                      type,
+                                      walletId: type === 'income' ? current.walletId ?? mainWallet?.id ?? null : current.walletId,
+                                      category:
+                                        current.type === type
+                                          ? current.category
                                           : categories.some((item) => item.type === type && item.name === current.category)
                                             ? current.category
                                             : '',
@@ -2610,7 +2703,7 @@ export default function ActivityScreen() {
                           ) : (
                             <View style={styles.emptyCategoryBox}>
                               <Text style={styles.emptyCategoryText}>{t('activity.transactions.categoryFromSettings')}</Text>
-                            <Pressable onPress={() => router.push('/categories')} style={styles.emptyCategoryButton}>
+                              <Pressable onPress={() => router.push('/categories')} style={styles.emptyCategoryButton}>
                                 <Text style={styles.emptyCategoryButtonText}>{t('activity.transactions.openCategories')}</Text>
                               </Pressable>
                             </View>
@@ -3415,7 +3508,7 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       borderWidth: 1,
       borderColor: colors.shellBorder,
       padding: 16,
-      gap: 14,
+      gap: 12,
       position: 'relative',
       zIndex: 1,
     },
@@ -3427,7 +3520,7 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     filterSummaryCopy: {
       flex: 1,
       minWidth: 0,
-      gap: 4,
+      gap: 2,
     },
     filterSummaryKicker: {
       color: colors.primary,
@@ -3437,16 +3530,39 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       textTransform: 'uppercase',
       letterSpacing: 1.6,
     },
+    filterSummaryTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: '800',
+    },
     filterSummaryText: {
       color: colors.shellTextMuted,
-      fontSize: 13,
-      lineHeight: 18,
-      fontWeight: '600',
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: '500',
     },
-      filterChipWrap: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 10,
+    filterSummaryAction: {
+      flexShrink: 0,
+      minHeight: 36,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: colors.primary,
+    },
+    filterSummaryActionText: {
+      color: colors.onPrimary,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+    filterChipWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
     },
     monthGrid: {
       flexDirection: 'row',
@@ -3454,26 +3570,27 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
       gap: 10,
     },
     filterChip: {
-      minHeight: 36,
-      borderRadius: 14,
-      paddingHorizontal: 14,
-      backgroundColor: colors.shellCardMuted,
+      minHeight: 30,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: alpha(colors.primary, 0.1),
       borderWidth: 1,
-      borderColor: colors.shellBorder,
+      borderColor: alpha(colors.primary, 0.2),
       alignItems: 'center',
       justifyContent: 'center',
       flexDirection: 'row',
-      gap: 6,
+      gap: 5,
     },
     filterChipActive: {
       backgroundColor: alpha(colors.primary, 0.12),
       borderColor: alpha(colors.primary, 0.28),
     },
     filterChipText: {
-      color: colors.shellTextMuted,
+      color: colors.primary,
       fontSize: 11,
       lineHeight: 14,
-      fontWeight: '800',
+      fontWeight: '700',
     },
     filterChipTextActive: {
       color: colors.primary,
@@ -3824,10 +3941,12 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     },
     typeSegment: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: 8,
     },
     typePill: {
-      flex: 1,
+      flexGrow: 1,
+      flexBasis: '45%',
       minHeight: 52,
       borderRadius: 18,
       backgroundColor: colors.shellCardSoft,
@@ -3848,11 +3967,42 @@ const createStyles = (colors: AppColorTheme, topInset: number, bottomInset: numb
     },
     typePillText: {
       color: colors.shellTextSecondary,
-      fontSize: 13,
-      lineHeight: 16,
+      fontSize: 11,
+      lineHeight: 14,
       fontWeight: '800',
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: 0.5,
+    },
+    cycleInfoCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: alpha(colors.primary, 0.06),
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.14),
+    },
+    cycleInfoText: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    cycleInfoMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '500',
+      marginTop: 2,
+    },
+    cycleEditButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.12),
     },
     fieldGroup: {
       gap: 8,

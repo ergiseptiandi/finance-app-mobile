@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,11 +16,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { computeSalaryCycleDates } from '@/components/dashboard/dashboard-utils';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ApiRequestError } from '@/lib/api/auth';
 import { createBudgetGoal, deleteBudgetGoal, listBudgetGoals, updateBudgetGoal, type BudgetGoalRecord, type BudgetGoalStatus, type BudgetSummaryData } from '@/lib/api/budgets';
 import { listCategories, type CategoryRecord } from '@/lib/api/categories';
+import { getNotificationSettings } from '@/lib/api/notifications';
 import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { useAppLanguage } from '@/providers/language-provider';
 import { useNetworkStatus } from '@/providers/network-status-provider';
@@ -196,6 +198,7 @@ export default function BudgetsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [salaryDay, setSalaryDay] = useState<number>(25);
   const [summary, setSummary] = useState<BudgetSummaryData | null>(null);
   const [goals, setGoals] = useState<BudgetGoalRecord[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -256,6 +259,27 @@ export default function BudgetsScreen() {
       throw err;
     }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const fetchSalaryDay = async () => {
+      try {
+        const session = await getAuthSession();
+        if (!session || !active) return;
+        const response = await getNotificationSettings(session.token.access_token);
+        const day = Number(response.Data?.salary_day);
+        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
+          setSalaryDay(day);
+        }
+      } catch {
+        // keep default
+      }
+    };
+    fetchSalaryDay();
+    return () => { active = false; };
+  }, []);
+
+  const salaryCycleDates = useMemo(() => computeSalaryCycleDates(salaryDay), [salaryDay]);
 
   const loadBudgets = useCallback(
     async (isRefresh = false) => {
@@ -418,13 +442,27 @@ export default function BudgetsScreen() {
         <View style={styles.summaryHeader}>
           <View style={styles.summaryHeaderCopy}>
             <Text style={styles.sectionTitle}>{t('budget.summaryTitle')}</Text>
-            <Text style={styles.sectionMeta}>{t('budget.periodLabel', { month: new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date()) })}</Text>
-          </View>
-          <View style={[styles.summaryBadge, overBudget && styles.summaryBadgeDanger]}>
-            <Text style={[styles.summaryBadgeText, overBudget && styles.summaryBadgeTextDanger]}>
-              {overBudget ? t('budget.summaryOverBudget') : t('budget.summaryHealthy')}
+            <Text style={styles.sectionMeta}>
+              {t('budget.periodLabel', {
+                month: new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }).format(
+                  new Date(salaryCycleDates.startDate + 'T00:00:00')
+                ) + ' — ' + new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(
+                  new Date(salaryCycleDates.endDate + 'T00:00:00')
+                ),
+              })}
             </Text>
           </View>
+          <View style={styles.salaryCycleBadge}>
+            <MaterialCommunityIcons name="calendar-sync-outline" size={12} color={colors.primary} />
+            <Text style={styles.salaryCycleBadgeText}>
+              {language === 'id' ? `Siklus gaji tgl ${salaryDay}` : `Pay cycle day ${salaryDay}`}
+            </Text>
+          </View>
+        </View>
+        <View style={[styles.summaryBadge, overBudget && styles.summaryBadgeDanger]}>
+          <Text style={[styles.summaryBadgeText, overBudget && styles.summaryBadgeTextDanger]}>
+            {overBudget ? t('budget.summaryOverBudget') : t('budget.summaryHealthy')}
+          </Text>
         </View>
 
         {summary ? (
@@ -531,40 +569,42 @@ export default function BudgetsScreen() {
         <Text style={styles.sectionMeta}>{t('budget.listMeta')}</Text>
       </View>
 
-      {loading ? (
-        <View style={styles.stateCard}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.stateText}>{t('budget.loading')}</Text>
-        </View>
-      ) : visibleGoals.length === 0 ? (
-        <View style={styles.stateCard}>
-          <MaterialCommunityIcons name="target" size={28} color={colors.outlineVariant} />
-          <Text style={styles.emptyTitle}>{t('budget.emptyTitle')}</Text>
-          <Text style={styles.emptyBody}>{t('budget.emptyBody')}</Text>
-        </View>
-      ) : (
-        <View style={styles.list}>
-          {visibleGoals.map((goal) => (
-            <BudgetGoalCard
-              key={goal.id}
-              goal={goal}
-              colors={colors}
-              locale={locale}
-              t={t}
-              onEdit={() =>
-                setDraft({
-                  id: goal.id,
-                  categoryId: String(goal.category_id),
-                  monthlyAmount: formatCurrencyInput(String(goal.monthly_amount ?? 0)),
-                })
-              }
-              onDelete={() => handleDelete(goal)}
-              deleting={deletingId === goal.id}
-            />
-          ))}
-        </View>
-      )}
-    </ScrollView>
+      {
+        loading ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.stateText}>{t('budget.loading')}</Text>
+          </View>
+        ) : visibleGoals.length === 0 ? (
+          <View style={styles.stateCard}>
+            <MaterialCommunityIcons name="target" size={28} color={colors.outlineVariant} />
+            <Text style={styles.emptyTitle}>{t('budget.emptyTitle')}</Text>
+            <Text style={styles.emptyBody}>{t('budget.emptyBody')}</Text>
+          </View>
+        ) : (
+          <View style={styles.list}>
+            {visibleGoals.map((goal) => (
+              <BudgetGoalCard
+                key={goal.id}
+                goal={goal}
+                colors={colors}
+                locale={locale}
+                t={t}
+                onEdit={() =>
+                  setDraft({
+                    id: goal.id,
+                    categoryId: String(goal.category_id),
+                    monthlyAmount: formatCurrencyInput(String(goal.monthly_amount ?? 0)),
+                  })
+                }
+                onDelete={() => handleDelete(goal)}
+                deleting={deletingId === goal.id}
+              />
+            ))}
+          </View>
+        )
+      }
+    </ScrollView >
   );
 }
 
@@ -786,6 +826,22 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
     },
     summaryBadgeTextDanger: {
       color: colors.danger,
+    },
+    salaryCycleBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 10,
+      backgroundColor: alpha(colors.primary, 0.1),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.2),
+    },
+    salaryCycleBadgeText: {
+      color: colors.primary,
+      fontSize: 10,
+      fontWeight: '700',
     },
     summaryGrid: {
       flexDirection: 'row',

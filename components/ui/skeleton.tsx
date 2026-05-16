@@ -9,7 +9,7 @@ type ShimmerBlockProps = {
   tone?: 'default' | 'inverse';
 };
 
-function ShimmerBlock({ colors, style, tone = 'default' }: ShimmerBlockProps) {
+export function ShimmerBlock({ colors, style, tone = 'default' }: ShimmerBlockProps) {
   const translateX = useRef(new Animated.Value(-140)).current;
   const [width, setWidth] = useState(220);
   const isDark = colors === Colors.dark;

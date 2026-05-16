@@ -1,5 +1,5 @@
-import { request, ApiRequestError } from '@/lib/api/client';
 import { buildApiUrl } from '@/constants/api';
+import { ApiRequestError, request } from '@/lib/api/client';
 
 export type AnalysisResponse = {
   reply: string;
@@ -10,11 +10,22 @@ export type UsageInfo = {
   max_chats: number;
 };
 
-export const sendChatMessage = async (accessToken: string, message: string): Promise<AnalysisResponse> => {
+export type ChatContext = {
+  salary_day?: number;
+  period_start?: string;
+  period_end?: string;
+  period_mode?: string;
+};
+
+export const sendChatMessage = async (
+  accessToken: string,
+  message: string,
+  context?: ChatContext
+): Promise<AnalysisResponse> => {
   const payload = await request<{ Data: AnalysisResponse }>(buildApiUrl('ai/chat'), {
     method: 'POST',
     token: accessToken,
-    body: { message },
+    body: { message, context },
   });
   return payload.Data;
 };
@@ -28,3 +39,4 @@ export const getChatUsage = async (accessToken: string): Promise<UsageInfo> => {
 };
 
 export { ApiRequestError };
+

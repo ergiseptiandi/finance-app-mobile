@@ -18,7 +18,7 @@ import { AIMessage } from '@/components/ai/ai-message';
 import { SuggestionCard, type SuggestionItem } from '@/components/ai/suggestion-card';
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { sendChatMessage, getChatUsage } from '@/lib/api/ai';
+import { getChatUsage, sendChatMessage } from '@/lib/api/ai';
 import { getAuthSession } from '@/lib/auth-session';
 import { useAppLanguage } from '@/providers/language-provider';
 
@@ -48,8 +48,10 @@ export default function AIAnalystScreen() {
   const [loading, setLoading] = useState(false);
   const [chatCount, setChatCount] = useState(0);
   const [maxChats, setMaxChats] = useState(100);
+  const [salaryDay, setSalaryDay] = useState<number>(25);
 
   const showSuggestions = messages.length === 0;
+  const cycleDates = computeSalaryCycleDates(salaryDay);
 
   const suggestionSections: SuggestionSection[] = [
     {
@@ -85,10 +87,21 @@ export default function AIAnalystScreen() {
     try {
       const session = await getAuthSession();
       if (!session) return;
-      const usage = await getChatUsage(session.token.access_token);
-      setChatCount(usage.chat_count);
-      setMaxChats(usage.max_chats);
-    } catch {}
+      const [usage, notifSettings] = await Promise.allSettled([
+        getChatUsage(session.token.access_token),
+        getNotificationSettings(session.token.access_token),
+      ]);
+      if (usage.status === 'fulfilled') {
+        setChatCount(usage.value.chat_count);
+        setMaxChats(usage.value.max_chats);
+      }
+      if (notifSettings.status === 'fulfilled') {
+        const day = Number(notifSettings.value.Data?.salary_day);
+        if (Number.isFinite(day) && day >= 1 && day <= 31) {
+          setSalaryDay(day);
+        }
+      }
+    } catch { }
   }, []);
 
   useEffect(() => { loadUsage(); }, [loadUsage]);
@@ -113,7 +126,12 @@ export default function AIAnalystScreen() {
         router.replace('/login');
         return;
       }
-      const result = await sendChatMessage(session.token.access_token, userMessage.content);
+      const result = await sendChatMessage(session.token.access_token, userMessage.content, {
+        salary_day: salaryDay,
+        period_start: cycleDates.startDate,
+        period_end: cycleDates.endDate,
+        period_mode: 'cycle',
+      });
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -134,7 +152,7 @@ export default function AIAnalystScreen() {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, language]);
+  }, [input, loading, language, salaryDay, cycleDates]);
 
   const isSuggestion = (item: ChatMessage | SuggestionSection): item is SuggestionSection =>
     'key' in item && 'items' in item;

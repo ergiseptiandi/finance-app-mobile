@@ -1,25 +1,22 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
-  Switch,
-  Linking,
-  Platform,
 } from 'react-native';
-import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications';
 
 import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
-import { useAppLanguage } from '@/providers/language-provider';
-import { useAppTheme } from '@/providers/theme-provider';
-import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
 import { ApiRequestError } from '@/lib/api/auth';
 import {
   updateNotificationSettings,
@@ -34,6 +31,9 @@ import {
   sendTestNotification,
   syncDevicePushToken,
 } from '@/lib/push-notifications';
+import { useAppLanguage } from '@/providers/language-provider';
+import { useAppTheme } from '@/providers/theme-provider';
+import { useTransitionOverlay } from '@/providers/transition-overlay-provider';
 
 const PUSH_DEBUG_ENABLED = true;
 const debugNotificationSettings = (...args: unknown[]) => {
@@ -562,7 +562,7 @@ export default function NotificationSettingsScreen() {
       await Linking.openSettings();
     } catch (error) {
       debugNotificationSettings('sound-settings-open-failed', { error });
-      await Linking.openSettings().catch(() => {});
+      await Linking.openSettings().catch(() => { });
     }
   }, []);
 
@@ -754,6 +754,9 @@ export default function NotificationSettingsScreen() {
                     </Pressable>
                   </View>
                 </View>
+                <Text style={styles.salaryDayHelper}>
+                  {t('notificationSettings.salaryDayCycleHint')}
+                </Text>
                 <View style={styles.counterRow}>
                   <Text style={styles.counterLabel}>Hari sebelum:</Text>
                   <View style={styles.counterGroup}>
@@ -1177,6 +1180,14 @@ const createStyles = (colors: AppColorTheme, topInset: number) =>
       fontSize: 16,
       fontWeight: '800',
       color: colors.shellTextPrimary,
+    },
+    salaryDayHelper: {
+      fontSize: 11,
+      lineHeight: 16,
+      color: colors.shellTextMuted,
+      fontWeight: '500',
+      fontStyle: 'italic',
+      marginTop: -4,
     },
     inboxCard: {
       flexDirection: 'row',

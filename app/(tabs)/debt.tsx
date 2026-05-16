@@ -1,38 +1,36 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
+import * as DocumentPicker from 'expo-document-picker';
+import { Image } from 'expo-image';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Keyboard,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  Platform,
   useWindowDimensions,
   View,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import * as DocumentPicker from 'expo-document-picker';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BillingSummaryCard } from '@/components/debt/billing-summary-card';
 import { DebtSkeleton } from '@/components/ui/skeleton';
-import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAppLanguage } from '@/providers/language-provider';
-import { useNetworkStatus } from '@/providers/network-status-provider';
-import { ApiRequestError } from '@/lib/api/auth';
 import { buildAssetUrl } from '@/constants/api';
-import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
+import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ApiRequestError } from '@/lib/api/auth';
 import {
   createDebt,
   createDebtPayment,
@@ -49,7 +47,10 @@ import {
   type InstallmentRecord,
 } from '@/lib/api/debts';
 import { listWallets, type WalletRecord } from '@/lib/api/wallets';
+import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
+import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 
 type StatusTone = 'danger' | 'success' | 'warning' | 'neutral';
 type DebtFormMode = 'create' | 'edit' | 'payment' | 'payment-edit';
@@ -102,7 +103,14 @@ const formatCompactCurrency = (value: number, locale: string) =>
     maximumFractionDigits: 0,
   }).format(value);
 
+const toLocalDateString = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
 const parseDate = (value: string) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
@@ -132,7 +140,7 @@ const formatDayLabel = (value: string, locale: string) => {
   }).format(parsed);
 };
 
-const getTodayInputValue = () => new Date().toISOString().slice(0, 10);
+const getTodayInputValue = () => toLocalDateString(new Date());
 
 const toApiDate = (value: string) => {
   const normalized = value.trim();
@@ -155,7 +163,7 @@ const createDebtFormFromRecord = (debt: DebtRecord | DebtDetail): DebtFormState 
   name: debt.name ?? '',
   totalAmount: formatRupiahInput(String(toNumber(debt.total_amount))),
   monthlyInstallment: formatRupiahInput(String(toNumber(debt.monthly_installment))),
-  dueDate: parseDate(debt.due_date)?.toISOString().slice(0, 10) ?? getTodayInputValue(),
+  dueDate: parseDate(debt.due_date) ? toLocalDateString(parseDate(debt.due_date)!) : getTodayInputValue(),
 });
 
 const createEmptyPaymentForm = (): PaymentFormState => ({
@@ -326,6 +334,7 @@ export default function DebtScreen() {
   const styles = createStyles(colors, compact, insets.top, insets.bottom);
 
   const [debts, setDebts] = useState<DebtRecord[]>([]);
+  const [aggregatedInstallments, setAggregatedInstallments] = useState<InstallmentRecord[]>([]);
   const [wallets, setWallets] = useState<WalletRecord[]>([]);
   const [selectedDebtId, setSelectedDebtId] = useState<number | null>(null);
   const selectedDebtIdRef = useRef<number | null>(null);
@@ -440,7 +449,7 @@ export default function DebtScreen() {
 
         setSelectedDebt(nextDetail);
         return nextDetail;
-        } catch (err) {
+      } catch (err) {
         if (!(err instanceof Error && err.message === 'missing_session')) {
           if (isOffline && selectedDebt) {
             setDetailError('');
@@ -486,6 +495,25 @@ export default function DebtScreen() {
         const nextDebts = debtResponse.value.Data ?? [];
         setDebts(nextDebts);
         setWallets(walletResponse.status === 'fulfilled' ? walletResponse.value.Data ?? [] : []);
+
+        // Aggregate installments from all active (non-paid) debts for billing summary
+        const activeDebts = nextDebts.filter((debt) => debt.status !== 'paid');
+        if (activeDebts.length > 0) {
+          const installmentResults = await withAuthorizedRequest((accessToken) =>
+            Promise.allSettled(
+              activeDebts.map((debt) => getDebtInstallments(accessToken, debt.id))
+            )
+          );
+          const allInstallments: InstallmentRecord[] = [];
+          for (const result of installmentResults) {
+            if (result.status === 'fulfilled' && result.value.Data) {
+              allInstallments.push(...result.value.Data);
+            }
+          }
+          setAggregatedInstallments(allInstallments);
+        } else {
+          setAggregatedInstallments([]);
+        }
 
         const currentSelectedId = selectedDebtIdRef.current;
         const nextSelectedId =
@@ -596,7 +624,7 @@ export default function DebtScreen() {
           (_x, y) => {
             scrollRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
           },
-          () => {}
+          () => { }
         );
       }, 260);
     },
@@ -675,9 +703,9 @@ export default function DebtScreen() {
           String(
             selectedDebt
               ? Math.min(
-                  Math.max(0, toNumber(selectedDebt.remaining_amount)),
-                  Math.max(0, toNumber(selectedDebt.monthly_installment))
-                ) || Math.max(0, toNumber(selectedDebt.remaining_amount))
+                Math.max(0, toNumber(selectedDebt.remaining_amount)),
+                Math.max(0, toNumber(selectedDebt.monthly_installment))
+              ) || Math.max(0, toNumber(selectedDebt.remaining_amount))
               : 0
           )
         ),
@@ -743,7 +771,7 @@ export default function DebtScreen() {
   const handlePaymentDateChange = useCallback(
     (_event: DateTimePickerEvent, selectedDate?: Date) => {
       if (selectedDate) {
-        setPaymentForm((current) => ({ ...current, paymentDate: selectedDate.toISOString().slice(0, 10) }));
+        setPaymentForm((current) => ({ ...current, paymentDate: toLocalDateString(selectedDate) }));
       }
 
       if (Platform.OS === 'ios') {
@@ -756,7 +784,7 @@ export default function DebtScreen() {
   const handleDebtDueDateChange = useCallback(
     (_event: DateTimePickerEvent, selectedDate?: Date) => {
       if (selectedDate) {
-        setDebtForm((current) => ({ ...current, dueDate: selectedDate.toISOString().slice(0, 10) }));
+        setDebtForm((current) => ({ ...current, dueDate: toLocalDateString(selectedDate) }));
       }
 
       if (Platform.OS === 'ios') {
@@ -1021,10 +1049,10 @@ export default function DebtScreen() {
   const installmentCoverage =
     selected && toNumber(selected.unpaid_installments) + toNumber(selected.paid_installments) > 0
       ? Math.round(
-          (toNumber(selected.paid_installments) /
-            (toNumber(selected.paid_installments) + toNumber(selected.unpaid_installments))) *
-            100
-        )
+        (toNumber(selected.paid_installments) /
+          (toNumber(selected.paid_installments) + toNumber(selected.unpaid_installments))) *
+        100
+      )
       : 0;
   const paymentCount = selected?.payments?.length ?? 0;
   const dueLabel = selected ? formatDueLabel(selected.due_date, t) : '';
@@ -1093,405 +1121,417 @@ export default function DebtScreen() {
           <DebtSkeleton colors={colors} />
         ) : (
           <>
-        <View style={[styles.heroCard, searchActive && styles.collapsedSection]}>
-          {!searchActive ? (
-            <>
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroBadge}>
-                  <MaterialCommunityIcons name="wallet-outline" size={14} color={colors.secondaryAccent} />
-                  <Text style={styles.heroBadgeText}>{t('debt.kicker')}</Text>
-                </View>
-              </View>
+            <View style={[styles.heroCard, searchActive && styles.collapsedSection]}>
+              {!searchActive ? (
+                <>
+                  <View style={styles.heroTopRow}>
+                    <View style={styles.heroBadge}>
+                      <MaterialCommunityIcons name="wallet-outline" size={14} color={colors.secondaryAccent} />
+                      <Text style={styles.heroBadgeText}>{t('debt.kicker')}</Text>
+                    </View>
+                  </View>
 
-              <Text style={styles.heroTitle}>{t('debt.title')}</Text>
-              <Text style={styles.heroSubtitle}>{t('debt.subtitle')}</Text>
+                  <Text style={styles.heroTitle}>{t('debt.title')}</Text>
+                  <Text style={styles.heroSubtitle}>{t('debt.subtitle')}</Text>
 
-              <View style={styles.heroAmountRow}>
-                <View style={styles.heroAmountCopy}>
-                  <Text style={styles.heroAmountLabel}>{t('debt.totalDebt')}</Text>
-                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.heroAmount}>
-                    {formatCompactCurrency(overview.remaining, locale)}
-                  </Text>
-                </View>
-                <View style={styles.heroRatioShell}>
-                  <MaterialCommunityIcons name="chart-line" size={18} color={colors.onPrimary} />
-                  <Text style={styles.heroRatioValue}>{overview.utilization}%</Text>
-                </View>
-              </View>
-
-              <View style={styles.heroMetaRow}>
-                <Text style={styles.heroMeta}>{t('debt.activeDebts')}: {overview.activeDebts}</Text>
-                <Text style={styles.heroMeta}>{t('debt.dueSoon')}: {overview.dueSoon}</Text>
-                <Text style={styles.heroMeta}>{t('debt.overdue')}: {overview.overdue}</Text>
-              </View>
-
-              <View style={styles.heroActionRow}>
-                <Pressable onPress={openCreateDebtForm} style={styles.heroSecondaryAction}>
-                  <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
-                  <Text style={styles.heroSecondaryActionText}>{t('debt.createDebt')}</Text>
-                </Pressable>
-                <Pressable onPress={() => setShowPaidDebts(!showPaidDebts)} style={styles.heroSecondaryActionMuted}>
-                  <MaterialCommunityIcons name={showPaidDebts ? 'format-list-bulleted' : 'history'} size={16} color={colors.onPrimary} />
-                  <Text style={styles.heroSecondaryActionText}>
-                    {showPaidDebts ? t('debt.activeDebts') : t('debt.debtHistory')}
-                  </Text>
-                </Pressable>
-              </View>
-            </>
-          ) : null}
-        </View>
-
-        <View style={styles.searchShell}>
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder={t('debt.searchPlaceholder')}
-            placeholderTextColor={colors.shellTextSoft}
-            style={styles.searchInput}
-            returnKeyType="search"
-            autoCorrect={false}
-          />
-          {searchActive ? (
-            <Pressable onPress={() => setSearchQuery('')} style={styles.searchClearButton}>
-              <MaterialCommunityIcons name="close" size={18} color={colors.shellTextMuted} />
-            </Pressable>
-          ) : null}
-        </View>
-
-        <View style={[styles.summarySection, searchActive && styles.collapsedSection]}>
-          {!searchActive ? (
-            <>
-              <Text style={styles.sectionLabel}>{t('debt.overview')}</Text>
-
-              <View style={styles.metricGrid}>
-                <MetricCard
-                  colors={colors}
-                  icon="cash-multiple"
-                  tone="success"
-                  label={t('debt.paid')}
-                  value={formatCurrency(overview.paid, locale)}
-                  meta={`${overview.utilization}%`}
-                />
-                <MetricCard
-                  colors={colors}
-                  icon="calendar-clock"
-                  tone="warning"
-                  label={t('debt.dueSoon')}
-                  value={String(overview.dueSoon)}
-                  meta={t('debt.activeDebts')}
-                />
-                <MetricCard
-                  colors={colors}
-                  icon="alert-circle-outline"
-                  tone="danger"
-                  label={t('debt.overdue')}
-                  value={String(overview.overdue)}
-                  meta={t('debt.remaining')}
-                />
-                <MetricCard
-                  colors={colors}
-                  icon="bank-outline"
-                  tone="neutral"
-                  label={t('debt.remaining')}
-                  value={formatCompactCurrency(overview.remaining, locale)}
-                  meta={formatCurrency(overview.totalDebt, locale)}
-                />
-              </View>
-            </>
-          ) : null}
-        </View>
-
-        <View style={styles.listSection}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionHeaderCopy}>
-              <Text style={styles.sectionLabel}>{t('debt.selectedDebt')}</Text>
-              <Text style={styles.sectionTitle}>{t('debt.installmentSchedule')}</Text>
-            </View>
-              {!!visibleDebts.length && (
-                <Text style={styles.sectionHeaderMeta}>{visibleDebts.length} items</Text>
-              )}
-            </View>
-
-          {loading ? (
-            <View style={styles.loadingState}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>{t('debt.loading')}</Text>
-            </View>
-          ) : visibleDebts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name={showPaidDebts ? "history" : "wallet-outline"} size={22} color={colors.primary} />
-              <Text style={styles.emptyTitle}>
-                {searchTerm ? t('debt.searchEmptyTitle') : showPaidDebts ? t('debt.noPaidDebts') : t('debt.emptyTitle')}
-              </Text>
-              {searchTerm ? <Text style={styles.emptyBody}>{t('debt.searchEmptyBody')}</Text> : null}
-            </View>
-          ) : (
-            <View style={styles.debtList}>
-              {visibleDebts.map((debt) => {
-                const progress = getInstallmentProgress(debt);
-                const tone = getStatusTone(debt.status);
-                const isSelected = debt.id === selectedDebtId;
-
-                return (
-                    <Pressable
-                      key={debt.id}
-                      onPress={() => selectDebt(debt.id)}
-                      style={({ pressed }) => [
-                        styles.debtCard,
-                        isSelected && styles.debtCardSelected,
-                        pressed && styles.debtCardPressed,
-                      ]}>
-                    <View style={styles.debtCardHeader}>
-                      <View style={styles.debtCardCopy}>
-                        <View style={styles.debtCardTopRow}>
-                          <Text numberOfLines={1} style={styles.debtName}>
-                            {debt.name}
-                          </Text>
-                          <View style={styles.debtCardBadgeStack}>
-                            <StatusChip colors={colors} tone={tone} label={toStatusLabel(debt.status, t)} />
-                          </View>
-                        </View>
-                        <Text style={styles.debtMeta}>
-                          {formatCurrency(toNumber(debt.monthly_installment), locale)} / month
-                        </Text>
-                      </View>
-
-                      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={styles.debtValue}>
-                        {formatCompactCurrency(toNumber(debt.remaining_amount), locale)}
+                  <View style={styles.heroAmountRow}>
+                    <View style={styles.heroAmountCopy}>
+                      <Text style={styles.heroAmountLabel}>{t('debt.totalDebt')}</Text>
+                      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.heroAmount}>
+                        {formatCompactCurrency(overview.remaining, locale)}
                       </Text>
                     </View>
-
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${Math.max(6, progress)}%` }]} />
+                    <View style={styles.heroRatioShell}>
+                      <MaterialCommunityIcons name="chart-line" size={18} color={colors.onPrimary} />
+                      <Text style={styles.heroRatioValue}>{overview.utilization}%</Text>
                     </View>
+                  </View>
 
-                    <View style={styles.debtCardFooter}>
-                      <Text style={styles.debtFooterText}>{formatDate(debt.due_date, locale)}</Text>
-                      <Text style={styles.debtFooterText}>{progress}%</Text>
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation?.();
-                          Alert.alert(
-                            t('debt.deleteConfirmTitle'),
-                            t('debt.deleteConfirmMessage', { name: debt.name }),
-                            [
-                              { text: t('common.cancel'), style: 'cancel' },
-                              {
-                                text: t('debt.deleteDebt'),
-                                style: 'destructive',
-                                onPress: async () => {
-                                  try {
-                                    await withAuthorizedRequest((accessToken) => deleteDebt(accessToken, debt.id));
-                                    await loadDebts(true);
-                                  } catch {}
-                                },
-                              },
-                            ]
-                          );
-                        }}
-                        style={styles.debtCardDeleteButton}>
-                        <MaterialCommunityIcons name="trash-can-outline" size={14} color={colors.danger} />
-                      </Pressable>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
+                  <View style={styles.heroMetaRow}>
+                    <Text style={styles.heroMeta}>{t('debt.activeDebts')}: {overview.activeDebts}</Text>
+                    <Text style={styles.heroMeta}>{t('debt.dueSoon')}: {overview.dueSoon}</Text>
+                    <Text style={styles.heroMeta}>{t('debt.overdue')}: {overview.overdue}</Text>
+                  </View>
 
-        {selectedVisible && selected ? (
-          <View ref={detailCardRef} style={styles.detailCard}>
-            <View style={styles.detailTopRow}>
-              <View style={styles.detailIconWrap}>
-                <MaterialCommunityIcons name="file-document-outline" size={18} color={colors.primary} />
-              </View>
-              <View style={styles.detailHeaderCopy}>
-                <Text style={styles.detailKicker}>{t('debt.selectedDebt')}</Text>
-                <Text style={styles.detailTitle}>{selected.name}</Text>
-                <Text style={styles.detailSubtitle}>{dueLabel}</Text>
-              </View>
-              <StatusChip colors={colors} tone={getStatusTone(selected.status)} label={toStatusLabel(selected.status, t)} />
+                  <View style={styles.heroActionRow}>
+                    <Pressable onPress={openCreateDebtForm} style={styles.heroSecondaryAction}>
+                      <MaterialCommunityIcons name="plus" size={16} color={colors.onPrimary} />
+                      <Text style={styles.heroSecondaryActionText}>{t('debt.createDebt')}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setShowPaidDebts(!showPaidDebts)} style={styles.heroSecondaryActionMuted}>
+                      <MaterialCommunityIcons name={showPaidDebts ? 'format-list-bulleted' : 'history'} size={16} color={colors.onPrimary} />
+                      <Text style={styles.heroSecondaryActionText}>
+                        {showPaidDebts ? t('debt.activeDebts') : t('debt.debtHistory')}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
             </View>
 
-            <View style={styles.detailActions}>
-              <Pressable onPress={openEditDebtForm} style={styles.detailActionButton}>
-                <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.primary} />
-                <Text style={styles.detailActionText}>{t('debt.editDebt')}</Text>
-              </Pressable>
-              <Pressable onPress={handleDeleteDebt} style={[styles.detailActionButton, styles.detailActionDanger]}>
-                <MaterialCommunityIcons name="trash-can-outline" size={16} color={colors.danger} />
-                <Text style={[styles.detailActionText, styles.detailActionDangerText]}>{t('debt.deleteDebt')}</Text>
-              </Pressable>
+            <View style={styles.searchShell}>
+              <MaterialCommunityIcons name="magnify" size={20} color={colors.shellTextMuted} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder={t('debt.searchPlaceholder')}
+                placeholderTextColor={colors.shellTextSoft}
+                style={styles.searchInput}
+                returnKeyType="search"
+                autoCorrect={false}
+              />
+              {searchActive ? (
+                <Pressable onPress={() => setSearchQuery('')} style={styles.searchClearButton}>
+                  <MaterialCommunityIcons name="close" size={18} color={colors.shellTextMuted} />
+                </Pressable>
+              ) : null}
             </View>
 
-            <View style={styles.detailStatsGrid}>
-              <MiniStat
-                colors={colors}
-                label={t('debt.remaining')}
-                value={formatCurrency(selectedRemaining, locale)}
-              />
-              <MiniStat
-                colors={colors}
-                label={t('debt.paid')}
-                value={formatCurrency(selectedPaid, locale)}
-              />
-              <MiniStat
-                colors={colors}
-                label={t('debt.installments')}
-                value={`${toNumber(selected?.paid_installments)}/${toNumber(selected?.paid_installments) + toNumber(selected?.unpaid_installments)}`}
-              />
-              <MiniStat
-                colors={colors}
-                label={t('debt.totalDebt')}
-                value={formatCurrency(selectedTotal, locale)}
-              />
-              <MiniStat
-                colors={colors}
-                label={t('debt.payments')}
-                value={String(paymentCount)}
-              />
+            <View style={[styles.summarySection, searchActive && styles.collapsedSection]}>
+              {!searchActive ? (
+                <>
+                  <Text style={styles.sectionLabel}>{t('debt.overview')}</Text>
+
+                  <View style={styles.metricGrid}>
+                    <MetricCard
+                      colors={colors}
+                      icon="cash-multiple"
+                      tone="success"
+                      label={t('debt.paid')}
+                      value={formatCurrency(overview.paid, locale)}
+                      meta={`${overview.utilization}%`}
+                    />
+                    <MetricCard
+                      colors={colors}
+                      icon="calendar-clock"
+                      tone="warning"
+                      label={t('debt.dueSoon')}
+                      value={String(overview.dueSoon)}
+                      meta={t('debt.activeDebts')}
+                    />
+                    <MetricCard
+                      colors={colors}
+                      icon="alert-circle-outline"
+                      tone="danger"
+                      label={t('debt.overdue')}
+                      value={String(overview.overdue)}
+                      meta={t('debt.remaining')}
+                    />
+                    <MetricCard
+                      colors={colors}
+                      icon="bank-outline"
+                      tone="neutral"
+                      label={t('debt.remaining')}
+                      value={formatCompactCurrency(overview.remaining, locale)}
+                      meta={formatCurrency(overview.totalDebt, locale)}
+                    />
+                  </View>
+                </>
+              ) : null}
             </View>
 
-            <View style={styles.progressPanel}>
-              <View style={styles.progressPanelHeader}>
-                <Text style={styles.progressPanelLabel}>{t('debt.installments')}</Text>
-                <Text style={styles.progressPanelValue}>{selectedProgress}%</Text>
-              </View>
-              <View style={styles.progressTrackLarge}>
-                <View style={[styles.progressFillLarge, { width: `${Math.max(6, selectedProgress)}%` }]} />
-              </View>
-              <View style={styles.progressFootRow}>
-                <Text style={styles.progressFootText}>
-                  {t('debt.remaining')}: {formatCompactCurrency(selectedRemaining, locale)}
-                </Text>
-                <Text style={styles.progressFootText}>
-                  {t('debt.coverage')}: {installmentCoverage}%
-                </Text>
-              </View>
-            </View>
+            {!searchActive && (
+              <BillingSummaryCard
+                installments={aggregatedInstallments}
+                loading={loading}
+                error={!!error}
+                locale={locale}
+                language={language}
+                t={t}
+                colors={colors}
+              />
+            )}
 
-            {nextPendingInstallment ? (
-              <Pressable
-                onPress={() => handleMarkPaid(nextPendingInstallment)}
-                disabled={submittingInstallmentId !== null}
-                style={({ pressed }) => [
-                  styles.primaryAction,
-                  pressed && styles.primaryActionPressed,
-                  submittingInstallmentId !== null && styles.primaryActionDisabled,
-                ]}>
-                {submittingInstallmentId === nextPendingInstallment.id ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <>
-                    <MaterialCommunityIcons name="check-decagram-outline" size={16} color={colors.onPrimary} />
-                    <Text style={styles.primaryActionText}>{t('debt.markPaid')}</Text>
-                  </>
+            <View style={styles.listSection}>
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionHeaderCopy}>
+                  <Text style={styles.sectionLabel}>{t('debt.selectedDebt')}</Text>
+                  <Text style={styles.sectionTitle}>{t('debt.installmentSchedule')}</Text>
+                </View>
+                {!!visibleDebts.length && (
+                  <Text style={styles.sectionHeaderMeta}>{visibleDebts.length} items</Text>
                 )}
-              </Pressable>
-            ) : null}
+              </View>
 
-            <View style={styles.timelineSection}>
-              <Text style={styles.timelineTitle}>{t('debt.installmentSchedule')}</Text>
-              {selected.installments?.length ? (
-                <View style={styles.timelineList}>
-                  {selected.installments.map((installment) => {
-                    const tone = getStatusTone(installment.status);
-                    const isPaid = installment.status === 'paid';
+              {loading ? (
+                <View style={styles.loadingState}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.loadingText}>{t('debt.loading')}</Text>
+                </View>
+              ) : visibleDebts.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <MaterialCommunityIcons name={showPaidDebts ? "history" : "wallet-outline"} size={22} color={colors.primary} />
+                  <Text style={styles.emptyTitle}>
+                    {searchTerm ? t('debt.searchEmptyTitle') : showPaidDebts ? t('debt.noPaidDebts') : t('debt.emptyTitle')}
+                  </Text>
+                  {searchTerm ? <Text style={styles.emptyBody}>{t('debt.searchEmptyBody')}</Text> : null}
+                </View>
+              ) : (
+                <View style={styles.debtList}>
+                  {visibleDebts.map((debt) => {
+                    const progress = getInstallmentProgress(debt);
+                    const tone = getStatusTone(debt.status);
+                    const isSelected = debt.id === selectedDebtId;
 
                     return (
                       <Pressable
-                        key={installment.id}
-                        onPress={() => {
-                          if (!isPaid) {
-                            handleMarkPaid(installment);
-                          }
-                        }}
+                        key={debt.id}
+                        onPress={() => selectDebt(debt.id)}
                         style={({ pressed }) => [
-                          styles.timelineItem,
-                          pressed && !isPaid && styles.timelineItemPressed,
+                          styles.debtCard,
+                          isSelected && styles.debtCardSelected,
+                          pressed && styles.debtCardPressed,
                         ]}>
-                        <View style={[styles.timelineDot, tone === 'success' && styles.timelineDotSuccess, tone === 'danger' && styles.timelineDotDanger]}>
-                          <MaterialCommunityIcons
-                            name={isPaid ? 'check' : tone === 'danger' ? 'clock-alert-outline' : 'calendar-clock'}
-                            size={14}
-                            color={isPaid ? colors.secondaryAccent : tone === 'danger' ? colors.danger : colors.primary}
-                          />
-                        </View>
-
-                        <View style={styles.timelineCopy}>
-                          <Text style={styles.timelineItemTitle}>#{installment.installment_no}</Text>
-                          <Text style={styles.timelineItemMeta}>{formatDate(installment.due_date, locale)}</Text>
-                        </View>
-
-                        <View style={styles.timelineRight}>
-                          <Text style={styles.timelineAmount}>{formatCurrency(toNumber(installment.amount), locale)}</Text>
-                          <View style={[styles.statusChipInline, tone === 'success' && styles.statusChipInlineSuccess, tone === 'danger' && styles.statusChipInlineDanger]}>
-                            <Text style={[styles.statusChipInlineText, tone === 'success' && styles.statusChipInlineTextSuccess, tone === 'danger' && styles.statusChipInlineTextDanger]}>
-                              {toStatusLabel(installment.status, t)}
+                        <View style={styles.debtCardHeader}>
+                          <View style={styles.debtCardCopy}>
+                            <View style={styles.debtCardTopRow}>
+                              <Text numberOfLines={1} style={styles.debtName}>
+                                {debt.name}
+                              </Text>
+                              <View style={styles.debtCardBadgeStack}>
+                                <StatusChip colors={colors} tone={tone} label={toStatusLabel(debt.status, t)} />
+                              </View>
+                            </View>
+                            <Text style={styles.debtMeta}>
+                              {formatCurrency(toNumber(debt.monthly_installment), locale)} / month
                             </Text>
                           </View>
+
+                          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={styles.debtValue}>
+                            {formatCompactCurrency(toNumber(debt.remaining_amount), locale)}
+                          </Text>
+                        </View>
+
+                        <View style={styles.progressTrack}>
+                          <View style={[styles.progressFill, { width: `${Math.max(6, progress)}%` }]} />
+                        </View>
+
+                        <View style={styles.debtCardFooter}>
+                          <Text style={styles.debtFooterText}>{formatDate(debt.due_date, locale)}</Text>
+                          <Text style={styles.debtFooterText}>{progress}%</Text>
+                          <Pressable
+                            onPress={(e) => {
+                              e.stopPropagation?.();
+                              Alert.alert(
+                                t('debt.deleteConfirmTitle'),
+                                t('debt.deleteConfirmMessage', { name: debt.name }),
+                                [
+                                  { text: t('common.cancel'), style: 'cancel' },
+                                  {
+                                    text: t('debt.deleteDebt'),
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      try {
+                                        await withAuthorizedRequest((accessToken) => deleteDebt(accessToken, debt.id));
+                                        await loadDebts(true);
+                                      } catch { }
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                            style={styles.debtCardDeleteButton}>
+                            <MaterialCommunityIcons name="trash-can-outline" size={14} color={colors.danger} />
+                          </Pressable>
                         </View>
                       </Pressable>
                     );
                   })}
                 </View>
-              ) : (
-                <Text style={styles.emptyInline}>{t('debt.noInstallments')}</Text>
               )}
             </View>
 
-            <View style={styles.timelineSection}>
-              <Text style={styles.timelineTitle}>{t('debt.paymentHistory')}</Text>
-              {selected.payments?.length ? (
-                <View style={styles.paymentList}>
-                  {selected.payments.map((payment: DebtPaymentRecord) => {
-                    const paymentWalletLabel =
-                      payment.wallet_id && walletMap.has(Number(payment.wallet_id))
-                        ? walletMap.get(Number(payment.wallet_id))?.name ?? t('debt.form.walletDefault')
-                        : t('debt.form.walletDefault');
-
-                    return (
-                      <View key={payment.id} style={styles.paymentItem}>
-                        <View style={styles.paymentIconWrap}>
-                          <MaterialCommunityIcons name="receipt-text-outline" size={16} color={colors.secondaryAccent} />
-                        </View>
-                        <View style={styles.paymentCopy}>
-                          <Text style={styles.paymentTitle}>{formatCurrency(toNumber(payment.amount), locale)}</Text>
-                          <Text style={styles.paymentMeta}>
-                            {formatDayLabel(payment.payment_date, locale)} | {paymentWalletLabel}
-                          </Text>
-                        </View>
-                        <View style={styles.paymentActionGroup}>
-                          {payment.proof_image ? (
-                            <Pressable
-                              onPress={() => {
-                                setProofViewerUri(buildAssetUrl(payment.proof_image));
-                                setProofViewerError('');
-                                setProofViewerLoading(true);
-                                setProofViewerVisible(true);
-                              }}
-                              style={styles.paymentActionButton}>
-                              <MaterialCommunityIcons name="image-outline" size={14} color={colors.primary} />
-                              <Text style={styles.paymentActionButtonText}>{t('debt.viewProof')}</Text>
-                            </Pressable>
-                          ) : null}
-                          <Pressable onPress={() => openEditPaymentForm(payment)} style={styles.paymentActionButton}>
-                            <MaterialCommunityIcons name="pencil-outline" size={14} color={colors.primary} />
-                            <Text style={styles.paymentActionButtonText}>{t('common.edit')}</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    );
-                  })}
+            {selectedVisible && selected ? (
+              <View ref={detailCardRef} style={styles.detailCard}>
+                <View style={styles.detailTopRow}>
+                  <View style={styles.detailIconWrap}>
+                    <MaterialCommunityIcons name="file-document-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View style={styles.detailHeaderCopy}>
+                    <Text style={styles.detailKicker}>{t('debt.selectedDebt')}</Text>
+                    <Text style={styles.detailTitle}>{selected.name}</Text>
+                    <Text style={styles.detailSubtitle}>{dueLabel}</Text>
+                  </View>
+                  <StatusChip colors={colors} tone={getStatusTone(selected.status)} label={toStatusLabel(selected.status, t)} />
                 </View>
-              ) : (
-                <Text style={styles.emptyInline}>{t('debt.noPayments')}</Text>
-              )}
-            </View>
-          </View>
-        ) : null}
+
+                <View style={styles.detailActions}>
+                  <Pressable onPress={openEditDebtForm} style={styles.detailActionButton}>
+                    <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.primary} />
+                    <Text style={styles.detailActionText}>{t('debt.editDebt')}</Text>
+                  </Pressable>
+                  <Pressable onPress={handleDeleteDebt} style={[styles.detailActionButton, styles.detailActionDanger]}>
+                    <MaterialCommunityIcons name="trash-can-outline" size={16} color={colors.danger} />
+                    <Text style={[styles.detailActionText, styles.detailActionDangerText]}>{t('debt.deleteDebt')}</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.detailStatsGrid}>
+                  <MiniStat
+                    colors={colors}
+                    label={t('debt.remaining')}
+                    value={formatCurrency(selectedRemaining, locale)}
+                  />
+                  <MiniStat
+                    colors={colors}
+                    label={t('debt.paid')}
+                    value={formatCurrency(selectedPaid, locale)}
+                  />
+                  <MiniStat
+                    colors={colors}
+                    label={t('debt.installments')}
+                    value={`${toNumber(selected?.paid_installments)}/${toNumber(selected?.paid_installments) + toNumber(selected?.unpaid_installments)}`}
+                  />
+                  <MiniStat
+                    colors={colors}
+                    label={t('debt.totalDebt')}
+                    value={formatCurrency(selectedTotal, locale)}
+                  />
+                  <MiniStat
+                    colors={colors}
+                    label={t('debt.payments')}
+                    value={String(paymentCount)}
+                  />
+                </View>
+
+                <View style={styles.progressPanel}>
+                  <View style={styles.progressPanelHeader}>
+                    <Text style={styles.progressPanelLabel}>{t('debt.installments')}</Text>
+                    <Text style={styles.progressPanelValue}>{selectedProgress}%</Text>
+                  </View>
+                  <View style={styles.progressTrackLarge}>
+                    <View style={[styles.progressFillLarge, { width: `${Math.max(6, selectedProgress)}%` }]} />
+                  </View>
+                  <View style={styles.progressFootRow}>
+                    <Text style={styles.progressFootText}>
+                      {t('debt.remaining')}: {formatCompactCurrency(selectedRemaining, locale)}
+                    </Text>
+                    <Text style={styles.progressFootText}>
+                      {t('debt.coverage')}: {installmentCoverage}%
+                    </Text>
+                  </View>
+                </View>
+
+                {nextPendingInstallment ? (
+                  <Pressable
+                    onPress={() => handleMarkPaid(nextPendingInstallment)}
+                    disabled={submittingInstallmentId !== null}
+                    style={({ pressed }) => [
+                      styles.primaryAction,
+                      pressed && styles.primaryActionPressed,
+                      submittingInstallmentId !== null && styles.primaryActionDisabled,
+                    ]}>
+                    {submittingInstallmentId === nextPendingInstallment.id ? (
+                      <ActivityIndicator color={colors.onPrimary} />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons name="check-decagram-outline" size={16} color={colors.onPrimary} />
+                        <Text style={styles.primaryActionText}>{t('debt.markPaid')}</Text>
+                      </>
+                    )}
+                  </Pressable>
+                ) : null}
+
+                <View style={styles.timelineSection}>
+                  <Text style={styles.timelineTitle}>{t('debt.installmentSchedule')}</Text>
+                  {selected.installments?.length ? (
+                    <View style={styles.timelineList}>
+                      {selected.installments.map((installment) => {
+                        const tone = getStatusTone(installment.status);
+                        const isPaid = installment.status === 'paid';
+
+                        return (
+                          <Pressable
+                            key={installment.id}
+                            onPress={() => {
+                              if (!isPaid) {
+                                handleMarkPaid(installment);
+                              }
+                            }}
+                            style={({ pressed }) => [
+                              styles.timelineItem,
+                              pressed && !isPaid && styles.timelineItemPressed,
+                            ]}>
+                            <View style={[styles.timelineDot, tone === 'success' && styles.timelineDotSuccess, tone === 'danger' && styles.timelineDotDanger]}>
+                              <MaterialCommunityIcons
+                                name={isPaid ? 'check' : tone === 'danger' ? 'clock-alert-outline' : 'calendar-clock'}
+                                size={14}
+                                color={isPaid ? colors.secondaryAccent : tone === 'danger' ? colors.danger : colors.primary}
+                              />
+                            </View>
+
+                            <View style={styles.timelineCopy}>
+                              <Text style={styles.timelineItemTitle}>#{installment.installment_no}</Text>
+                              <Text style={styles.timelineItemMeta}>{formatDate(installment.due_date, locale)}</Text>
+                            </View>
+
+                            <View style={styles.timelineRight}>
+                              <Text style={styles.timelineAmount}>{formatCurrency(toNumber(installment.amount), locale)}</Text>
+                              <View style={[styles.statusChipInline, tone === 'success' && styles.statusChipInlineSuccess, tone === 'danger' && styles.statusChipInlineDanger]}>
+                                <Text style={[styles.statusChipInlineText, tone === 'success' && styles.statusChipInlineTextSuccess, tone === 'danger' && styles.statusChipInlineTextDanger]}>
+                                  {toStatusLabel(installment.status, t)}
+                                </Text>
+                              </View>
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={styles.emptyInline}>{t('debt.noInstallments')}</Text>
+                  )}
+                </View>
+
+                <View style={styles.timelineSection}>
+                  <Text style={styles.timelineTitle}>{t('debt.paymentHistory')}</Text>
+                  {selected.payments?.length ? (
+                    <View style={styles.paymentList}>
+                      {selected.payments.map((payment: DebtPaymentRecord) => {
+                        const paymentWalletLabel =
+                          payment.wallet_id && walletMap.has(Number(payment.wallet_id))
+                            ? walletMap.get(Number(payment.wallet_id))?.name ?? t('debt.form.walletDefault')
+                            : t('debt.form.walletDefault');
+
+                        return (
+                          <View key={payment.id} style={styles.paymentItem}>
+                            <View style={styles.paymentIconWrap}>
+                              <MaterialCommunityIcons name="receipt-text-outline" size={16} color={colors.secondaryAccent} />
+                            </View>
+                            <View style={styles.paymentCopy}>
+                              <Text style={styles.paymentTitle}>{formatCurrency(toNumber(payment.amount), locale)}</Text>
+                              <Text style={styles.paymentMeta}>
+                                {formatDayLabel(payment.payment_date, locale)} | {paymentWalletLabel}
+                              </Text>
+                            </View>
+                            <View style={styles.paymentActionGroup}>
+                              {payment.proof_image ? (
+                                <Pressable
+                                  onPress={() => {
+                                    setProofViewerUri(buildAssetUrl(payment.proof_image));
+                                    setProofViewerError('');
+                                    setProofViewerLoading(true);
+                                    setProofViewerVisible(true);
+                                  }}
+                                  style={styles.paymentActionButton}>
+                                  <MaterialCommunityIcons name="image-outline" size={14} color={colors.primary} />
+                                  <Text style={styles.paymentActionButtonText}>{t('debt.viewProof')}</Text>
+                                </Pressable>
+                              ) : null}
+                              <Pressable onPress={() => openEditPaymentForm(payment)} style={styles.paymentActionButton}>
+                                <MaterialCommunityIcons name="pencil-outline" size={14} color={colors.primary} />
+                                <Text style={styles.paymentActionButtonText}>{t('common.edit')}</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={styles.emptyInline}>{t('debt.noPayments')}</Text>
+                  )}
+                </View>
+              </View>
+            ) : null}
           </>
         )}
 
@@ -1519,27 +1559,27 @@ export default function DebtScreen() {
                         ? t('debt.paymentEditKicker')
                         : formMode === 'payment'
                           ? t('debt.paymentKicker')
-                        : formMode === 'edit'
-                          ? t('debt.editKicker')
-                          : t('debt.createKicker')}
+                          : formMode === 'edit'
+                            ? t('debt.editKicker')
+                            : t('debt.createKicker')}
                     </Text>
                     <Text style={[styles.modalTitle, keyboardOpen && styles.modalTitleKeyboard]}>
                       {isPaymentEditForm
                         ? t('debt.paymentEditTitle')
                         : formMode === 'payment'
                           ? t('debt.paymentTitle')
-                        : formMode === 'edit'
-                          ? t('debt.editTitle')
-                          : t('debt.createTitle')}
+                          : formMode === 'edit'
+                            ? t('debt.editTitle')
+                            : t('debt.createTitle')}
                     </Text>
                     <Text style={[styles.modalSubtitle, keyboardOpen && styles.modalSubtitleKeyboard]}>
                       {isPaymentEditForm
                         ? t('debt.paymentEditSubtitle')
                         : formMode === 'payment'
                           ? t('debt.paymentSubtitle')
-                        : formMode === 'edit'
-                          ? t('debt.editSubtitle')
-                          : t('debt.createSubtitle')}
+                          : formMode === 'edit'
+                            ? t('debt.editSubtitle')
+                            : t('debt.createSubtitle')}
                     </Text>
                   </View>
 
@@ -1573,9 +1613,9 @@ export default function DebtScreen() {
                               ? 'file-image-edit-outline'
                               : formMode === 'payment'
                                 ? 'file-image-plus-outline'
-                              : formMode === 'edit'
-                                ? 'file-document-edit-outline'
-                                : 'bank-plus'
+                                : formMode === 'edit'
+                                  ? 'file-document-edit-outline'
+                                  : 'bank-plus'
                           }
                           size={22}
                           color={modalAccent}
@@ -1587,18 +1627,18 @@ export default function DebtScreen() {
                             ? t('debt.modal.paymentEditPreviewTitle')
                             : formMode === 'payment'
                               ? t('debt.modal.paymentPreviewTitle')
-                            : formMode === 'edit'
-                              ? t('debt.modal.editPreviewTitle')
-                              : t('debt.modal.createPreviewTitle')}
+                              : formMode === 'edit'
+                                ? t('debt.modal.editPreviewTitle')
+                                : t('debt.modal.createPreviewTitle')}
                         </Text>
                         <Text style={styles.modalHeroText}>
                           {isPaymentEditForm
                             ? t('debt.paymentEditSubtitle')
                             : formMode === 'payment'
                               ? t('debt.paymentSubtitle')
-                            : formMode === 'edit'
-                              ? t('debt.editSubtitle')
-                              : t('debt.createSubtitle')}
+                              : formMode === 'edit'
+                                ? t('debt.editSubtitle')
+                                : t('debt.createSubtitle')}
                         </Text>
                       </View>
                     </View>
@@ -1762,17 +1802,17 @@ export default function DebtScreen() {
                   ) : (
                     <View style={[styles.formStack, keyboardOpen && styles.formStackKeyboard]}>
                       <View style={styles.modalSectionCard}>
-                          <View style={styles.modalSectionHeader}>
-                            <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
-                              <MaterialCommunityIcons name="credit-card-outline" size={18} color={modalAccent} />
-                            </View>
-                            <View style={styles.modalSectionCopy}>
-                              <Text style={styles.modalSectionTitle}>{t('debt.modal.targetSectionTitle')}</Text>
-                              <Text style={styles.modalSectionSubtitle}>
-                                {paymentTargetLocked ? t('debt.modal.targetLocked') : t('debt.modal.targetSectionHelper')}
-                              </Text>
-                            </View>
+                        <View style={styles.modalSectionHeader}>
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
+                            <MaterialCommunityIcons name="credit-card-outline" size={18} color={modalAccent} />
                           </View>
+                          <View style={styles.modalSectionCopy}>
+                            <Text style={styles.modalSectionTitle}>{t('debt.modal.targetSectionTitle')}</Text>
+                            <Text style={styles.modalSectionSubtitle}>
+                              {paymentTargetLocked ? t('debt.modal.targetLocked') : t('debt.modal.targetSectionHelper')}
+                            </Text>
+                          </View>
+                        </View>
 
                         {debts.length ? (
                           <>
@@ -1943,7 +1983,7 @@ export default function DebtScreen() {
 
                       <View style={styles.modalSectionCard}>
                         <View style={styles.modalSectionHeader}>
-                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}> 
+                          <View style={[styles.modalSectionIcon, { backgroundColor: alpha(modalAccent, 0.12) }]}>
                             <MaterialCommunityIcons name="paperclip" size={18} color={modalAccent} />
                           </View>
                           <View style={styles.modalSectionCopy}>
@@ -2050,9 +2090,9 @@ export default function DebtScreen() {
                   <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
                 </Pressable>
 
-                  <Pressable
-                   onPress={isPaymentForm ? submitPaymentForm : submitDebtForm}
-                   disabled={formSubmitting}
+                <Pressable
+                  onPress={isPaymentForm ? submitPaymentForm : submitDebtForm}
+                  disabled={formSubmitting}
                   style={({ pressed }) => [
                     styles.confirmButton,
                     pressed && styles.confirmButtonPressed,
@@ -2066,9 +2106,9 @@ export default function DebtScreen() {
                         ? t('debt.form.paymentUpdateSubmit')
                         : formMode === 'payment'
                           ? t('debt.form.paymentSubmit')
-                        : formMode === 'edit'
-                          ? t('debt.form.updateSubmit')
-                          : t('debt.form.createSubmit')}
+                          : formMode === 'edit'
+                            ? t('debt.form.updateSubmit')
+                            : t('debt.form.createSubmit')}
                     </Text>
                   )}
                 </Pressable>

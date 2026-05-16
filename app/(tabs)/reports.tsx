@@ -1,31 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  Platform,
   useWindowDimensions,
   View,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { ReportsSkeleton } from '@/components/ui/skeleton';
-import { Colors, alpha, type AppColorTheme } from '@/constants/theme';
+import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAppLanguage } from '@/providers/language-provider';
-import { useNetworkStatus } from '@/providers/network-status-provider';
 import { ApiRequestError } from '@/lib/api/auth';
-import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
+import { getNotificationSettings } from '@/lib/api/notifications';
 import {
   getAverageDailySpending,
   getExpenseByCategory,
@@ -36,14 +34,17 @@ import {
   type ExpenseByCategoryItem,
   type HighestSpendingCategoryData,
   type RemainingBalanceData,
-  type ReportsPeriodParams,
   type ReportsPeriodData,
+  type ReportsPeriodParams,
   type SpendingTrendItem,
 } from '@/lib/api/reports';
+import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
 import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
+import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 
 type TrendMode = 'trend' | 'categories';
-type ReportsFilterMode = 'month' | 'year' | 'custom';
+type ReportsFilterMode = 'month' | 'year' | 'custom' | 'cycle';
 type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger' | 'teal';
 type ReportsDateTarget = 'startDate' | 'endDate' | null;
 type ReportRingProps = {
@@ -83,6 +84,34 @@ const MONTH_INDEXES = Array.from({ length: 12 }, (_, index) => index);
 const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
 const getCurrentYearInputValue = () => String(new Date().getFullYear());
 
+const toLocalDateString = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const computeSalaryCycleDates = (salaryDay: number): { startDate: string; endDate: string } => {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  const currentDay = today.getDate();
+
+  let cycleStart: Date;
+  let cycleEnd: Date;
+
+  if (currentDay >= salaryDay) {
+    cycleStart = new Date(currentYear, currentMonth, salaryDay);
+    const nextMonth = currentMonth + 1;
+    cycleEnd = new Date(currentYear, nextMonth, salaryDay - 1);
+  } else {
+    const prevMonth = currentMonth - 1;
+    cycleStart = new Date(currentYear, prevMonth, salaryDay);
+    cycleEnd = new Date(currentYear, currentMonth, salaryDay - 1);
+  }
+
+  return {
+    startDate: toLocalDateString(cycleStart),
+    endDate: toLocalDateString(cycleEnd),
+  };
+};
+
 const createDefaultReportsFilters = (): ReportsFilters => ({
   mode: 'month',
   month: getCurrentMonthInputValue(),
@@ -112,7 +141,7 @@ const buildReportsQueryParams = (filters: ReportsFilters): ReportsPeriodParams =
     return { year: filters.year };
   }
 
-  if (filters.mode === 'custom') {
+  if (filters.mode === 'custom' || filters.mode === 'cycle') {
     return {
       start_date: filters.startDate,
       end_date: filters.endDate,
@@ -180,7 +209,7 @@ const toLongMonth = (value: string, fallback: string, locale: string) => {
   }).format(date);
 };
 
-const getReportsPeriodLabel = (period?: ReportsPeriodData | null, locale: string) => {
+const getReportsPeriodLabel = (period: ReportsPeriodData | null | undefined, locale: string) => {
   if (!period) {
     return '';
   }
@@ -335,6 +364,7 @@ export default function ReportsScreen() {
   const styles = createStyles(colors, compact, insets.top, isDark);
 
   const [trendMode, setTrendMode] = useState<TrendMode>('categories');
+  const [selectedTrendIndex, setSelectedTrendIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -354,6 +384,7 @@ export default function ReportsScreen() {
   const [customDateTarget, setCustomDateTarget] = useState<ReportsDateTarget>(null);
   const customDateTargetRef = useRef<ReportsDateTarget>(null);
   const filtersRef = useRef<ReportsFilters>(createDefaultReportsFilters());
+  const [salaryDay, setSalaryDay] = useState<number>(25);
   const hasReportsSnapshot = Boolean(
     expenseByCategory.length || spendingTrends.length || highestCategory || averageDaily || remainingBalance
   );
@@ -361,6 +392,27 @@ export default function ReportsScreen() {
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchSalaryDay = async () => {
+      try {
+        const session = await getAuthSession();
+        if (!session || !active) return;
+        const response = await getNotificationSettings(session.token.access_token);
+        const day = Number(response.Data?.salary_day);
+        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
+          setSalaryDay(day);
+        }
+      } catch {
+        // keep default
+      }
+    };
+
+    fetchSalaryDay();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -450,7 +502,7 @@ export default function ReportsScreen() {
 
       setDraftFilters((current) => ({
         ...current,
-        [target]: selectedDate.toISOString().slice(0, 10),
+        [target]: toLocalDateString(selectedDate),
       }));
     },
     []
@@ -590,7 +642,7 @@ export default function ReportsScreen() {
         setFilterError(t('reports.filter.yearInvalid'));
         return;
       }
-    } else {
+    } else if (draftFilters.mode === 'custom') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(draftFilters.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(draftFilters.endDate)) {
         setFilterError(t('reports.filter.rangeRequired'));
         return;
@@ -612,16 +664,29 @@ export default function ReportsScreen() {
       }
     }
 
-    const nextFilters: ReportsFilters = {
-      ...draftFilters,
-      month:
-        draftFilters.mode === 'month'
-          ? `${monthPickerState.year}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`
-          : '',
-      year: draftFilters.mode === 'year' ? draftFilters.year : '',
-      startDate: draftFilters.mode === 'custom' ? draftFilters.startDate : '',
-      endDate: draftFilters.mode === 'custom' ? draftFilters.endDate : '',
-    };
+    let nextFilters: ReportsFilters;
+
+    if (draftFilters.mode === 'cycle') {
+      const cycleDates = computeSalaryCycleDates(salaryDay);
+      nextFilters = {
+        ...draftFilters,
+        month: '',
+        year: '',
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate,
+      };
+    } else {
+      nextFilters = {
+        ...draftFilters,
+        month:
+          draftFilters.mode === 'month'
+            ? `${monthPickerState.year}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`
+            : '',
+        year: draftFilters.mode === 'year' ? draftFilters.year : '',
+        startDate: draftFilters.mode === 'custom' ? draftFilters.startDate : '',
+        endDate: draftFilters.mode === 'custom' ? draftFilters.endDate : '',
+      };
+    }
 
     setFilters(nextFilters);
     filtersRef.current = nextFilters;
@@ -630,7 +695,7 @@ export default function ReportsScreen() {
     setIosCustomDatePickerVisible(false);
     setFilterModalVisible(false);
     void loadReports(false, nextFilters, true);
-  }, [draftFilters, loadReports, monthPickerState.monthIndex, monthPickerState.year, t]);
+  }, [draftFilters, loadReports, monthPickerState.monthIndex, monthPickerState.year, salaryDay, t]);
 
   const resetFilters = useCallback(() => {
     const nextFilters = createDefaultReportsFilters();
@@ -671,6 +736,14 @@ export default function ReportsScreen() {
       return filters.year || t('reports.currentPeriod');
     }
 
+    if (filters.mode === 'cycle' && filters.startDate && filters.endDate) {
+      return `${toLongMonth(filters.startDate, filters.startDate, locale)} - ${toLongMonth(
+        filters.endDate,
+        filters.endDate,
+        locale
+      )}`;
+    }
+
     if (filters.mode === 'custom' && filters.startDate && filters.endDate) {
       return `${toLongMonth(filters.startDate, filters.startDate, locale)} - ${toLongMonth(
         filters.endDate,
@@ -683,7 +756,7 @@ export default function ReportsScreen() {
   }, [filters.endDate, filters.mode, filters.month, filters.startDate, filters.year, locale, t]);
   const trendPoints = useMemo(
     () =>
-      spendingTrends.slice(-12).map((item, index) => ({
+      spendingTrends.map((item, index) => ({
         ...item,
         label: getTrendLabel(item, index, locale),
         expenseValue: getExpenseTrendValue(item),
@@ -768,7 +841,7 @@ export default function ReportsScreen() {
       tone: 'warning' as MetricTone,
     },
     {
-      icon: 'bank-transfer-outline',
+      icon: 'bank-transfer',
       label: t('reports.debtRepayment'),
       value: formatCompactCurrency(toNumber(remainingBalance?.debt_repayment ?? 0), locale),
       meta: t('reports.debtRepaymentHelper'),
@@ -823,6 +896,36 @@ export default function ReportsScreen() {
                   <Text style={styles.filterCardActionText}>{t('reports.filter.action')}</Text>
                 </Pressable>
               </View>
+              <View style={styles.filterBadgeRow}>
+                <View style={styles.filterBadge}>
+                  <MaterialCommunityIcons
+                    name={
+                      filters.mode === 'month'
+                        ? 'calendar-month-outline'
+                        : filters.mode === 'year'
+                          ? 'calendar-range-outline'
+                          : filters.mode === 'cycle'
+                            ? 'calendar-sync-outline'
+                            : 'calendar-start-outline'
+                    }
+                    size={12}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.filterBadgeText}>
+                    {filters.mode === 'month'
+                      ? t('reports.filter.modeMonth')
+                      : filters.mode === 'year'
+                        ? t('reports.filter.modeYear')
+                        : filters.mode === 'cycle'
+                          ? t('reports.filter.modeCycle')
+                          : t('reports.filter.modeCustom')}
+                  </Text>
+                </View>
+                <View style={styles.filterBadge}>
+                  <MaterialCommunityIcons name="clock-outline" size={12} color={colors.primary} />
+                  <Text style={styles.filterBadgeText}>{activePeriodLabel}</Text>
+                </View>
+              </View>
             </View>
 
             <Animated.View style={[styles.heroCard, sectionRevealStyles[1]]}>
@@ -874,9 +977,9 @@ export default function ReportsScreen() {
                   <Text style={[styles.heroBody, isDark ? styles.heroBodyDark : styles.heroBodyLight]}>
                     {topCategory
                       ? t('reports.heroBodyPlain', {
-                          category: topCategory.category,
-                          amount: formatCompactCurrency(toNumber(topCategory.amount), locale),
-                        })
+                        category: topCategory.category,
+                        amount: formatCompactCurrency(toNumber(topCategory.amount), locale),
+                      })
                       : t('reports.heroBodyFallbackPlain')}
                   </Text>
                 </View>
@@ -1010,7 +1113,7 @@ export default function ReportsScreen() {
                   <Text style={styles.cardEyebrow}>{t('reports.spendingTrends')}</Text>
                   <Text style={styles.cardTitle}>{t('reports.monthlyTrend')}</Text>
                   <Text style={styles.trendCardHint}>
-                    {language === 'id' ? 'Pilih tampilan yang paling mudah dibaca.' : 'Pick the clearest view for your data.'}
+                    {language === 'id' ? 'Perbandingan pemasukan dan pengeluaran per periode.' : 'Income vs expense comparison per period.'}
                   </Text>
                 </View>
                 <View style={styles.segmentedControl}>
@@ -1018,7 +1121,7 @@ export default function ReportsScreen() {
                     onPress={() => setTrendMode('categories')}
                     style={[styles.segmentButton, trendMode === 'categories' && styles.segmentButtonActive]}>
                     <MaterialCommunityIcons
-                      name="grid-large"
+                      name="chart-bar"
                       size={12}
                       color={trendMode === 'categories' ? colors.onPrimary : colors.shellTextMuted}
                     />
@@ -1030,7 +1133,7 @@ export default function ReportsScreen() {
                     onPress={() => setTrendMode('trend')}
                     style={[styles.segmentButton, trendMode === 'trend' && styles.segmentButtonActive]}>
                     <MaterialCommunityIcons
-                      name="chart-line"
+                      name="format-list-bulleted"
                       size={12}
                       color={trendMode === 'trend' ? colors.onPrimary : colors.shellTextMuted}
                     />
@@ -1041,57 +1144,145 @@ export default function ReportsScreen() {
                 </View>
               </View>
 
-              {trendMode === 'categories' ? (
-                <View style={styles.trendChart}>
-                  {trendPoints.length ? (
-                    trendPoints.map((item, index, items) => {
-                      const value = item.expenseValue;
-                      const active = index === items.length - 1;
-                      return (
-                        <View key={`${item.date ?? item.month ?? item.label ?? index}`} style={styles.trendItem}>
-                          <View
-                            style={[
-                              styles.trendBar,
-                              { height: `${Math.max(24, (value / trendMax) * 100)}%` },
-                              active && styles.trendBarActive,
-                            ]}
-                          />
-                          <Text numberOfLines={1} style={styles.trendLabel}>
-                            {item.label}
-                          </Text>
-                        </View>
-                      );
-                    })
-                  ) : (
-                    <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
-                  )}
+              {trendPoints.length > 0 ? (
+                <View style={styles.trendSummaryRow}>
+                  <View style={styles.trendSummaryItem}>
+                    <View style={[styles.trendSummaryDot, { backgroundColor: colors.primary }]} />
+                    <Text style={styles.trendSummaryLabel}>{language === 'id' ? 'Masuk' : 'Income'}</Text>
+                    <Text numberOfLines={1} style={styles.trendSummaryValue}>
+                      {formatCompactCurrency(trendPoints.reduce((sum, p) => sum + p.incomeValue, 0), locale)}
+                    </Text>
+                  </View>
+                  <View style={styles.trendSummaryItem}>
+                    <View style={[styles.trendSummaryDot, { backgroundColor: colors.danger }]} />
+                    <Text style={styles.trendSummaryLabel}>{language === 'id' ? 'Keluar' : 'Expense'}</Text>
+                    <Text numberOfLines={1} style={styles.trendSummaryValue}>
+                      {formatCompactCurrency(trendPoints.reduce((sum, p) => sum + p.expenseValue, 0), locale)}
+                    </Text>
+                  </View>
                 </View>
+              ) : null}
+
+              {selectedTrendIndex !== null && trendPoints[selectedTrendIndex] ? (
+                <View style={styles.trendTooltip}>
+                  <Text style={styles.trendTooltipTitle}>{trendPoints[selectedTrendIndex].label}</Text>
+                  <View style={styles.trendTooltipRow}>
+                    <View style={[styles.trendSummaryDot, { backgroundColor: colors.primary }]} />
+                    <Text style={styles.trendTooltipText}>
+                      {language === 'id' ? 'Masuk' : 'In'}: {formatCompactCurrency(trendPoints[selectedTrendIndex].incomeValue, locale)}
+                    </Text>
+                  </View>
+                  <View style={styles.trendTooltipRow}>
+                    <View style={[styles.trendSummaryDot, { backgroundColor: colors.danger }]} />
+                    <Text style={styles.trendTooltipText}>
+                      {language === 'id' ? 'Keluar' : 'Out'}: {formatCompactCurrency(trendPoints[selectedTrendIndex].expenseValue, locale)}
+                    </Text>
+                  </View>
+                  <View style={styles.trendTooltipRow}>
+                    <MaterialCommunityIcons
+                      name={trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? 'trending-up' : 'trending-down'}
+                      size={12}
+                      color={trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? colors.secondary : colors.danger}
+                    />
+                    <Text style={[styles.trendTooltipText, { color: trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? colors.secondary : colors.danger, fontWeight: '800' }]}>
+                      {trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? '+' : ''}{formatCompactCurrency(trendPoints[selectedTrendIndex].netCashflowValue, locale)}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {trendMode === 'categories' ? (
+                <>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendChartScroll}>
+                    <View style={[styles.trendChart, trendPoints.length <= 12 && { width: '100%' }]}>
+                      {trendPoints.length ? (
+                        trendPoints.map((item, index, items) => {
+                          const peakVal = Math.max(...items.map(i => Math.max(i.incomeValue, i.expenseValue)), 1);
+                          const incomeHeight = Math.max(6, (item.incomeValue / peakVal) * 100);
+                          const expenseHeight = Math.max(6, (item.expenseValue / peakVal) * 100);
+                          const selected = selectedTrendIndex === index;
+                          const isPositive = item.netCashflowValue >= 0;
+                          return (
+                            <Pressable
+                              key={`${item.date ?? item.month ?? item.label ?? index}`}
+                              onPress={() => setSelectedTrendIndex(selected ? null : index)}
+                              style={[styles.trendItem, selected && styles.trendItemSelected]}>
+                              <View style={styles.trendBarGroup}>
+                                <View
+                                  style={[
+                                    styles.trendBar,
+                                    { height: `${incomeHeight}%`, backgroundColor: alpha(colors.primary, selected ? 1 : 0.5) },
+                                  ]}
+                                />
+                                <View
+                                  style={[
+                                    styles.trendBar,
+                                    { height: `${expenseHeight}%`, backgroundColor: alpha(colors.danger, selected ? 1 : 0.5) },
+                                  ]}
+                                />
+                              </View>
+                              <View style={[styles.trendNetDot, { backgroundColor: isPositive ? colors.secondary : colors.danger }]} />
+                              <Text numberOfLines={1} style={[styles.trendLabel, selected && { color: colors.primary, fontWeight: '800' }]}>
+                                {item.label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })
+                      ) : (
+                        <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
+                      )}
+                    </View>
+                  </ScrollView>
+                  {trendPoints.length > 12 ? (
+                    <View style={styles.swipeHint}>
+                      <MaterialCommunityIcons name="gesture-swipe-horizontal" size={14} color={colors.shellTextMuted} />
+                      <Text style={styles.swipeHintText}>
+                        {language === 'id' ? 'Geser untuk lihat semua' : 'Swipe to see all'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </>
               ) : (
                 <View style={styles.trendTable}>
                   {trendPoints.length ? (
-                    trendPoints.slice(-6).map((item, index) => {
-                      const expenseShare = totalExpense > 0 ? Math.max(0, Math.min(100, (item.expenseValue / totalExpense) * 100)) : 0;
+                    trendPoints.map((item, index) => {
+                      const maxVal = Math.max(...trendPoints.map(p => p.expenseValue), 1);
+                      const expenseWidth = Math.max(8, (item.expenseValue / maxVal) * 100);
+                      const incomeWidth = Math.max(8, (item.incomeValue / maxVal) * 100);
+                      const isPositive = item.netCashflowValue >= 0;
                       return (
                         <View key={`${item.label}-${index}`} style={styles.trendRow}>
-                          <View style={styles.trendRowCopy}>
+                          <View style={styles.trendRowHeader}>
                             <Text style={styles.trendRowLabel}>{item.label}</Text>
-                            <Text style={styles.trendRowMeta}>
+                            <Text style={styles.trendRowPeriod}>
                               {toLongMonth(String(item.period ?? item.date ?? item.month ?? ''), item.label, locale)}
                             </Text>
                           </View>
-                          <View style={styles.trendRowMetrics}>
-                            <Text style={styles.trendRowMetricText}>
-                              {t('reports.totalIncome')}: {formatCompactCurrency(item.incomeValue, locale)}
-                            </Text>
-                            <Text style={styles.trendRowMetricText}>
-                              {t('reports.totalExpense')}: {formatCompactCurrency(item.expenseValue, locale)}
-                            </Text>
-                            <Text style={styles.trendRowMetricText}>
-                              {t('reports.remainingBalance')}: {formatCompactCurrency(item.netCashflowValue, locale)}
-                            </Text>
+                          <View style={styles.trendRowBars}>
+                            <View style={styles.trendRowBarLine}>
+                              <Text style={styles.trendRowBarLabel}>{language === 'id' ? 'Masuk' : 'In'}</Text>
+                              <View style={styles.trendRowTrack}>
+                                <View style={[styles.trendRowFillIncome, { width: `${incomeWidth}%` }]} />
+                              </View>
+                              <Text style={styles.trendRowBarValue}>{formatCompactCurrency(item.incomeValue, locale)}</Text>
+                            </View>
+                            <View style={styles.trendRowBarLine}>
+                              <Text style={styles.trendRowBarLabel}>{language === 'id' ? 'Keluar' : 'Out'}</Text>
+                              <View style={styles.trendRowTrack}>
+                                <View style={[styles.trendRowFillExpense, { width: `${expenseWidth}%` }]} />
+                              </View>
+                              <Text style={styles.trendRowBarValue}>{formatCompactCurrency(item.expenseValue, locale)}</Text>
+                            </View>
                           </View>
-                          <View style={styles.trendRowTrack}>
-                            <View style={[styles.trendRowFill, { width: `${Math.max(8, expenseShare)}%` }]} />
+                          <View style={styles.trendRowFooter}>
+                            <MaterialCommunityIcons
+                              name={isPositive ? 'trending-up' : 'trending-down'}
+                              size={12}
+                              color={isPositive ? colors.secondary : colors.danger}
+                            />
+                            <Text style={[styles.trendRowNet, { color: isPositive ? colors.secondary : colors.danger }]}>
+                              {isPositive ? '+' : ''}{formatCompactCurrency(item.netCashflowValue, locale)}
+                            </Text>
                           </View>
                         </View>
                       );
@@ -1122,9 +1313,9 @@ export default function ReportsScreen() {
               <Text style={styles.insightText} numberOfLines={2}>
                 {highestCategory
                   ? t('reports.heroBodyPlain', {
-                      category: highestCategory.category,
-                      amount: formatCompactCurrency(toNumber(highestCategory.amount), locale),
-                    })
+                    category: highestCategory.category,
+                    amount: formatCompactCurrency(toNumber(highestCategory.amount), locale),
+                  })
                   : t('reports.noSummaryBody')}
               </Text>
               <View style={styles.insightStatsRow}>
@@ -1166,7 +1357,7 @@ export default function ReportsScreen() {
                 contentContainerStyle={styles.filterModalContent}>
                 <View style={styles.filterSectionCard}>
                   <View style={styles.filterModeRow}>
-                    {(['month', 'year', 'custom'] as ReportsFilterMode[]).map((mode) => {
+                    {(['month', 'year', 'custom', 'cycle'] as ReportsFilterMode[]).map((mode) => {
                       const active = draftFilters.mode === mode;
                       return (
                         <Pressable
@@ -1199,26 +1390,32 @@ export default function ReportsScreen() {
                                   ? 'calendar-month-outline'
                                   : mode === 'year'
                                     ? 'calendar-range-outline'
-                                    : 'calendar-start-outline'
+                                    : mode === 'cycle'
+                                      ? 'calendar-sync-outline'
+                                      : 'calendar-start-outline'
                               }
                               size={16}
                               color={active ? colors.primary : colors.shellTextMuted}
-                              />
-                            </View>
+                            />
+                          </View>
                           <View style={styles.filterModeCopy}>
                             <Text style={[styles.filterModeLabel, active && { color: colors.primary }]}>
                               {mode === 'month'
                                 ? t('reports.filter.modeMonth')
                                 : mode === 'year'
                                   ? t('reports.filter.modeYear')
-                                  : t('reports.filter.modeCustom')}
+                                  : mode === 'cycle'
+                                    ? t('reports.filter.modeCycle')
+                                    : t('reports.filter.modeCustom')}
                             </Text>
                             <Text style={[styles.filterModeNote, active && { color: colors.primary }]}>
                               {mode === 'month'
                                 ? t('reports.filter.modeMonthHelper')
                                 : mode === 'year'
                                   ? t('reports.filter.modeYearHelper')
-                                  : t('reports.filter.modeCustomHelper')}
+                                  : mode === 'cycle'
+                                    ? t('reports.filter.modeCycleHelper')
+                                    : t('reports.filter.modeCustomHelper')}
                             </Text>
                           </View>
                         </Pressable>
@@ -1226,7 +1423,36 @@ export default function ReportsScreen() {
                     })}
                   </View>
 
-                  {draftFilters.mode === 'month' ? (
+                  {draftFilters.mode === 'cycle' ? (
+                    <View style={styles.filterCycleInfo}>
+                      <View style={[styles.filterModeIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                        <MaterialCommunityIcons name="cash" size={16} color={colors.primary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.filterCycleText}>
+                          {t('reports.filter.cycleDescription', { day: salaryDay })}
+                        </Text>
+                        <Text style={styles.filterCycleMeta}>
+                          {t('reports.filter.cyclePeriod', {
+                            start: new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(
+                              parseDateValue(computeSalaryCycleDates(salaryDay).startDate) ?? new Date()
+                            ),
+                            end: new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(
+                              parseDateValue(computeSalaryCycleDates(salaryDay).endDate) ?? new Date()
+                            ),
+                          })}
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={() => {
+                          setFilterModalVisible(false);
+                          router.push('/notification-settings');
+                        }}
+                        style={styles.filterCycleAction}>
+                        <MaterialCommunityIcons name="pencil-outline" size={14} color={colors.primary} />
+                      </Pressable>
+                    </View>
+                  ) : draftFilters.mode === 'month' ? (
                     <>
                       <View style={styles.filterYearRow}>
                         <Pressable
@@ -1324,8 +1550,8 @@ export default function ReportsScreen() {
                             <Text style={styles.filterPickerValue}>
                               {draftFilters.startDate
                                 ? new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(
-                                    parseDateValue(draftFilters.startDate) ?? new Date()
-                                  )
+                                  parseDateValue(draftFilters.startDate) ?? new Date()
+                                )
                                 : t('reports.filter.startDatePlaceholder')}
                             </Text>
                             <Text style={styles.filterPickerMeta}>{t('reports.filter.dateHelper')}</Text>
@@ -1346,8 +1572,8 @@ export default function ReportsScreen() {
                             <Text style={styles.filterPickerValue}>
                               {draftFilters.endDate
                                 ? new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(
-                                    parseDateValue(draftFilters.endDate) ?? new Date()
-                                  )
+                                  parseDateValue(draftFilters.endDate) ?? new Date()
+                                )
                                 : t('reports.filter.endDatePlaceholder')}
                             </Text>
                             <Text style={styles.filterPickerMeta}>{t('reports.filter.dateHelper')}</Text>
@@ -1398,7 +1624,7 @@ export default function ReportsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </View >
   );
 }
 
@@ -1535,6 +1761,28 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       fontWeight: '800',
       letterSpacing: 0.2,
     },
+    filterBadgeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 10,
+    },
+    filterBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 10,
+      backgroundColor: alpha(colors.primary, isDark ? 0.12 : 0.08),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, isDark ? 0.24 : 0.16),
+    },
+    filterBadgeText: {
+      color: colors.primary,
+      fontSize: 11,
+      fontWeight: '700',
+    },
     filterSectionCard: {
       borderRadius: 24,
       backgroundColor: colors.shellCard,
@@ -1599,6 +1847,37 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       fontSize: 10,
       lineHeight: 14,
       fontWeight: '500',
+    },
+    filterCycleInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: alpha(colors.primary, isDark ? 0.08 : 0.05),
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, isDark ? 0.2 : 0.12),
+    },
+    filterCycleText: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    filterCycleMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '500',
+      marginTop: 2,
+    },
+    filterCycleAction: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.12),
     },
     filterYearRow: {
       flexDirection: 'row',
@@ -2277,85 +2556,190 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
     segmentLabelActive: {
       color: colors.onPrimary,
     },
+    trendSummaryRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+      marginBottom: 4,
+    },
+    trendSummaryItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      flexShrink: 1,
+    },
+    trendSummaryDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    trendSummaryLabel: {
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      fontWeight: '600',
+    },
+    trendSummaryValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 11,
+      fontWeight: '800',
+      flexShrink: 1,
+    },
+    trendTooltip: {
+      backgroundColor: isDark ? alpha(colors.surfaceContainerHigh, 0.95) : alpha(colors.shellCard, 0.98),
+      borderRadius: 14,
+      padding: 12,
+      gap: 6,
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, 0.2),
+    },
+    trendTooltipTitle: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '800',
+      marginBottom: 2,
+    },
+    trendTooltipRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    trendTooltipText: {
+      color: colors.shellTextSecondary,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    trendChartScroll: {
+      minWidth: '100%',
+    },
+    swipeHint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      marginTop: 8,
+    },
+    swipeHintText: {
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      fontWeight: '600',
+    },
     trendChart: {
-      height: compact ? 190 : 220,
+      height: compact ? 200 : 230,
+      minWidth: '100%',
       flexDirection: 'row',
       alignItems: 'flex-end',
       justifyContent: 'space-between',
-      gap: compact ? 8 : 10,
+      gap: compact ? 3 : 4,
       paddingTop: 8,
     },
     trendItem: {
       flex: 1,
-      minWidth: 0,
+      minWidth: 28,
       height: '100%',
       alignItems: 'center',
       justifyContent: 'flex-end',
-      gap: 10,
+      gap: 4,
+      borderRadius: 8,
+      paddingTop: 4,
+    },
+    trendItemSelected: {
+      backgroundColor: alpha(colors.primary, isDark ? 0.1 : 0.06),
+    },
+    trendBarGroup: {
+      width: '100%',
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      gap: 2,
     },
     trendBar: {
-      width: '100%',
-      minHeight: 26,
-      borderTopLeftRadius: 10,
-      borderTopRightRadius: 10,
-      backgroundColor: colors.shellCardMuted,
+      flex: 1,
+      minHeight: 6,
+      borderTopLeftRadius: 6,
+      borderTopRightRadius: 6,
     },
-    trendBarActive: {
-      backgroundColor: isDark ? colors.secondaryAccent : colors.primary,
-      shadowColor: alpha(colors.primary, 0.3),
-      shadowOpacity: 1,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 4 },
+    trendNetDot: {
+      width: 5,
+      height: 5,
+      borderRadius: 3,
     },
     trendLabel: {
       color: colors.shellTextMuted,
-      fontSize: 10,
-      fontWeight: '800',
-      letterSpacing: 1.2,
+      fontSize: 9,
+      fontWeight: '700',
+      letterSpacing: 0.5,
     },
     trendTable: {
-      gap: 12,
+      gap: 14,
     },
     trendRow: {
       gap: 8,
+      paddingBottom: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.shellBorder,
     },
-    trendRowCopy: {
+    trendRowHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 12,
     },
     trendRowLabel: {
       color: colors.shellTextPrimary,
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '800',
     },
-    trendRowMeta: {
+    trendRowPeriod: {
       color: colors.shellTextMuted,
       fontSize: 11,
       fontWeight: '600',
     },
-    trendRowMetrics: {
-      gap: 4,
-      alignItems: 'flex-end',
+    trendRowBars: {
+      gap: 6,
     },
-    trendRowMetricText: {
-      color: colors.shellTextSecondary,
-      fontSize: 11,
-      lineHeight: 16,
-      fontWeight: '600',
-      textAlign: 'right',
+    trendRowBarLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    trendRowBarLabel: {
+      width: 36,
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      fontWeight: '700',
     },
     trendRowTrack: {
+      flex: 1,
       height: 8,
       borderRadius: 999,
       backgroundColor: colors.shellCardMuted,
       overflow: 'hidden',
     },
-    trendRowFill: {
+    trendRowFillIncome: {
       height: '100%',
       borderRadius: 999,
       backgroundColor: colors.primary,
+    },
+    trendRowFillExpense: {
+      height: '100%',
+      borderRadius: 999,
+      backgroundColor: colors.danger,
+    },
+    trendRowBarValue: {
+      width: 60,
+      textAlign: 'right',
+      color: colors.shellTextSecondary,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    trendRowFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    trendRowNet: {
+      fontSize: 11,
+      fontWeight: '800',
     },
     insightCard: {
       borderRadius: 24,

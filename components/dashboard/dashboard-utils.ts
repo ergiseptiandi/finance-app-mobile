@@ -1,11 +1,11 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   type DashboardComparisonData,
   type DashboardPeriodParams,
 } from '@/lib/api/dashboard';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export type TrendMode = 'daily' | 'monthly';
-export type DashboardDateFilterMode = 'month' | 'range';
+export type DashboardDateFilterMode = 'month' | 'range' | 'cycle';
 
 export type TrendPoint = {
   label: string;
@@ -93,6 +93,34 @@ export const parseDateValue = (value: string) => {
   }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const toLocalDateString = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+export const computeSalaryCycleDates = (salaryDay: number): { startDate: string; endDate: string } => {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  const currentDay = today.getDate();
+
+  let cycleStart: Date;
+  let cycleEnd: Date;
+
+  if (currentDay >= salaryDay) {
+    cycleStart = new Date(currentYear, currentMonth, salaryDay);
+    const nextMonth = currentMonth + 1;
+    cycleEnd = new Date(currentYear, nextMonth, salaryDay - 1);
+  } else {
+    const prevMonth = currentMonth - 1;
+    cycleStart = new Date(currentYear, prevMonth, salaryDay);
+    cycleEnd = new Date(currentYear, currentMonth, salaryDay - 1);
+  }
+
+  return {
+    startDate: toLocalDateString(cycleStart),
+    endDate: toLocalDateString(cycleEnd),
+  };
 };
 
 export const toPickerDate = (value: string) => {

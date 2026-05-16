@@ -1,3 +1,66 @@
+import { BudgetRing } from '@/components/dashboard/budget-ring';
+import {
+  buildDashboardQueryParams,
+  clampPercent,
+  computeSalaryCycleDates,
+  createDashboardCacheSuffix,
+  createDefaultDashboardFilters,
+  DATE_INPUT_PATTERN,
+  extractComparisonValue,
+  extractComparisonWindowValue,
+  formatCompactCurrency,
+  formatDetailCurrency,
+  formatExpenseCurrency,
+  formatPercentValue,
+  formatSignedCurrency,
+  getCategoryIcon,
+  getCurrentMonthInputValue,
+  getDashboardFilterLabel,
+  getFilterRangeMonths,
+  getInsightIcon,
+  getInsightTone,
+  getMonthPickerStateFromInput,
+  MONTH_INDEXES,
+  normalizeCategoryLabel,
+  parseDateValue,
+  toDashboardFilterPickerValue,
+  toDateInputLabel,
+  toDayLabel,
+  toLocalDateString,
+  toNumber,
+  toShortMonth,
+  type DashboardDateFilterMode,
+  type DashboardFilters,
+  type MonthPickerState,
+  type TrendMode,
+  type TrendPoint
+} from '@/components/dashboard/dashboard-utils';
+import { DashboardSkeleton } from '@/components/ui/skeleton';
+import { toast } from '@/components/ui/toast';
+import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSwipeToDismiss } from '@/hooks/use-swipe-to-dismiss';
+import { ApiRequestError } from '@/lib/api/auth';
+import {
+  getComparison,
+  getDailySpending,
+  getDashboardInsights,
+  getDashboardSummary,
+  getMonthlySpending,
+  type DailySpendingItem,
+  type DashboardComparisonData,
+  type DashboardInsightData,
+  type DashboardSummaryData,
+  type MonthlySpendingItem,
+} from '@/lib/api/dashboard';
+import { getNotificationSettings } from '@/lib/api/notifications';
+import { listTransactions, type TransactionRecord } from '@/lib/api/transactions';
+import { listWallets, type WalletRecord } from '@/lib/api/wallets';
+import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
+import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
+import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
+import { useAppLanguage } from '@/providers/language-provider';
+import { useNetworkStatus } from '@/providers/network-status-provider';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,68 +84,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardSkeleton } from '@/components/ui/skeleton';
-import { BudgetRing } from '@/components/dashboard/budget-ring';
-import {
-  type TrendMode,
-  type TrendPoint,
-  type DashboardDateFilterMode,
-  type DashboardFilters,
-  type MonthPickerState,
-  MONTH_INPUT_PATTERN,
-  DATE_INPUT_PATTERN,
-  MONTH_INDEXES,
-  getCurrentMonthInputValue,
-  getMonthPickerStateFromInput,
-  createDefaultDashboardFilters,
-  buildDashboardQueryParams,
-  createDashboardCacheSuffix,
-  formatCompactCurrency,
-  formatDetailCurrency,
-  formatSignedCurrency,
-  clampPercent,
-  toNumber,
-  toDateInputLabel,
-  toMonthInputLabel,
-  getFilterRangeMonths,
-  getDashboardFilterLabel,
-  toDashboardFilterPickerValue,
-  parseDateValue,
-  toDayLabel,
-  toShortMonth,
-  extractComparisonValue,
-  extractComparisonWindowValue,
-  formatExpenseCurrency,
-  formatPercentValue,
-  getInsightTone,
-  getInsightIcon,
-  normalizeCategoryLabel,
-  getCategoryIcon,
-} from '@/components/dashboard/dashboard-utils';
-import { alpha, Colors, type AppColorTheme } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useSwipeToDismiss } from '@/hooks/use-swipe-to-dismiss';
-import { ApiRequestError } from '@/lib/api/auth';
-import {
-  type DailySpendingItem,
-  type DashboardComparisonData,
-  type DashboardInsightData,
-  type DashboardSummaryData,
-  type MonthlySpendingItem,
-  getDashboardInsights,
-  getComparison,
-  getDailySpending,
-  getDashboardSummary,
-  getMonthlySpending,
-} from '@/lib/api/dashboard';
-import { listTransactions, type TransactionRecord } from '@/lib/api/transactions';
-import { listWallets, type WalletRecord } from '@/lib/api/wallets';
-import { getAuthSession, refreshStoredAuthSession } from '@/lib/auth-session';
-import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/screen-cache';
-import { loadUnreadNotificationCount } from '@/lib/notification-unread-count';
-import { useAppLanguage } from '@/providers/language-provider';
-import { useNetworkStatus } from '@/providers/network-status-provider';
-import { toast } from '@/components/ui/toast';
 
 type DashboardCacheState = {
   summary: DashboardSummaryData | null;
@@ -136,6 +137,7 @@ export default function DashboardScreen() {
   const [iosFilterDatePickerVisible, setIosFilterDatePickerVisible] = useState(false);
   const [filterDateTarget, setFilterDateTarget] = useState<'startDate' | 'endDate' | null>(null);
   const filterDateTargetRef = useRef<'startDate' | 'endDate' | null>(null);
+  const [salaryDay, setSalaryDay] = useState<number>(25);
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
@@ -185,6 +187,25 @@ export default function DashboardScreen() {
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchSalaryDay = async () => {
+      try {
+        const session = await getAuthSession();
+        if (!session || !active) return;
+        const response = await getNotificationSettings(session.token.access_token);
+        const day = Number(response.Data?.salary_day);
+        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
+          setSalaryDay(day);
+        }
+      } catch {
+        // keep default
+      }
+    };
+    fetchSalaryDay();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     sectionAnimations.forEach((value) => value.setValue(0));
@@ -342,13 +363,13 @@ export default function DashboardScreen() {
           .then((txResponse) => {
             setRecentTransactions(txResponse.Data.data ?? []);
           })
-          .catch(() => {});
+          .catch(() => { });
 
         listWallets(session.token.access_token)
           .then((walletResponse) => {
             setWallets(walletResponse.Data ?? []);
           })
-          .catch(() => {});
+          .catch(() => { });
 
         const hasHardFailure = results.some(
           (result) =>
@@ -468,7 +489,7 @@ export default function DashboardScreen() {
 
       setDraftFilters((current) => ({
         ...current,
-        [target]: selectedDate.toISOString().slice(0, 10),
+        [target]: toLocalDateString(selectedDate),
       }));
     },
     []
@@ -509,11 +530,12 @@ export default function DashboardScreen() {
 
   const applyFilters = useCallback(() => {
     if (draftFilters.dateMode === 'month') {
-      if (!MONTH_INPUT_PATTERN.test(draftFilters.month)) {
+      const selectedMonth = `${monthPickerState.year}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`;
+      if (!/^\d{4}-\d{2}$/.test(selectedMonth)) {
         setFilterError(t('dashboard.filter.monthInvalid'));
         return;
       }
-    } else {
+    } else if (draftFilters.dateMode === 'range') {
       if (!DATE_INPUT_PATTERN.test(draftFilters.startDate) || !DATE_INPUT_PATTERN.test(draftFilters.endDate)) {
         setFilterError(t('dashboard.filter.rangeRequired'));
         return;
@@ -533,12 +555,26 @@ export default function DashboardScreen() {
       }
     }
 
-    const nextFilters = {
-      ...draftFilters,
-      month: draftFilters.dateMode === 'month' ? draftFilters.month : '',
-      startDate: draftFilters.dateMode === 'range' ? draftFilters.startDate : '',
-      endDate: draftFilters.dateMode === 'range' ? draftFilters.endDate : '',
-    };
+    let nextFilters: DashboardFilters;
+
+    if (draftFilters.dateMode === 'cycle') {
+      const cycleDates = computeSalaryCycleDates(salaryDay);
+      nextFilters = {
+        ...draftFilters,
+        month: '',
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate,
+      };
+    } else {
+      nextFilters = {
+        ...draftFilters,
+        month: draftFilters.dateMode === 'month'
+          ? `${monthPickerState.year}-${String(monthPickerState.monthIndex + 1).padStart(2, '0')}`
+          : '',
+        startDate: draftFilters.dateMode === 'range' ? draftFilters.startDate : '',
+        endDate: draftFilters.dateMode === 'range' ? draftFilters.endDate : '',
+      };
+    }
 
     setFilters(nextFilters);
     filtersRef.current = nextFilters;
@@ -547,7 +583,7 @@ export default function DashboardScreen() {
     setIosFilterDatePickerVisible(false);
     setFilterModalVisible(false);
     void loadDashboard(false, nextFilters, true);
-  }, [draftFilters, loadDashboard, t]);
+  }, [draftFilters, loadDashboard, salaryDay, t]);
 
   const totalBalance = toNumber(summary?.total_balance);
   const netWorth = toNumber(summary?.net_worth ?? totalBalance);
@@ -608,7 +644,11 @@ export default function DashboardScreen() {
   const momentumIcon = monthlyMomentum >= 0 ? 'trending-up' : 'trending-down';
   const activePeriodLabel = getDashboardFilterLabel(filters, locale) || t('dashboard.filter.currentPeriod');
   const filterModeLabel =
-    filters.dateMode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode');
+    filters.dateMode === 'month'
+      ? t('dashboard.filter.monthMode')
+      : filters.dateMode === 'cycle'
+        ? t('dashboard.filter.cycleMode')
+        : t('dashboard.filter.rangeMode');
   const budgetSummary = summary?.budget_summary ?? null;
   const budgetGoalsProgress = summary?.goals_progress ?? [];
   const budgetPreview = budgetGoalsProgress.slice(0, 2);
@@ -623,7 +663,7 @@ export default function DashboardScreen() {
       ? t('dashboard.budgetOverBudget')
       : budgetUsage >= 80
         ? t('dashboard.budgetOnTrack')
-      : t('dashboard.budgetUnderBudget')
+        : t('dashboard.budgetUnderBudget')
     : t('dashboard.budgetEmptyState');
   const categoryBreakdownPreview = summary?.category_breakdown_preview ?? [];
   const categoryTopThree = categoryBreakdownPreview.slice(0, 3);
@@ -850,6 +890,20 @@ export default function DashboardScreen() {
                   <Text style={styles.filterCardActionText}>{t('dashboard.filter.action')}</Text>
                 </Pressable>
               </View>
+              <View style={styles.filterBadgeRow}>
+                <View style={styles.filterBadge}>
+                  <MaterialCommunityIcons
+                    name={filters.dateMode === 'month' ? 'calendar-month-outline' : filters.dateMode === 'cycle' ? 'calendar-sync-outline' : 'calendar-range-outline'}
+                    size={12}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.filterBadgeText}>{filterModeLabel}</Text>
+                </View>
+                <View style={styles.filterBadge}>
+                  <MaterialCommunityIcons name="clock-outline" size={12} color={colors.primary} />
+                  <Text style={styles.filterBadgeText}>{activePeriodLabel}</Text>
+                </View>
+              </View>
             </Animated.View>
 
             <Animated.View style={[styles.liquidCard, sectionRevealStyles[3]]}>
@@ -1047,8 +1101,8 @@ export default function DashboardScreen() {
                 </View>
               ) : null}
 
-                <Pressable onPress={() => router.push('/budgets')} accessibilityRole="button" accessibilityLabel={t('dashboard.manageBudgetGoals')} style={styles.secondaryAction}>
-                  <Text style={styles.secondaryActionText}>{t('dashboard.manageBudgetGoals')}</Text>
+              <Pressable onPress={() => router.push('/budgets')} accessibilityRole="button" accessibilityLabel={t('dashboard.manageBudgetGoals')} style={styles.secondaryAction}>
+                <Text style={styles.secondaryActionText}>{t('dashboard.manageBudgetGoals')}</Text>
                 <MaterialCommunityIcons name="arrow-right" size={16} color={colors.onPrimary} />
               </Pressable>
             </Animated.View>
@@ -1140,7 +1194,7 @@ export default function DashboardScreen() {
                   : t('dashboard.noDebtData')}
               </Text>
 
-            <View style={styles.debtStatusTrack}>
+              <View style={styles.debtStatusTrack}>
                 <View
                   style={[
                     styles.debtStatusFill,
@@ -1267,308 +1321,308 @@ export default function DashboardScreen() {
             </Pressable>
 
             {showAllSections ? (
-            <>
-            {summary?.upcoming_bills && Number(summary.upcoming_bills.count) > 0 ? (
-              <Animated.View style={[styles.card, sectionRevealStyles[9]]}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.cardTitle}>{t('dashboard.upcomingBills')}</Text>
-                  <MaterialCommunityIcons name="calendar-clock-outline" size={14} color={colors.danger} />
-                </View>
-                <View style={styles.billsRow}>
-                  <View style={styles.billsIconWrap}>
-                    <MaterialCommunityIcons name="receipt-text-outline" size={18} color={colors.danger} />
-                  </View>
-                  <View style={styles.billsCopy}>
-                    <Text style={styles.billsTitle}>
-                      {t('dashboard.upcomingBillsCount', { count: String(summary.upcoming_bills.count) })}
-                    </Text>
-                    {summary.upcoming_bills.next_due_date ? (
-                      <Text style={styles.billsMeta}>
-                        {t('dashboard.upcomingBillsNextDue')}: {new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }).format(new Date(summary.upcoming_bills.next_due_date))}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.billsRight}>
-                    <Text style={styles.billsAmount}>
-                      {formatCompactCurrency(Number(summary.upcoming_bills.total_amount) || 0, locale)}
-                    </Text>
-                    <Text style={styles.billsMeta}>{t('dashboard.upcomingBillsTotal')}</Text>
-                  </View>
-                </View>
-              </Animated.View>
-            ) : null}
-
-            {wallets.length > 0 ? (
-              <Animated.View style={[styles.card, sectionRevealStyles[10]]}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.cardTitle}>{t('dashboard.walletSummary')}</Text>
-                  <Text style={styles.cardEyebrow}>
-                    {formatCompactCurrency(
-                      wallets.reduce((sum, w) => sum + (Number(w.balance) || 0), 0),
-                      locale
-                    )}
-                  </Text>
-                </View>
-                {wallets.slice(0, 4).map((wallet) => (
-                  <View key={wallet.id} style={styles.walletItem}>
-                    <View style={styles.walletLeft}>
-                      <View style={styles.walletIconWrap}>
-                        <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
-                      </View>
-                      <Text numberOfLines={1} style={styles.walletName}>{wallet.name}</Text>
+              <>
+                {summary?.upcoming_bills && Number(summary.upcoming_bills.count) > 0 ? (
+                  <Animated.View style={[styles.card, sectionRevealStyles[9]]}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.cardTitle}>{t('dashboard.upcomingBills')}</Text>
+                      <MaterialCommunityIcons name="calendar-clock-outline" size={14} color={colors.danger} />
                     </View>
-                    <Text style={styles.walletBalance}>
-                      {formatCompactCurrency(Number(wallet.balance) || 0, locale)}
-                    </Text>
-                  </View>
-                ))}
-              </Animated.View>
-            ) : null}
-
-            {summary?.top_merchants_preview && summary.top_merchants_preview.length > 0 ? (
-              <Animated.View style={[styles.card, sectionRevealStyles[11]]}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.cardTitle}>{t('dashboard.topMerchants')}</Text>
-                  <Text style={styles.cardEyebrow}>{t('dashboard.topMerchantsBody')}</Text>
-                </View>
-                {summary.top_merchants_preview.slice(0, 3).map((merchant, index) => (
-                  <View key={merchant.merchant_name} style={styles.merchantItem}>
-                    <View style={styles.merchantLeft}>
-                      <View style={styles.merchantRank}>
-                        <Text style={styles.merchantRankText}>{index + 1}</Text>
+                    <View style={styles.billsRow}>
+                      <View style={styles.billsIconWrap}>
+                        <MaterialCommunityIcons name="receipt-text-outline" size={18} color={colors.danger} />
                       </View>
-                      <View>
-                        <Text numberOfLines={1} style={styles.merchantName}>{merchant.merchant_name}</Text>
-                        <Text style={styles.merchantMeta}>
-                          {t('dashboard.topMerchantsCount', { count: String(merchant.transaction_count) })}
+                      <View style={styles.billsCopy}>
+                        <Text style={styles.billsTitle}>
+                          {t('dashboard.upcomingBillsCount', { count: String(summary.upcoming_bills.count) })}
+                        </Text>
+                        {summary.upcoming_bills.next_due_date ? (
+                          <Text style={styles.billsMeta}>
+                            {t('dashboard.upcomingBillsNextDue')}: {new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }).format(new Date(summary.upcoming_bills.next_due_date))}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.billsRight}>
+                        <Text style={styles.billsAmount}>
+                          {formatCompactCurrency(Number(summary.upcoming_bills.total_amount) || 0, locale)}
+                        </Text>
+                        <Text style={styles.billsMeta}>{t('dashboard.upcomingBillsTotal')}</Text>
+                      </View>
+                    </View>
+                  </Animated.View>
+                ) : null}
+
+                {wallets.length > 0 ? (
+                  <Animated.View style={[styles.card, sectionRevealStyles[10]]}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.cardTitle}>{t('dashboard.walletSummary')}</Text>
+                      <Text style={styles.cardEyebrow}>
+                        {formatCompactCurrency(
+                          wallets.reduce((sum, w) => sum + (Number(w.balance) || 0), 0),
+                          locale
+                        )}
+                      </Text>
+                    </View>
+                    {wallets.slice(0, 4).map((wallet) => (
+                      <View key={wallet.id} style={styles.walletItem}>
+                        <View style={styles.walletLeft}>
+                          <View style={styles.walletIconWrap}>
+                            <MaterialCommunityIcons name="wallet-outline" size={18} color={colors.primary} />
+                          </View>
+                          <Text numberOfLines={1} style={styles.walletName}>{wallet.name}</Text>
+                        </View>
+                        <Text style={styles.walletBalance}>
+                          {formatCompactCurrency(Number(wallet.balance) || 0, locale)}
+                        </Text>
+                      </View>
+                    ))}
+                  </Animated.View>
+                ) : null}
+
+                {summary?.top_merchants_preview && summary.top_merchants_preview.length > 0 ? (
+                  <Animated.View style={[styles.card, sectionRevealStyles[11]]}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.cardTitle}>{t('dashboard.topMerchants')}</Text>
+                      <Text style={styles.cardEyebrow}>{t('dashboard.topMerchantsBody')}</Text>
+                    </View>
+                    {summary.top_merchants_preview.slice(0, 3).map((merchant, index) => (
+                      <View key={merchant.merchant_name} style={styles.merchantItem}>
+                        <View style={styles.merchantLeft}>
+                          <View style={styles.merchantRank}>
+                            <Text style={styles.merchantRankText}>{index + 1}</Text>
+                          </View>
+                          <View>
+                            <Text numberOfLines={1} style={styles.merchantName}>{merchant.merchant_name}</Text>
+                            <Text style={styles.merchantMeta}>
+                              {t('dashboard.topMerchantsCount', { count: String(merchant.transaction_count) })}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.merchantRight}>
+                          <Text style={styles.merchantAmount}>
+                            {formatCompactCurrency(Number(merchant.amount) || 0, locale)}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </Animated.View>
+                ) : null}
+
+                <Animated.View style={[styles.insightCard, sectionRevealStyles[12]]}>
+                  <View style={styles.insightHero}>
+                    <View style={styles.insightHeroTop}>
+                      <View style={styles.insightHeroBadge}>
+                        <MaterialCommunityIcons name="chart-box-outline" size={18} color={colors.primary} />
+                      </View>
+                      <View style={styles.insightHeroCopy}>
+                        <Text style={styles.insightBadge}>{t('dashboard.pulseInsight')}</Text>
+                        <Text style={styles.insightTitle}>{t('dashboard.insightsSectionTitle')}</Text>
+                        <Text style={styles.insightText}>{t('dashboard.insightsSectionBody')}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.insightHeroPill}>
+                      <MaterialCommunityIcons name="priority-high" size={12} color={colors.primary} />
+                      <Text style={styles.insightHeroPillText}>
+                        {language === 'id' ? '3 prioritas' : '3 priorities'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.insightSignalGrid}>
+                    <View style={styles.insightSignalCard}>
+                      <View style={[styles.insightSignalIcon, { backgroundColor: alpha(colors.onPrimary, 0.12) }]}>
+                        <MaterialCommunityIcons name="bank-outline" size={16} color={colors.secondary} />
+                      </View>
+                      <Text style={styles.insightSignalLabel}>
+                        {language === 'id' ? 'Utang' : 'Debt'}
+                      </Text>
+                      <Text style={styles.insightSignalValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
+                      <Text style={styles.insightSignalMeta}>{debtSignalLabel}</Text>
+                    </View>
+
+                    <View style={styles.insightSignalCard}>
+                      <View style={[styles.insightSignalIcon, { backgroundColor: alpha(colors.onPrimary, 0.12) }]}>
+                        <MaterialCommunityIcons name="wallet-outline" size={16} color={colors.warning} />
+                      </View>
+                      <Text style={styles.insightSignalLabel}>
+                        {language === 'id' ? 'Budget' : 'Budget'}
+                      </Text>
+                      <Text style={styles.insightSignalValue}>{formatPercentValue(budgetUsage)}</Text>
+                      <Text style={styles.insightSignalMeta}>{budgetSignalLabel}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.insightCompareStrip}>
+                    <View style={styles.insightCompareIcon}>
+                      <MaterialCommunityIcons name="chart-timeline-variant" size={15} color={colors.primary} />
+                    </View>
+                    <View style={styles.insightCompareCopy}>
+                      <Text style={styles.insightCompareTitle}>
+                        {language === 'id' ? 'Utang vs arus kas' : 'Debt vs cash flow'}
+                      </Text>
+                      <Text style={styles.insightCompareMeta}>
+                        {language === 'id'
+                          ? `Utang ${formatPercentValue(Math.max(0, debtToIncome))} · Arus kas ${formatPercentValue(Math.max(0, savingsRate))} · ${cashflowSignalLabel}`
+                          : `Debt ${formatPercentValue(Math.max(0, debtToIncome))} · Cash flow ${formatPercentValue(Math.max(0, savingsRate))} · ${cashflowSignalLabel}`}
+                      </Text>
+                    </View>
+                    <View style={styles.insightCompareChips}>
+                      <View style={[styles.insightCompareChip, { backgroundColor: colors.shellCardSoft, borderWidth: 1, borderColor: colors.shellBorder }]}>
+                        <Text style={[styles.insightCompareChipText, { color: colors.danger }]}>
+                          {formatPercentValue(Math.max(0, debtToIncome))}
+                        </Text>
+                      </View>
+                      <View style={[styles.insightCompareChip, { backgroundColor: colors.shellCardSoft, borderWidth: 1, borderColor: colors.shellBorder }]}>
+                        <Text style={[styles.insightCompareChipText, { color: colors.secondary }]}>
+                          {formatPercentValue(Math.max(0, savingsRate))}
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.merchantRight}>
-                      <Text style={styles.merchantAmount}>
-                        {formatCompactCurrency(Number(merchant.amount) || 0, locale)}
+                  </View>
+
+                  <View style={styles.insightCategorySection}>
+                    <View style={styles.insightSectionHeader}>
+                      <Text style={styles.insightSectionTitle}>
+                        {language === 'id' ? 'Komposisi pengeluaran' : 'Spending composition'}
+                      </Text>
+                      <Text style={styles.insightSectionMeta}>
+                        {language === 'id'
+                          ? '3 kategori terbesar periode aktif'
+                          : 'Top 3 categories for the active period'}
                       </Text>
                     </View>
-                  </View>
-                ))}
-              </Animated.View>
-            ) : null}
 
-            <Animated.View style={[styles.insightCard, sectionRevealStyles[12]]}>
-              <View style={styles.insightHero}>
-                <View style={styles.insightHeroTop}>
-                  <View style={styles.insightHeroBadge}>
-                    <MaterialCommunityIcons name="chart-box-outline" size={18} color={colors.primary} />
-                  </View>
-                  <View style={styles.insightHeroCopy}>
-                    <Text style={styles.insightBadge}>{t('dashboard.pulseInsight')}</Text>
-                    <Text style={styles.insightTitle}>{t('dashboard.insightsSectionTitle')}</Text>
-                    <Text style={styles.insightText}>{t('dashboard.insightsSectionBody')}</Text>
-                  </View>
-                </View>
-                <View style={styles.insightHeroPill}>
-                  <MaterialCommunityIcons name="priority-high" size={12} color={colors.primary} />
-                  <Text style={styles.insightHeroPillText}>
-                    {language === 'id' ? '3 prioritas' : '3 priorities'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.insightSignalGrid}>
-                <View style={styles.insightSignalCard}>
-                  <View style={[styles.insightSignalIcon, { backgroundColor: alpha(colors.onPrimary, 0.12) }]}>
-                    <MaterialCommunityIcons name="bank-outline" size={16} color={colors.secondary} />
-                  </View>
-                  <Text style={styles.insightSignalLabel}>
-                    {language === 'id' ? 'Utang' : 'Debt'}
-                  </Text>
-                  <Text style={styles.insightSignalValue}>{formatPercentValue(Math.max(0, debtToIncome))}</Text>
-                  <Text style={styles.insightSignalMeta}>{debtSignalLabel}</Text>
-                </View>
+                    {categoryTopThree.length > 0 ? (
+                      <>
+                        <View style={styles.insightStackBar}>
+                          {categoryTopThree.map((item, index) => {
+                            const value = Math.max(0, toNumber(item.percentage));
+                            const tone =
+                              index === 0
+                                ? colors.primary
+                                : index === 1
+                                  ? colors.secondary
+                                  : colors.warning;
 
-                <View style={styles.insightSignalCard}>
-                  <View style={[styles.insightSignalIcon, { backgroundColor: alpha(colors.onPrimary, 0.12) }]}>
-                    <MaterialCommunityIcons name="wallet-outline" size={16} color={colors.warning} />
-                  </View>
-                  <Text style={styles.insightSignalLabel}>
-                    {language === 'id' ? 'Budget' : 'Budget'}
-                  </Text>
-                  <Text style={styles.insightSignalValue}>{formatPercentValue(budgetUsage)}</Text>
-                  <Text style={styles.insightSignalMeta}>{budgetSignalLabel}</Text>
-                </View>
-              </View>
+                            return (
+                              <View
+                                key={`${item.category}-${index}`}
+                                style={[
+                                  styles.insightStackSegment,
+                                  {
+                                    width: `${Math.max(8, value)}%`,
+                                    backgroundColor: tone,
+                                  },
+                                ]}
+                              />
+                            );
+                          })}
+                        </View>
 
-              <View style={styles.insightCompareStrip}>
-                <View style={styles.insightCompareIcon}>
-                  <MaterialCommunityIcons name="chart-timeline-variant" size={15} color={colors.primary} />
-                </View>
-                <View style={styles.insightCompareCopy}>
-                  <Text style={styles.insightCompareTitle}>
-                    {language === 'id' ? 'Utang vs arus kas' : 'Debt vs cash flow'}
-                  </Text>
-                  <Text style={styles.insightCompareMeta}>
-                    {language === 'id'
-                      ? `Utang ${formatPercentValue(Math.max(0, debtToIncome))} · Arus kas ${formatPercentValue(Math.max(0, savingsRate))} · ${cashflowSignalLabel}`
-                      : `Debt ${formatPercentValue(Math.max(0, debtToIncome))} · Cash flow ${formatPercentValue(Math.max(0, savingsRate))} · ${cashflowSignalLabel}`}
-                  </Text>
-                </View>
-                <View style={styles.insightCompareChips}>
-                  <View style={[styles.insightCompareChip, { backgroundColor: colors.shellCardSoft, borderWidth: 1, borderColor: colors.shellBorder }]}>
-                    <Text style={[styles.insightCompareChipText, { color: colors.danger }]}>
-                      {formatPercentValue(Math.max(0, debtToIncome))}
-                    </Text>
-                  </View>
-                  <View style={[styles.insightCompareChip, { backgroundColor: colors.shellCardSoft, borderWidth: 1, borderColor: colors.shellBorder }]}>
-                    <Text style={[styles.insightCompareChipText, { color: colors.secondary }]}>
-                      {formatPercentValue(Math.max(0, savingsRate))}
-                    </Text>
-                  </View>
-                </View>
-              </View>
+                        <View style={styles.insightCategoryList}>
+                          {categoryTopThree.map((item, index) => {
+                            const value = Math.max(0, toNumber(item.percentage));
+                            const icon = getCategoryIcon(item.category);
+                            const tone =
+                              index === 0
+                                ? colors.primary
+                                : index === 1
+                                  ? colors.secondary
+                                  : colors.warning;
 
-              <View style={styles.insightCategorySection}>
-                <View style={styles.insightSectionHeader}>
-                  <Text style={styles.insightSectionTitle}>
-                    {language === 'id' ? 'Komposisi pengeluaran' : 'Spending composition'}
-                  </Text>
-                  <Text style={styles.insightSectionMeta}>
-                    {language === 'id'
-                      ? '3 kategori terbesar periode aktif'
-                      : 'Top 3 categories for the active period'}
-                  </Text>
-                </View>
-
-                {categoryTopThree.length > 0 ? (
-                  <>
-                    <View style={styles.insightStackBar}>
-                      {categoryTopThree.map((item, index) => {
-                        const value = Math.max(0, toNumber(item.percentage));
-                        const tone =
-                          index === 0
-                            ? colors.primary
-                            : index === 1
-                              ? colors.secondary
-                              : colors.warning;
-
-                        return (
-                          <View
-                            key={`${item.category}-${index}`}
-                            style={[
-                              styles.insightStackSegment,
-                              {
-                                width: `${Math.max(8, value)}%`,
-                                backgroundColor: tone,
-                              },
-                            ]}
-                          />
-                        );
-                      })}
-                    </View>
-
-                    <View style={styles.insightCategoryList}>
-                      {categoryTopThree.map((item, index) => {
-                        const value = Math.max(0, toNumber(item.percentage));
-                        const icon = getCategoryIcon(item.category);
-                        const tone =
-                          index === 0
-                            ? colors.primary
-                            : index === 1
-                              ? colors.secondary
-                              : colors.warning;
-
-                        return (
-                          <View key={`${item.category}-${item.amount}`} style={styles.insightCategoryItem}>
-                            <View style={[styles.insightCategoryIcon, { backgroundColor: alpha(tone, 0.14) }]}>
-                              <MaterialCommunityIcons name={icon} size={15} color={tone} />
-                            </View>
-                            <View style={styles.insightCategoryCopy}>
-                              <Text numberOfLines={1} style={styles.insightCategoryTitle}>
-                                {normalizeCategoryLabel(item.category, language)}
-                              </Text>
-                              <Text style={styles.insightCategoryMeta}>
-                                {formatCompactCurrency(toNumber(item.amount), locale)}
-                              </Text>
-                            </View>
-                            <View style={styles.insightCategoryRight}>
-                              <Text style={styles.insightCategoryPercent}>{formatPercentValue(value)}</Text>
-                              <View style={styles.insightCategoryBarTrack}>
-                                <View
-                                  style={[
-                                    styles.insightCategoryBarFill,
-                                    {
-                                      width: `${Math.max(8, value)}%`,
-                                      backgroundColor: tone,
-                                    },
-                                  ]}
-                                />
+                            return (
+                              <View key={`${item.category}-${item.amount}`} style={styles.insightCategoryItem}>
+                                <View style={[styles.insightCategoryIcon, { backgroundColor: alpha(tone, 0.14) }]}>
+                                  <MaterialCommunityIcons name={icon} size={15} color={tone} />
+                                </View>
+                                <View style={styles.insightCategoryCopy}>
+                                  <Text numberOfLines={1} style={styles.insightCategoryTitle}>
+                                    {normalizeCategoryLabel(item.category, language)}
+                                  </Text>
+                                  <Text style={styles.insightCategoryMeta}>
+                                    {formatCompactCurrency(toNumber(item.amount), locale)}
+                                  </Text>
+                                </View>
+                                <View style={styles.insightCategoryRight}>
+                                  <Text style={styles.insightCategoryPercent}>{formatPercentValue(value)}</Text>
+                                  <View style={styles.insightCategoryBarTrack}>
+                                    <View
+                                      style={[
+                                        styles.insightCategoryBarFill,
+                                        {
+                                          width: `${Math.max(8, value)}%`,
+                                          backgroundColor: tone,
+                                        },
+                                      ]}
+                                    />
+                                  </View>
+                                </View>
                               </View>
+                            );
+                          })}
+                        </View>
+                      </>
+                    ) : (
+                      <Text style={styles.insightEmptyText}>
+                        {language === 'id' ? 'Belum ada komposisi kategori untuk ditampilkan.' : 'No category composition is available yet.'}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.insightList}>
+                    {priorityInsights.length > 0 ? (
+                      priorityInsights.map((item) => {
+                        const toneKey = getInsightTone(item.severity);
+                        const tone =
+                          toneKey === 'danger'
+                            ? colors.danger
+                            : toneKey === 'warning'
+                              ? colors.warning
+                              : colors.primary;
+                        const label =
+                          toneKey === 'danger'
+                            ? language === 'id'
+                              ? 'Prioritas tinggi'
+                              : 'High priority'
+                            : toneKey === 'warning'
+                              ? language === 'id'
+                                ? 'Perlu perhatian'
+                                : 'Needs attention'
+                              : language === 'id'
+                                ? 'Informasi'
+                                : 'Info';
+
+                        return (
+                          <View key={`${item.code}-${item.title}`} style={styles.insightItem}>
+                            <View style={[styles.insightItemRail, { backgroundColor: tone }]} />
+                            <View style={[styles.insightItemIcon, { backgroundColor: alpha(tone, 0.14) }]}>
+                              <MaterialCommunityIcons name={getInsightIcon(item.severity)} size={15} color={tone} />
+                            </View>
+                            <View style={styles.insightItemCopy}>
+                              <View style={styles.insightItemHead}>
+                                <Text style={[styles.insightItemTag, { color: tone }]}>{label}</Text>
+                              </View>
+                              <Text style={styles.insightItemTitle}>{item.title}</Text>
+                              <Text style={styles.insightItemText}>{item.message}</Text>
                             </View>
                           </View>
                         );
-                      })}
-                    </View>
-                  </>
-                ) : (
-                  <Text style={styles.insightEmptyText}>
-                    {language === 'id' ? 'Belum ada komposisi kategori untuk ditampilkan.' : 'No category composition is available yet.'}
-                  </Text>
-                )}
-              </View>
+                      })
+                    ) : (
+                      <Text style={styles.insightEmptyText}>{t('dashboard.insightsEmptyBody')}</Text>
+                    )}
+                  </View>
 
-              <View style={styles.insightList}>
-                {priorityInsights.length > 0 ? (
-                  priorityInsights.map((item) => {
-                    const toneKey = getInsightTone(item.severity);
-                    const tone =
-                      toneKey === 'danger'
-                        ? colors.danger
-                        : toneKey === 'warning'
-                          ? colors.warning
-                          : colors.primary;
-                    const label =
-                      toneKey === 'danger'
-                        ? language === 'id'
-                          ? 'Prioritas tinggi'
-                          : 'High priority'
-                        : toneKey === 'warning'
-                          ? language === 'id'
-                            ? 'Perlu perhatian'
-                            : 'Needs attention'
-                          : language === 'id'
-                            ? 'Informasi'
-                            : 'Info';
-
-                    return (
-                      <View key={`${item.code}-${item.title}`} style={styles.insightItem}>
-                        <View style={[styles.insightItemRail, { backgroundColor: tone }]} />
-                        <View style={[styles.insightItemIcon, { backgroundColor: alpha(tone, 0.14) }]}>
-                          <MaterialCommunityIcons name={getInsightIcon(item.severity)} size={15} color={tone} />
-                        </View>
-                        <View style={styles.insightItemCopy}>
-                          <View style={styles.insightItemHead}>
-                            <Text style={[styles.insightItemTag, { color: tone }]}>{label}</Text>
-                          </View>
-                          <Text style={styles.insightItemTitle}>{item.title}</Text>
-                          <Text style={styles.insightItemText}>{item.message}</Text>
-                        </View>
-                      </View>
-                    );
-                  })
-                ) : (
-                  <Text style={styles.insightEmptyText}>{t('dashboard.insightsEmptyBody')}</Text>
-                )}
-              </View>
-
-              <Pressable
-                onPress={() => {
-                  router.navigate('/reports');
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t('dashboard.optimizeStrategy')}
-                style={styles.primaryAction}>
-                <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>
-              </Pressable>
-            </Animated.View>
-            </>) : null}
+                  <Pressable
+                    onPress={() => {
+                      router.navigate('/reports');
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('dashboard.optimizeStrategy')}
+                    style={styles.primaryAction}>
+                    <Text style={styles.primaryActionText}>{t('dashboard.optimizeStrategy')}</Text>
+                  </Pressable>
+                </Animated.View>
+              </>) : null}
 
             {!!error && <Text style={styles.errorText}>{error}</Text>}
           </>
@@ -1639,7 +1693,7 @@ export default function DashboardScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}>
           <View style={styles.filterModalBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={closeFilterModal} />
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeFilterModal} />
             <Animated.View style={[styles.filterModalSheet, { transform: [{ translateY: filterSwipe.translateY }] }]} {...filterSwipe.panResponder.panHandlers}>
               <View style={styles.filterModalHandle} />
               <View style={styles.filterModalBody}>
@@ -1671,7 +1725,7 @@ export default function DashboardScreen() {
                     </View>
 
                     <View style={styles.filterModeRow}>
-                      {(['month', 'range'] as DashboardDateFilterMode[]).map((mode) => {
+                      {(['month', 'range', 'cycle'] as DashboardDateFilterMode[]).map((mode) => {
                         const active = draftFilters.dateMode === mode;
 
                         return (
@@ -1687,7 +1741,13 @@ export default function DashboardScreen() {
                               }))
                             }
                             accessibilityRole="radio"
-                            accessibilityLabel={mode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode')}
+                            accessibilityLabel={
+                              mode === 'month'
+                                ? t('dashboard.filter.monthMode')
+                                : mode === 'cycle'
+                                  ? t('dashboard.filter.cycleMode')
+                                  : t('dashboard.filter.rangeMode')
+                            }
                             style={[
                               styles.filterModeButton,
                               active && {
@@ -1701,38 +1761,114 @@ export default function DashboardScreen() {
                                 { backgroundColor: active ? alpha(colors.primary, 0.16) : colors.shellCardMuted },
                               ]}>
                               <MaterialCommunityIcons
-                                name={mode === 'month' ? 'calendar-month-outline' : 'calendar-range-outline'}
+                                name={
+                                  mode === 'month'
+                                    ? 'calendar-month-outline'
+                                    : mode === 'cycle'
+                                      ? 'calendar-sync-outline'
+                                      : 'calendar-range-outline'
+                                }
                                 size={16}
                                 color={active ? colors.primary : colors.shellTextMuted}
                               />
                             </View>
                             <Text style={[styles.filterModeLabel, active && { color: colors.primary }]}>
-                              {mode === 'month' ? t('dashboard.filter.monthMode') : t('dashboard.filter.rangeMode')}
+                              {mode === 'month'
+                                ? t('dashboard.filter.monthMode')
+                                : mode === 'cycle'
+                                  ? t('dashboard.filter.cycleMode')
+                                  : t('dashboard.filter.rangeMode')}
                             </Text>
                           </Pressable>
                         );
                       })}
                     </View>
 
-                    {draftFilters.dateMode === 'month' ? (
-                      <View style={styles.filterFieldGroup}>
-                        <Text style={styles.filterFieldLabel}>{t('dashboard.filter.monthLabel')}</Text>
+                    {draftFilters.dateMode === 'cycle' ? (
+                      <View style={styles.filterCycleInfo}>
+                        <View style={[styles.filterModeIcon, { backgroundColor: alpha(colors.primary, 0.12) }]}>
+                          <MaterialCommunityIcons name="cash" size={16} color={colors.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.filterCycleText}>
+                            {t('dashboard.filter.cycleDescription', { day: salaryDay })}
+                          </Text>
+                          <Text style={styles.filterCycleMeta}>
+                            {t('dashboard.filter.cyclePeriod', {
+                              start: toDateInputLabel(computeSalaryCycleDates(salaryDay).startDate, locale),
+                              end: toDateInputLabel(computeSalaryCycleDates(salaryDay).endDate, locale),
+                            })}
+                          </Text>
+                        </View>
                         <Pressable
-                          onPress={openMonthPicker}
-                          accessibilityRole="button"
-                          accessibilityLabel={t('dashboard.filter.monthLabel')}
-                          style={({ pressed }) => [styles.filterPickerShell, pressed && styles.filterPickerPressed]}>
-                          <View style={styles.filterPickerIcon}>
-                            <MaterialCommunityIcons name="calendar-month-outline" size={18} color={colors.primary} />
-                          </View>
-                          <View style={styles.filterPickerCopy}>
-                            <Text style={styles.filterPickerValue}>{toMonthInputLabel(draftFilters.month, locale)}</Text>
-                            <Text style={styles.filterPickerMeta}>{t('dashboard.filter.monthHelper')}</Text>
-                          </View>
-                          <MaterialCommunityIcons name="chevron-down" size={18} color={colors.shellTextMuted} />
+                          onPress={() => {
+                            setFilterModalVisible(false);
+                            router.push('/notification-settings');
+                          }}
+                          style={styles.filterCycleAction}>
+                          <MaterialCommunityIcons name="pencil-outline" size={14} color={colors.primary} />
                         </Pressable>
-                        <Text style={styles.filterFieldHelper}>{t('dashboard.filter.monthHelper')}</Text>
                       </View>
+                    ) : draftFilters.dateMode === 'month' ? (
+                      <>
+                        <View style={styles.filterYearRow}>
+                          <Pressable
+                            onPress={() =>
+                              setMonthPickerState((current) => ({
+                                ...current,
+                                year: current.year - 1,
+                              }))
+                            }
+                            accessibilityRole="button"
+                            style={styles.filterYearButton}>
+                            <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
+                          </Pressable>
+                          <Text style={styles.filterYearText}>{monthPickerState.year}</Text>
+                          <Pressable
+                            onPress={() =>
+                              setMonthPickerState((current) => ({
+                                ...current,
+                                year: current.year + 1,
+                              }))
+                            }
+                            accessibilityRole="button"
+                            style={styles.filterYearButton}>
+                            <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
+                          </Pressable>
+                        </View>
+
+                        <View style={styles.filterMonthGrid}>
+                          {MONTH_INDEXES.map((monthIndex) => {
+                            const selected = monthPickerState.monthIndex === monthIndex;
+                            const monthLabel = new Intl.DateTimeFormat(locale, { month: 'short' })
+                              .format(new Date(2020, monthIndex, 1))
+                              .replace(/\.$/, '');
+
+                            return (
+                              <Pressable
+                                key={monthIndex}
+                                onPress={() =>
+                                  setMonthPickerState((current) => ({
+                                    ...current,
+                                    monthIndex,
+                                  }))
+                                }
+                                accessibilityRole="button"
+                                style={[
+                                  styles.filterMonthChip,
+                                  selected && {
+                                    backgroundColor: alpha(colors.primary, isDark ? 0.22 : 0.12),
+                                    borderColor: alpha(colors.primary, isDark ? 0.42 : 0.28),
+                                  },
+                                ]}>
+                                <Text style={[styles.filterMonthChipText, selected && { color: colors.primary }]}>
+                                  {monthLabel}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </>
                     ) : (
                       <>
                         <View style={styles.filterFieldGroup}>
@@ -1918,31 +2054,31 @@ export default function DashboardScreen() {
             </View>
 
             <View style={styles.monthPickerYearRow}>
-                <Pressable
-                  onPress={() =>
-                    setMonthPickerState((current) => ({
-                      ...current,
-                      year: current.year - 1,
-                    }))
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel={language === 'id' ? 'Tahun sebelumnya' : 'Previous year'}
-                  style={styles.monthPickerYearButton}>
-                  <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
-                </Pressable>
-                <Text style={styles.monthPickerYearText}>{monthPickerState.year}</Text>
-                <Pressable
-                  onPress={() =>
-                    setMonthPickerState((current) => ({
-                      ...current,
-                      year: current.year + 1,
-                    }))
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel={language === 'id' ? 'Tahun berikutnya' : 'Next year'}
-                  style={styles.monthPickerYearButton}>
-                  <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
-                </Pressable>
+              <Pressable
+                onPress={() =>
+                  setMonthPickerState((current) => ({
+                    ...current,
+                    year: current.year - 1,
+                  }))
+                }
+                accessibilityRole="button"
+                accessibilityLabel={language === 'id' ? 'Tahun sebelumnya' : 'Previous year'}
+                style={styles.monthPickerYearButton}>
+                <MaterialCommunityIcons name="chevron-left" size={18} color={colors.primary} />
+              </Pressable>
+              <Text style={styles.monthPickerYearText}>{monthPickerState.year}</Text>
+              <Pressable
+                onPress={() =>
+                  setMonthPickerState((current) => ({
+                    ...current,
+                    year: current.year + 1,
+                  }))
+                }
+                accessibilityRole="button"
+                accessibilityLabel={language === 'id' ? 'Tahun berikutnya' : 'Next year'}
+                style={styles.monthPickerYearButton}>
+                <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
+              </Pressable>
             </View>
 
             <View style={styles.monthPickerGrid}>
@@ -2023,7 +2159,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
       flex: 1,
       minWidth: 0,
       flexDirection: 'row',
-      alignItems: 'center',      gap: 12,
+      alignItems: 'center', gap: 12,
     },
     brandAvatar: {
       width: 36,
@@ -2416,7 +2552,8 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
       lineHeight: 18,
       textAlign: 'center',
     },
-    budgetAlert: {      borderRadius: 20,
+    budgetAlert: {
+      borderRadius: 20,
       backgroundColor: alpha(colors.danger, isDark ? 0.14 : 0.1),
       paddingHorizontal: 14,
       paddingVertical: 12,
@@ -2706,7 +2843,7 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
     debtStatusMeta: {
       flex: 1,
       minWidth: 0,
-      color: colors.shellTextMuted,      fontSize: 12,
+      color: colors.shellTextMuted, fontSize: 12,
       lineHeight: 16,
       fontWeight: '700',
       textAlign: 'right',
@@ -3419,8 +3556,107 @@ const createStyles = (colors: AppColorTheme, width: number, topInset: number, bo
       textTransform: 'uppercase',
       letterSpacing: 0.8,
     },
+    filterCycleInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: alpha(colors.primary, isDark ? 0.08 : 0.05),
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, isDark ? 0.2 : 0.12),
+    },
+    filterCycleText: {
+      color: colors.shellTextPrimary,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
+    },
+    filterCycleMeta: {
+      color: colors.shellTextMuted,
+      fontSize: 11,
+      lineHeight: 16,
+      fontWeight: '500',
+      marginTop: 2,
+    },
+    filterCycleAction: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(colors.primary, 0.12),
+    },
     filterFieldGroup: {
       gap: 8,
+    },
+    filterYearRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    filterYearButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterYearText: {
+      flex: 1,
+      textAlign: 'center',
+      color: colors.shellTextPrimary,
+      fontSize: 20,
+      lineHeight: 26,
+      fontWeight: '900',
+      letterSpacing: -0.7,
+    },
+    filterMonthGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    filterMonthChip: {
+      flexGrow: 1,
+      flexBasis: '20%',
+      minHeight: 40,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.shellCardMuted,
+      borderWidth: 1,
+      borderColor: colors.shellBorder,
+    },
+    filterMonthChipText: {
+      color: colors.shellTextSecondary,
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    filterBadgeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 10,
+    },
+    filterBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 10,
+      backgroundColor: alpha(colors.primary, isDark ? 0.12 : 0.08),
+      borderWidth: 1,
+      borderColor: alpha(colors.primary, isDark ? 0.24 : 0.16),
+    },
+    filterBadgeText: {
+      color: colors.primary,
+      fontSize: 11,
+      fontWeight: '700',
     },
     filterFieldLabel: {
       color: colors.shellTextPrimary,
