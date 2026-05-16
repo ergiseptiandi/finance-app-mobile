@@ -1,7 +1,7 @@
 {
   "name": "finance-go",
   "main": "expo-router/entry",
-  "version": "3.1.2",
+  "version": "1.6.1",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
