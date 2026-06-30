@@ -43,7 +43,7 @@ import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/sc
 import { useAppLanguage } from '@/providers/language-provider';
 import { useNetworkStatus } from '@/providers/network-status-provider';
 
-type TrendMode = 'trend' | 'categories';
+type TrendMode = 'trend' | 'categories' | 'calendar';
 type ReportsFilterMode = 'month' | 'year' | 'custom' | 'cycle';
 type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger' | 'teal';
 type ReportsDateTarget = 'startDate' | 'endDate' | null;
@@ -796,6 +796,53 @@ export default function ReportsScreen() {
   );
   const isEmpty =
     !loading && !expenseByCategory.length && !spendingTrends.length && !remainingBalance && !averageDaily && !highestCategory;
+
+  const calendarData = useMemo(() => {
+    if (trendMode !== 'calendar' || trendPoints.length === 0) return null;
+
+    const isDaily = trendPoints.some((p) => {
+      const key = String(p.period ?? p.date ?? p.month ?? p.label ?? '');
+      return /^\d{4}-\d{2}-\d{2}$/.test(key);
+    });
+    if (!isDaily) return { type: 'not-daily' as const };
+
+    const expenseMap = new Map<string, { income: number; expense: number; net: number }>();
+    const maxExpense = Math.max(...trendPoints.map((p) => p.expenseValue), 1);
+
+    for (const p of trendPoints) {
+      const key = String(p.period ?? p.date ?? '');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+        expenseMap.set(key, { income: p.incomeValue, expense: p.expenseValue, net: p.netCashflowValue });
+      }
+    }
+
+    const firstKey = trendPoints.find((p) => /^\d{4}-\d{2}-\d{2}$/.test(String(p.period ?? p.date ?? '')));
+    const firstDateStr = firstKey ? String(firstKey.period ?? firstKey.date ?? '') : '';
+    const refDate = firstDateStr ? parseDateValue(firstDateStr) ?? new Date() : new Date();
+    const calYear = refDate.getFullYear();
+    const calMonth = refDate.getMonth();
+    const firstOfMonth = new Date(calYear, calMonth, 1);
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const startWeekday = firstOfMonth.getDay();
+    const calMonthLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(firstOfMonth);
+
+    const cells: (string | null)[] = [];
+    for (let i = 0; i < startWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push(ds);
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    return {
+      type: 'calendar' as const,
+      cells,
+      expenseMap,
+      maxExpense,
+      calMonthLabel,
+    };
+  }, [trendMode, trendPoints, locale]);
+
   const sectionAnimations = useRef(
     Array.from({ length: 6 }, () => new Animated.Value(0))
   ).current;
@@ -1163,6 +1210,18 @@ export default function ReportsScreen() {
                       {t('reports.trend')}
                     </Text>
                   </Pressable>
+                  <Pressable
+                    onPress={() => setTrendMode('calendar')}
+                    style={[styles.segmentButton, trendMode === 'calendar' && styles.segmentButtonActive]}>
+                    <MaterialCommunityIcons
+                      name="calendar-month-outline"
+                      size={12}
+                      color={trendMode === 'calendar' ? colors.onPrimary : colors.shellTextMuted}
+                    />
+                    <Text style={[styles.segmentLabel, trendMode === 'calendar' && styles.segmentLabelActive]}>
+                      {language === 'id' ? 'Kalender' : 'Calendar'}
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
 
@@ -1264,7 +1323,7 @@ export default function ReportsScreen() {
                     </View>
                   ) : null}
                 </>
-              ) : (
+              ) : trendMode === 'trend' ? (
                 <View style={styles.trendTable}>
                   {trendPoints.length ? (
                     trendPoints.map((item, index) => {
@@ -1313,7 +1372,85 @@ export default function ReportsScreen() {
                     <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
                   )}
                 </View>
-              )}
+              ) : trendMode === 'calendar' ? (
+                calendarData?.type === 'not-daily' ? (
+                  <View style={styles.calendarEmpty}>
+                    <MaterialCommunityIcons name="calendar-remove-outline" size={28} color={colors.outlineVariant} />
+                    <Text style={styles.calendarEmptyText}>
+                      {language === 'id'
+                        ? 'Tampilan kalender tersedia saat filter harian (mode bulan/siklus).'
+                        : 'Calendar view is available with daily filter (month/cycle mode).'}
+                    </Text>
+                  </View>
+                ) : calendarData?.type === 'calendar' ? (
+                  <View style={styles.calendarContainer}>
+                    <Text style={styles.calendarMonthLabel}>{calendarData.calMonthLabel}</Text>
+                    <View style={styles.calendarWeekHeader}>
+                      {(language === 'id'
+                        ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+                        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                      ).map((wd) => (
+                        <Text key={wd} style={styles.calendarWeekday}>{wd}</Text>
+                      ))}
+                    </View>
+                    <View style={styles.calendarGrid}>
+                      {calendarData.cells.map((cell, idx) => {
+                        if (cell === null) {
+                          return <View key={`empty-${idx}`} style={styles.calendarCellEmpty} />;
+                        }
+                        const data = calendarData.expenseMap.get(cell);
+                        const dayNum = Number(cell.slice(-2));
+                        const hasData = !!data;
+                        const intensity = hasData ? Math.min(1, data.expense / calendarData.maxExpense) : 0;
+                        const selectedDate = selectedTrendIndex !== null && trendPoints[selectedTrendIndex]
+                          ? String(trendPoints[selectedTrendIndex].period ?? trendPoints[selectedTrendIndex].date ?? '')
+                          : null;
+                        const isSelected = cell === selectedDate;
+                        const bgColor = hasData && data.expense > 0
+                          ? alpha(colors.danger, 0.12 + intensity * 0.7)
+                          : alpha(colors.shellCardMuted, 0.5);
+                        const dotColor = hasData && data.net >= 0 ? colors.secondary : colors.danger;
+
+                        return (
+                          <Pressable
+                            key={cell}
+                            onPress={() => {
+                              if (!hasData) return;
+                              const trendIdx = trendPoints.findIndex((p) =>
+                                String(p.period ?? p.date ?? '') === cell
+                              );
+                              setSelectedTrendIndex(trendIdx >= 0 ? trendIdx : null);
+                            }}
+                            style={[
+                              styles.calendarCell,
+                              { backgroundColor: bgColor },
+                              isSelected && styles.calendarCellSelected,
+                            ]}>
+                            <Text style={[styles.calendarDayNum, isSelected && { color: colors.onPrimary, fontWeight: '900' }]}>
+                              {dayNum}
+                            </Text>
+                            {hasData && data.expense > 0 ? (
+                              <Text style={styles.calendarCellAmount} numberOfLines={1}>
+                                {formatCompactCurrency(data.expense, locale)}
+                              </Text>
+                            ) : null}
+                            {hasData ? (
+                              <View style={[styles.calendarDot, { backgroundColor: isSelected ? colors.onPrimary : dotColor }]} />
+                            ) : null}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <View style={styles.calendarLegend}>
+                      <Text style={styles.calendarLegendLabel}>
+                        {language === 'id' ? 'Lebih gelap = pengeluaran lebih besar' : 'Darker = higher spending'}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
+                )
+              ) : null}
             </Animated.View>
 
             <Animated.View style={[styles.insightCard, sectionRevealStyles[4]]}>
@@ -2762,6 +2899,86 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
     trendRowNet: {
       fontSize: 11,
       fontWeight: '800',
+    },
+    calendarContainer: {
+      gap: 10,
+    },
+    calendarMonthLabel: {
+      color: colors.shellTextPrimary,
+      fontSize: 14,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    calendarWeekHeader: {
+      flexDirection: 'row',
+      gap: 4,
+    },
+    calendarWeekday: {
+      flex: 1,
+      textAlign: 'center',
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
+    calendarGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 4,
+    },
+    calendarCell: {
+      width: `${(100 - 4 * 6) / 7}%`,
+      aspectRatio: 1,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    calendarCellEmpty: {
+      width: `${(100 - 4 * 6) / 7}%`,
+      aspectRatio: 1,
+    },
+    calendarCellSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary,
+    },
+    calendarDayNum: {
+      color: colors.shellTextPrimary,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    calendarCellAmount: {
+      color: colors.shellTextSecondary,
+      fontSize: 7,
+      fontWeight: '700',
+    },
+    calendarDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+    },
+    calendarEmpty: {
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 20,
+    },
+    calendarEmptyText: {
+      color: colors.shellTextMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
+    calendarLegend: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      marginTop: 2,
+    },
+    calendarLegendLabel: {
+      color: colors.shellTextMuted,
+      fontSize: 10,
+      fontWeight: '600',
     },
     insightCard: {
       borderRadius: 24,
