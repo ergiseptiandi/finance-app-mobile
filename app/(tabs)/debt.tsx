@@ -1096,6 +1096,15 @@ export default function DebtScreen() {
   const paymentTargetStatus = paymentTarget ? toStatusLabel(paymentTarget.status, t) : '';
   const isPaymentForm = formMode === 'payment' || formMode === 'payment-edit';
   const isPaymentEditForm = formMode === 'payment-edit';
+  const editPaidAmount = formMode === 'edit' && selectedDebt ? toNumber(selectedDebt.paid_amount) : 0;
+  const editRemainingAfter =
+    Number.isFinite(createTotalValue) && createTotalValue > 0
+      ? Math.max(0, createTotalValue - editPaidAmount)
+      : 0;
+  const paymentCoveredInstallments =
+    isPaymentForm && paymentAmountValue > 0 && paymentTargetInstallment > 0
+      ? Math.floor(paymentAmountValue / paymentTargetInstallment)
+      : 0;
   const hasStoredProof = Boolean(paymentForm.existingProofUri);
   const hasNewProof = Boolean(paymentForm.proofUri);
   const selectedProofUri = paymentForm.proofUri || paymentForm.existingProofUri;
@@ -1678,6 +1687,28 @@ export default function DebtScreen() {
                     </View>
                   </View>
 
+                  {formMode === 'edit' && editPaidAmount > 0 ? (
+                    <View style={styles.editPreviewBanner}>
+                      <View style={styles.editPreviewItem}>
+                        <Text style={styles.editPreviewLabel}>
+                          {language === 'id' ? 'Sudah dibayar' : 'Already paid'}
+                        </Text>
+                        <Text numberOfLines={1} style={styles.editPreviewValue}>
+                          {formatCurrency(editPaidAmount, locale)}
+                        </Text>
+                      </View>
+                      <View style={styles.editPreviewDivider} />
+                      <View style={styles.editPreviewItem}>
+                        <Text style={styles.editPreviewLabel}>
+                          {language === 'id' ? 'Sisa setelah edit' : 'Remaining after edit'}
+                        </Text>
+                        <Text numberOfLines={1} style={[styles.editPreviewValue, { color: colors.primary }]}>
+                          {formatCurrency(editRemainingAfter, locale)}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+
                   {!!formError && (
                     <View style={styles.formErrorCard}>
                       <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.danger} />
@@ -1909,6 +1940,16 @@ export default function DebtScreen() {
                               style={styles.inputControl}
                             />
                           </View>
+                          {paymentCoveredInstallments > 1 ? (
+                            <View style={styles.overpaymentHint}>
+                              <MaterialCommunityIcons name="check-circle-outline" size={14} color={colors.secondary} />
+                              <Text style={styles.overpaymentHintText}>
+                                {language === 'id'
+                                  ? `Pembayaran ini akan melunasi ${paymentCoveredInstallments} cicilan`
+                                  : `This payment will cover ${paymentCoveredInstallments} installments`}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
 
                         <View style={styles.fieldStack}>
@@ -3119,6 +3160,50 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       lineHeight: compact ? 20 : 22,
       fontWeight: '900',
       letterSpacing: -0.5,
+    },
+    editPreviewBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      borderRadius: 14,
+      backgroundColor: alpha(colors.primary, 0.06),
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginTop: 2,
+    },
+    editPreviewItem: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    editPreviewDivider: {
+      width: 1,
+      height: 28,
+      backgroundColor: alpha(colors.outlineVariant, 0.5),
+    },
+    editPreviewLabel: {
+      color: colors.shellTextMuted,
+      fontSize: 9,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    editPreviewValue: {
+      color: colors.shellTextPrimary,
+      fontSize: 13,
+      fontWeight: '900',
+      letterSpacing: -0.3,
+    },
+    overpaymentHint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 6,
+    },
+    overpaymentHintText: {
+      color: colors.secondary,
+      fontSize: 11,
+      fontWeight: '700',
     },
     formErrorCard: {
       borderRadius: 18,

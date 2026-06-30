@@ -55,6 +55,46 @@ Finance Go helps users track their money with a mobile-first experience. The app
 - `npm run web` - run in the browser
 - `npm run lint` - run lint checks
 
+## Build Android
+
+### Build APK release
+
+Dari root project:
+
+```powershell
+.\android\gradlew.bat assembleRelease
+```
+
+Output APK: `android/app/build/outputs/apk/release/app-release.apk`
+
+### Build AAB release (Play Store)
+
+```powershell
+.\android\gradlew.bat bundleRelease
+```
+
+Output AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+
+### Clean build Android
+
+```powershell
+.\android\gradlew.bat clean
+```
+
+### Reset folder Android (generate ulang dari config Expo)
+
+```powershell
+npx expo prebuild --clean --platform android
+```
+
+### Catatan PowerShell
+
+Di PowerShell, gunakan `.\gradlew.bat` (dengan prefix `.\`), bukan `gradlew.bat` langsung.
+
+### Catatan signing
+
+Build release saat ini masih menggunakan debug keystore. Untuk upload ke Play Store, perlu setup production keystore.
+
 ## Environment
 
 The app reads configuration from environment variables defined in `.env`.
