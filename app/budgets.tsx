@@ -522,7 +522,21 @@ export default function BudgetsScreen() {
                 return (
                   <Pressable
                     key={category.id}
-                    onPress={() => setDraft((current) => ({ ...current, categoryId: String(category.id) }))}
+                    onPress={() => {
+                      const existingGoal = goals.find((goal) => goal.category_id === category.id);
+                      if (existingGoal) {
+                        setDraft({
+                          id: existingGoal.id,
+                          categoryId: String(category.id),
+                          monthlyAmount: formatCurrencyInput(String(existingGoal.monthly_amount ?? 0)),
+                        });
+                      } else {
+                        setDraft({
+                          categoryId: String(category.id),
+                          monthlyAmount: '',
+                        });
+                      }
+                    }}
                     style={[styles.categoryPill, active && styles.categoryPillActive]}>
                     <Text style={[styles.categoryPillText, active && styles.categoryPillTextActive]}>{category.name}</Text>
                   </Pressable>
