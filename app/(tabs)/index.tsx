@@ -126,8 +126,8 @@ export default function DashboardScreen() {
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [recentTransactions, setRecentTransactions] = useState<TransactionRecord[]>([]);
   const [wallets, setWallets] = useState<WalletRecord[]>([]);
-  const [filters, setFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
-  const [draftFilters, setDraftFilters] = useState<DashboardFilters>(createDefaultDashboardFilters);
+  const [filters, setFilters] = useState<DashboardFilters>(() => createDefaultDashboardFilters(25));
+  const [draftFilters, setDraftFilters] = useState<DashboardFilters>(() => createDefaultDashboardFilters(25));
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filterError, setFilterError] = useState('');
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
@@ -162,7 +162,7 @@ export default function DashboardScreen() {
     }).format(lastUpdated);
   };
 
-  const filtersRef = useRef<DashboardFilters>(createDefaultDashboardFilters());
+  const filtersRef = useRef<DashboardFilters>(createDefaultDashboardFilters(25));
   const hasDashboardSnapshot = Boolean(summary || comparison || dailySpending.length || monthlySpending.length);
   const sectionAnimations = useMemo(
     () => Array.from({ length: 14 }, () => new Animated.Value(0)),
@@ -187,25 +187,6 @@ export default function DashboardScreen() {
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
-
-  useEffect(() => {
-    let active = true;
-    const fetchSalaryDay = async () => {
-      try {
-        const session = await getAuthSession();
-        if (!session || !active) return;
-        const response = await getNotificationSettings(session.token.access_token);
-        const day = Number(response.Data?.salary_day);
-        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
-          setSalaryDay(day);
-        }
-      } catch {
-        // keep default
-      }
-    };
-    fetchSalaryDay();
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     sectionAnimations.forEach((value) => value.setValue(0));
@@ -435,6 +416,36 @@ export default function DashboardScreen() {
     }, [loadDashboard, loadUnreadNotifications])
   );
 
+  useEffect(() => {
+    let active = true;
+    const fetchSalaryDay = async () => {
+      try {
+        const session = await getAuthSession();
+        if (!session || !active) return;
+        const response = await getNotificationSettings(session.token.access_token);
+        const day = Number(response.Data?.salary_day);
+        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
+          setSalaryDay(day);
+          const cycleDates = computeSalaryCycleDates(day);
+          const nextFilters: DashboardFilters = {
+            dateMode: 'cycle',
+            month: '',
+            startDate: cycleDates.startDate,
+            endDate: cycleDates.endDate,
+          };
+          setFilters(nextFilters);
+          setDraftFilters(nextFilters);
+          filtersRef.current = nextFilters;
+          void loadDashboard(false, nextFilters);
+        }
+      } catch {
+        // keep default
+      }
+    };
+    fetchSalaryDay();
+    return () => { active = false; };
+  }, [loadDashboard]);
+
   const openFilterModal = useCallback(() => {
     setDraftFilters(filters);
     setFilterError('');
@@ -516,7 +527,7 @@ export default function DashboardScreen() {
   );
 
   const resetFilters = useCallback(() => {
-    const nextFilters = createDefaultDashboardFilters();
+    const nextFilters = createDefaultDashboardFilters(salaryDay);
     setDraftFilters(nextFilters);
     setFilters(nextFilters);
     filtersRef.current = nextFilters;
@@ -526,7 +537,7 @@ export default function DashboardScreen() {
     setIosFilterDatePickerVisible(false);
     setFilterModalVisible(false);
     void loadDashboard(false, nextFilters, true);
-  }, [loadDashboard]);
+  }, [loadDashboard, salaryDay]);
 
   const applyFilters = useCallback(() => {
     if (draftFilters.dateMode === 'month') {

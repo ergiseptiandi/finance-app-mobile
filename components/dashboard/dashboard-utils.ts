@@ -47,12 +47,23 @@ export const getMonthPickerStateFromInput = (value: string): MonthPickerState =>
   };
 };
 
-export const createDefaultDashboardFilters = (): DashboardFilters => ({
-  dateMode: 'month',
-  month: getCurrentMonthInputValue(),
-  startDate: '',
-  endDate: '',
-});
+export const createDefaultDashboardFilters = (salaryDay?: number): DashboardFilters => {
+  if (salaryDay && salaryDay >= 1 && salaryDay <= 31) {
+    const cycleDates = computeSalaryCycleDates(salaryDay);
+    return {
+      dateMode: 'cycle',
+      month: '',
+      startDate: cycleDates.startDate,
+      endDate: cycleDates.endDate,
+    };
+  }
+  return {
+    dateMode: 'month',
+    month: getCurrentMonthInputValue(),
+    startDate: '',
+    endDate: '',
+  };
+};
 
 export const buildDashboardQueryParams = (filters: DashboardFilters): DashboardPeriodParams => {
   if (filters.dateMode === 'month') {

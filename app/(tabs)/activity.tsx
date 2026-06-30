@@ -117,15 +117,29 @@ const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const getCurrentMonthInputValue = () => new Date().toISOString().slice(0, 7);
 const getTodayInputValue = () => new Date().toISOString().slice(0, 10);
 
-const createDefaultActivityFilters = (): ActivityListFilters => ({
-  walletId: null,
-  type: 'all',
-  category: '',
-  dateMode: 'month',
-  month: getCurrentMonthInputValue(),
-  startDate: '',
-  endDate: '',
-});
+const createDefaultActivityFilters = (salaryDay?: number): ActivityListFilters => {
+  if (salaryDay && salaryDay >= 1 && salaryDay <= 31) {
+    const cycleDates = computeSalaryCycleDates(salaryDay);
+    return {
+      walletId: null,
+      type: 'all',
+      category: '',
+      dateMode: 'cycle',
+      month: '',
+      startDate: cycleDates.startDate,
+      endDate: cycleDates.endDate,
+    };
+  }
+  return {
+    walletId: null,
+    type: 'all',
+    category: '',
+    dateMode: 'month',
+    month: getCurrentMonthInputValue(),
+    startDate: '',
+    endDate: '',
+  };
+};
 
 const createEmptyTransactionForm = (): TransactionFormState => ({
   walletId: null,
@@ -1128,8 +1142,8 @@ export default function ActivityScreen() {
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [wallets, setWallets] = useState<WalletRecord[]>([]);
   const [pagination, setPagination] = useState<PaginationState>(DEFAULT_PAGINATION);
-  const [filters, setFilters] = useState<ActivityListFilters>(createDefaultActivityFilters);
-  const [draftFilters, setDraftFilters] = useState<ActivityListFilters>(createDefaultActivityFilters);
+  const [filters, setFilters] = useState<ActivityListFilters>(() => createDefaultActivityFilters(25));
+  const [draftFilters, setDraftFilters] = useState<ActivityListFilters>(() => createDefaultActivityFilters(25));
   const [searchQuery, setSearchQuery] = useState('');
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filterError, setFilterError] = useState('');
@@ -1186,6 +1200,18 @@ export default function ActivityScreen() {
         const day = Number(response.Data?.salary_day);
         if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
           setSalaryDay(day);
+          const cycleDates = computeSalaryCycleDates(day);
+          const nextFilters: ActivityListFilters = {
+            walletId: null,
+            type: 'all',
+            category: '',
+            dateMode: 'cycle',
+            month: '',
+            startDate: cycleDates.startDate,
+            endDate: cycleDates.endDate,
+          };
+          setFilters(nextFilters);
+          setDraftFilters(nextFilters);
         }
       } catch {
         // keep default
@@ -1582,13 +1608,13 @@ export default function ActivityScreen() {
   );
 
   const resetFilters = useCallback(() => {
-    const nextFilters = createDefaultActivityFilters();
+    const nextFilters = createDefaultActivityFilters(salaryDay);
     setLoading(true);
     setDraftFilters(nextFilters);
     setFilters(nextFilters);
     setFilterError('');
     setFilterModalVisible(false);
-  }, []);
+  }, [salaryDay]);
 
   const applyFilters = useCallback(() => {
     if (draftFilters.dateMode === 'month') {

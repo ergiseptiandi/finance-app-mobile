@@ -112,13 +112,25 @@ const computeSalaryCycleDates = (salaryDay: number): { startDate: string; endDat
   };
 };
 
-const createDefaultReportsFilters = (): ReportsFilters => ({
-  mode: 'month',
-  month: getCurrentMonthInputValue(),
-  year: getCurrentYearInputValue(),
-  startDate: '',
-  endDate: '',
-});
+const createDefaultReportsFilters = (salaryDay?: number): ReportsFilters => {
+  if (salaryDay && salaryDay >= 1 && salaryDay <= 31) {
+    const cycleDates = computeSalaryCycleDates(salaryDay);
+    return {
+      mode: 'cycle',
+      month: '',
+      year: getCurrentYearInputValue(),
+      startDate: cycleDates.startDate,
+      endDate: cycleDates.endDate,
+    };
+  }
+  return {
+    mode: 'month',
+    month: getCurrentMonthInputValue(),
+    year: getCurrentYearInputValue(),
+    startDate: '',
+    endDate: '',
+  };
+};
 
 const getMonthPickerStateFromInput = (value: string): MonthPickerState => {
   if (/^\d{4}-\d{2}$/.test(value)) {
@@ -373,8 +385,8 @@ export default function ReportsScreen() {
   const [highestCategory, setHighestCategory] = useState<HighestSpendingCategoryData | null>(null);
   const [averageDaily, setAverageDaily] = useState<AverageDailySpendingData | null>(null);
   const [remainingBalance, setRemainingBalance] = useState<RemainingBalanceData | null>(null);
-  const [filters, setFilters] = useState<ReportsFilters>(createDefaultReportsFilters);
-  const [draftFilters, setDraftFilters] = useState<ReportsFilters>(createDefaultReportsFilters);
+  const [filters, setFilters] = useState<ReportsFilters>(() => createDefaultReportsFilters(25));
+  const [draftFilters, setDraftFilters] = useState<ReportsFilters>(() => createDefaultReportsFilters(25));
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filterError, setFilterError] = useState('');
   const [monthPickerState, setMonthPickerState] = useState<MonthPickerState>(() =>
@@ -383,7 +395,7 @@ export default function ReportsScreen() {
   const [iosCustomDatePickerVisible, setIosCustomDatePickerVisible] = useState(false);
   const [customDateTarget, setCustomDateTarget] = useState<ReportsDateTarget>(null);
   const customDateTargetRef = useRef<ReportsDateTarget>(null);
-  const filtersRef = useRef<ReportsFilters>(createDefaultReportsFilters());
+  const filtersRef = useRef<ReportsFilters>(createDefaultReportsFilters(25));
   const [salaryDay, setSalaryDay] = useState<number>(25);
   const hasReportsSnapshot = Boolean(
     expenseByCategory.length || spendingTrends.length || highestCategory || averageDaily || remainingBalance
@@ -392,27 +404,6 @@ export default function ReportsScreen() {
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
-
-  useEffect(() => {
-    let active = true;
-
-    const fetchSalaryDay = async () => {
-      try {
-        const session = await getAuthSession();
-        if (!session || !active) return;
-        const response = await getNotificationSettings(session.token.access_token);
-        const day = Number(response.Data?.salary_day);
-        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
-          setSalaryDay(day);
-        }
-      } catch {
-        // keep default
-      }
-    };
-
-    fetchSalaryDay();
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -698,7 +689,7 @@ export default function ReportsScreen() {
   }, [draftFilters, loadReports, monthPickerState.monthIndex, monthPickerState.year, salaryDay, t]);
 
   const resetFilters = useCallback(() => {
-    const nextFilters = createDefaultReportsFilters();
+    const nextFilters = createDefaultReportsFilters(salaryDay);
     setDraftFilters(nextFilters);
     setFilters(nextFilters);
     filtersRef.current = nextFilters;
@@ -708,13 +699,44 @@ export default function ReportsScreen() {
     setFilterModalVisible(false);
     setMonthPickerState(getMonthPickerStateFromInput(nextFilters.month));
     void loadReports(false, nextFilters, true);
-  }, [loadReports]);
+  }, [loadReports, salaryDay]);
 
   useFocusEffect(
     useCallback(() => {
       loadReports(false, filtersRef.current);
     }, [loadReports])
   );
+
+  useEffect(() => {
+    let active = true;
+    const fetchSalaryDay = async () => {
+      try {
+        const session = await getAuthSession();
+        if (!session || !active) return;
+        const response = await getNotificationSettings(session.token.access_token);
+        const day = Number(response.Data?.salary_day);
+        if (active && Number.isFinite(day) && day >= 1 && day <= 31) {
+          setSalaryDay(day);
+          const cycleDates = computeSalaryCycleDates(day);
+          const nextFilters: ReportsFilters = {
+            mode: 'cycle',
+            month: '',
+            year: getCurrentYearInputValue(),
+            startDate: cycleDates.startDate,
+            endDate: cycleDates.endDate,
+          };
+          setFilters(nextFilters);
+          setDraftFilters(nextFilters);
+          filtersRef.current = nextFilters;
+          void loadReports(false, nextFilters);
+        }
+      } catch {
+        // keep default
+      }
+    };
+    fetchSalaryDay();
+    return () => { active = false; };
+  }, [loadReports]);
 
   const totalIncome = toNumber(remainingBalance?.total_income);
   const totalExpense = toNumber(remainingBalance?.total_expense);
