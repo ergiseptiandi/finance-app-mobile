@@ -43,7 +43,6 @@ import { buildScreenCacheKey, readScreenCache, writeScreenCache } from '@/lib/sc
 import { useAppLanguage } from '@/providers/language-provider';
 import { useNetworkStatus } from '@/providers/network-status-provider';
 
-type TrendMode = 'trend' | 'categories' | 'calendar';
 type ReportsFilterMode = 'month' | 'year' | 'custom' | 'cycle';
 type MetricTone = 'primary' | 'secondary' | 'warning' | 'danger' | 'teal';
 type ReportsDateTarget = 'startDate' | 'endDate' | null;
@@ -375,7 +374,6 @@ export default function ReportsScreen() {
   const isDark = colorScheme === 'dark';
   const styles = createStyles(colors, compact, insets.top, isDark);
 
-  const [trendMode, setTrendMode] = useState<TrendMode>('categories');
   const [selectedTrendIndex, setSelectedTrendIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -787,7 +785,6 @@ export default function ReportsScreen() {
       })),
     [locale, spendingTrends]
   );
-  const trendMax = Math.max(...trendPoints.map((item) => item.expenseValue), 1);
   const expenseRatio = totalIncome > 0 ? Math.max(0, Math.min(100, (totalExpense / totalIncome) * 100)) : 0;
   const remainingRatio = totalIncome > 0 ? Math.max(0, Math.min(100, (remaining / totalIncome) * 100)) : 0;
   const periodSummaryText = getReportsPeriodLabel(
@@ -798,7 +795,7 @@ export default function ReportsScreen() {
     !loading && !expenseByCategory.length && !spendingTrends.length && !remainingBalance && !averageDaily && !highestCategory;
 
   const calendarData = useMemo(() => {
-    if (trendMode !== 'calendar' || trendPoints.length === 0) return null;
+    if (trendPoints.length === 0) return null;
 
     const isDaily = trendPoints.some((p) => {
       const key = String(p.period ?? p.date ?? p.month ?? p.label ?? '');
@@ -841,7 +838,11 @@ export default function ReportsScreen() {
       maxExpense,
       calMonthLabel,
     };
-  }, [trendMode, trendPoints, locale]);
+  }, [trendPoints, locale]);
+
+  const selectedTrendPoint =
+    selectedTrendIndex !== null && trendPoints[selectedTrendIndex] ? trendPoints[selectedTrendIndex] : null;
+  const selectedTrendDate = selectedTrendPoint ? String(selectedTrendPoint.period ?? selectedTrendPoint.date ?? '') : null;
 
   const sectionAnimations = useRef(
     Array.from({ length: 6 }, () => new Animated.Value(0))
@@ -878,7 +879,7 @@ export default function ReportsScreen() {
     );
 
     Animated.stagger(85, animations).start();
-  }, [filters.mode, isEmpty, loading, sectionAnimations, trendMode]);
+  }, [filters.mode, isEmpty, loading, sectionAnimations]);
 
   const metricCards = [
     {
@@ -1180,48 +1181,12 @@ export default function ReportsScreen() {
               <View style={styles.cardHeader}>
                 <View style={styles.cardHeaderCopy}>
                   <Text style={styles.cardEyebrow}>{t('reports.spendingTrends')}</Text>
-                  <Text style={styles.cardTitle}>{t('reports.monthlyTrend')}</Text>
+                  <Text style={styles.cardTitle}>{language === 'id' ? 'Kalender Belanja' : 'Spending Calendar'}</Text>
                   <Text style={styles.trendCardHint}>
-                    {language === 'id' ? 'Perbandingan pemasukan dan pengeluaran per periode.' : 'Income vs expense comparison per period.'}
+                    {language === 'id'
+                      ? 'Peta panas pengeluaran harian untuk periode terpilih.'
+                      : 'Daily spending heat map for the selected period.'}
                   </Text>
-                </View>
-                <View style={styles.segmentedControl}>
-                  <Pressable
-                    onPress={() => setTrendMode('categories')}
-                    style={[styles.segmentButton, trendMode === 'categories' && styles.segmentButtonActive]}>
-                    <MaterialCommunityIcons
-                      name="chart-bar"
-                      size={12}
-                      color={trendMode === 'categories' ? colors.onPrimary : colors.shellTextMuted}
-                    />
-                    <Text style={[styles.segmentLabel, trendMode === 'categories' && styles.segmentLabelActive]}>
-                      {t('reports.categories')}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setTrendMode('trend')}
-                    style={[styles.segmentButton, trendMode === 'trend' && styles.segmentButtonActive]}>
-                    <MaterialCommunityIcons
-                      name="format-list-bulleted"
-                      size={12}
-                      color={trendMode === 'trend' ? colors.onPrimary : colors.shellTextMuted}
-                    />
-                    <Text style={[styles.segmentLabel, trendMode === 'trend' && styles.segmentLabelActive]}>
-                      {t('reports.trend')}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setTrendMode('calendar')}
-                    style={[styles.segmentButton, trendMode === 'calendar' && styles.segmentButtonActive]}>
-                    <MaterialCommunityIcons
-                      name="calendar-month-outline"
-                      size={12}
-                      color={trendMode === 'calendar' ? colors.onPrimary : colors.shellTextMuted}
-                    />
-                    <Text style={[styles.segmentLabel, trendMode === 'calendar' && styles.segmentLabelActive]}>
-                      {language === 'id' ? 'Kalender' : 'Calendar'}
-                    </Text>
-                  </Pressable>
                 </View>
               </View>
 
@@ -1244,213 +1209,113 @@ export default function ReportsScreen() {
                 </View>
               ) : null}
 
-              {selectedTrendIndex !== null && trendPoints[selectedTrendIndex] ? (
+              {selectedTrendPoint ? (
                 <View style={styles.trendTooltip}>
-                  <Text style={styles.trendTooltipTitle}>{trendPoints[selectedTrendIndex].label}</Text>
+                  <Text style={styles.trendTooltipTitle}>{selectedTrendPoint.label}</Text>
                   <View style={styles.trendTooltipRow}>
                     <View style={[styles.trendSummaryDot, { backgroundColor: colors.primary }]} />
                     <Text style={styles.trendTooltipText}>
-                      {language === 'id' ? 'Masuk' : 'In'}: {formatCompactCurrency(trendPoints[selectedTrendIndex].incomeValue, locale)}
+                      {language === 'id' ? 'Masuk' : 'In'}: {formatCompactCurrency(selectedTrendPoint.incomeValue, locale)}
                     </Text>
                   </View>
                   <View style={styles.trendTooltipRow}>
                     <View style={[styles.trendSummaryDot, { backgroundColor: colors.danger }]} />
                     <Text style={styles.trendTooltipText}>
-                      {language === 'id' ? 'Keluar' : 'Out'}: {formatCompactCurrency(trendPoints[selectedTrendIndex].expenseValue, locale)}
+                      {language === 'id' ? 'Keluar' : 'Out'}: {formatCompactCurrency(selectedTrendPoint.expenseValue, locale)}
                     </Text>
                   </View>
                   <View style={styles.trendTooltipRow}>
                     <MaterialCommunityIcons
-                      name={trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? 'trending-up' : 'trending-down'}
+                      name={selectedTrendPoint.netCashflowValue >= 0 ? 'trending-up' : 'trending-down'}
                       size={12}
-                      color={trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? colors.secondary : colors.danger}
+                      color={selectedTrendPoint.netCashflowValue >= 0 ? colors.secondary : colors.danger}
                     />
-                    <Text style={[styles.trendTooltipText, { color: trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? colors.secondary : colors.danger, fontWeight: '800' }]}>
-                      {trendPoints[selectedTrendIndex].netCashflowValue >= 0 ? '+' : ''}{formatCompactCurrency(trendPoints[selectedTrendIndex].netCashflowValue, locale)}
+                    <Text
+                      style={[
+                        styles.trendTooltipText,
+                        { color: selectedTrendPoint.netCashflowValue >= 0 ? colors.secondary : colors.danger, fontWeight: '800' },
+                      ]}>
+                      {selectedTrendPoint.netCashflowValue >= 0 ? '+' : ''}
+                      {formatCompactCurrency(selectedTrendPoint.netCashflowValue, locale)}
                     </Text>
                   </View>
                 </View>
               ) : null}
 
-              {trendMode === 'categories' ? (
-                <>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendChartScroll}>
-                    <View style={[styles.trendChart, trendPoints.length <= 12 && { width: '100%' }]}>
-                      {trendPoints.length ? (
-                        trendPoints.map((item, index, items) => {
-                          const peakVal = Math.max(...items.map(i => Math.max(i.incomeValue, i.expenseValue)), 1);
-                          const incomeHeight = Math.max(6, (item.incomeValue / peakVal) * 100);
-                          const expenseHeight = Math.max(6, (item.expenseValue / peakVal) * 100);
-                          const selected = selectedTrendIndex === index;
-                          const isPositive = item.netCashflowValue >= 0;
-                          return (
-                            <Pressable
-                              key={`${item.date ?? item.month ?? item.label ?? index}`}
-                              onPress={() => setSelectedTrendIndex(selected ? null : index)}
-                              style={[styles.trendItem, selected && styles.trendItemSelected]}>
-                              <View style={styles.trendBarGroup}>
-                                <View
-                                  style={[
-                                    styles.trendBar,
-                                    { height: `${incomeHeight}%`, backgroundColor: alpha(colors.primary, selected ? 1 : 0.5) },
-                                  ]}
-                                />
-                                <View
-                                  style={[
-                                    styles.trendBar,
-                                    { height: `${expenseHeight}%`, backgroundColor: alpha(colors.danger, selected ? 1 : 0.5) },
-                                  ]}
-                                />
-                              </View>
-                              <View style={[styles.trendNetDot, { backgroundColor: isPositive ? colors.secondary : colors.danger }]} />
-                              <Text numberOfLines={1} style={[styles.trendLabel, selected && { color: colors.primary, fontWeight: '800' }]}>
-                                {item.label}
-                              </Text>
-                            </Pressable>
-                          );
-                        })
-                      ) : (
-                        <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
-                      )}
-                    </View>
-                  </ScrollView>
-                  {trendPoints.length > 12 ? (
-                    <View style={styles.swipeHint}>
-                      <MaterialCommunityIcons name="gesture-swipe-horizontal" size={14} color={colors.shellTextMuted} />
-                      <Text style={styles.swipeHintText}>
-                        {language === 'id' ? 'Geser untuk lihat semua' : 'Swipe to see all'}
+              {calendarData?.type === 'not-daily' ? (
+                <View style={styles.calendarEmpty}>
+                  <MaterialCommunityIcons name="calendar-remove-outline" size={28} color={colors.outlineVariant} />
+                  <Text style={styles.calendarEmptyText}>
+                    {language === 'id'
+                      ? 'Tampilan kalender tersedia saat filter harian (mode bulan/siklus).'
+                      : 'Calendar view is available with daily filter (month/cycle mode).'}
+                  </Text>
+                </View>
+              ) : calendarData?.type === 'calendar' ? (
+                <View style={styles.calendarContainer}>
+                  <Text style={styles.calendarMonthLabel}>{calendarData.calMonthLabel}</Text>
+                  <View style={styles.calendarWeekHeader}>
+                    {(language === 'id'
+                      ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+                      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                    ).map((wd) => (
+                      <Text key={wd} style={styles.calendarWeekday}>
+                        {wd}
                       </Text>
-                    </View>
-                  ) : null}
-                </>
-              ) : trendMode === 'trend' ? (
-                <View style={styles.trendTable}>
-                  {trendPoints.length ? (
-                    trendPoints.map((item, index) => {
-                      const maxVal = Math.max(...trendPoints.map(p => p.expenseValue), 1);
-                      const expenseWidth = Math.max(8, (item.expenseValue / maxVal) * 100);
-                      const incomeWidth = Math.max(8, (item.incomeValue / maxVal) * 100);
-                      const isPositive = item.netCashflowValue >= 0;
+                    ))}
+                  </View>
+                  <View style={styles.calendarGrid}>
+                    {calendarData.cells.map((cell, idx) => {
+                      if (cell === null) {
+                        return <View key={`empty-${idx}`} style={styles.calendarCellEmpty} />;
+                      }
+                      const data = calendarData.expenseMap.get(cell);
+                      const dayNum = Number(cell.slice(-2));
+                      const hasData = !!data;
+                      const intensity = hasData ? Math.min(1, data.expense / calendarData.maxExpense) : 0;
+                      const isSelected = cell === selectedTrendDate;
+                      const bgColor = hasData && data.expense > 0
+                        ? alpha(colors.danger, 0.12 + intensity * 0.7)
+                        : alpha(colors.shellCardMuted, 0.5);
+                      const dotColor = hasData && data.net >= 0 ? colors.secondary : colors.danger;
+
                       return (
-                        <View key={`${item.label}-${index}`} style={styles.trendRow}>
-                          <View style={styles.trendRowHeader}>
-                            <Text style={styles.trendRowLabel}>{item.label}</Text>
-                            <Text style={styles.trendRowPeriod}>
-                              {toLongMonth(String(item.period ?? item.date ?? item.month ?? ''), item.label, locale)}
+                        <Pressable
+                          key={cell}
+                          onPress={() => {
+                            if (!hasData) return;
+                            const trendIdx = trendPoints.findIndex((p) => String(p.period ?? p.date ?? '') === cell);
+                            setSelectedTrendIndex(trendIdx >= 0 ? trendIdx : null);
+                          }}
+                          style={[
+                            styles.calendarCell,
+                            { backgroundColor: bgColor },
+                            isSelected && styles.calendarCellSelected,
+                          ]}>
+                          <Text style={[styles.calendarDayNum, isSelected && { color: colors.onPrimary, fontWeight: '900' }]}>
+                            {dayNum}
+                          </Text>
+                          {hasData && data.expense > 0 ? (
+                            <Text style={styles.calendarCellAmount} numberOfLines={1}>
+                              {formatCompactCurrency(data.expense, locale)}
                             </Text>
-                          </View>
-                          <View style={styles.trendRowBars}>
-                            <View style={styles.trendRowBarLine}>
-                              <Text style={styles.trendRowBarLabel}>{language === 'id' ? 'Masuk' : 'In'}</Text>
-                              <View style={styles.trendRowTrack}>
-                                <View style={[styles.trendRowFillIncome, { width: `${incomeWidth}%` }]} />
-                              </View>
-                              <Text style={styles.trendRowBarValue}>{formatCompactCurrency(item.incomeValue, locale)}</Text>
-                            </View>
-                            <View style={styles.trendRowBarLine}>
-                              <Text style={styles.trendRowBarLabel}>{language === 'id' ? 'Keluar' : 'Out'}</Text>
-                              <View style={styles.trendRowTrack}>
-                                <View style={[styles.trendRowFillExpense, { width: `${expenseWidth}%` }]} />
-                              </View>
-                              <Text style={styles.trendRowBarValue}>{formatCompactCurrency(item.expenseValue, locale)}</Text>
-                            </View>
-                          </View>
-                          <View style={styles.trendRowFooter}>
-                            <MaterialCommunityIcons
-                              name={isPositive ? 'trending-up' : 'trending-down'}
-                              size={12}
-                              color={isPositive ? colors.secondary : colors.danger}
-                            />
-                            <Text style={[styles.trendRowNet, { color: isPositive ? colors.secondary : colors.danger }]}>
-                              {isPositive ? '+' : ''}{formatCompactCurrency(item.netCashflowValue, locale)}
-                            </Text>
-                          </View>
-                        </View>
+                          ) : null}
+                          {hasData ? (
+                            <View style={[styles.calendarDot, { backgroundColor: isSelected ? colors.onPrimary : dotColor }]} />
+                          ) : null}
+                        </Pressable>
                       );
-                    })
-                  ) : (
-                    <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
-                  )}
-                </View>
-              ) : trendMode === 'calendar' ? (
-                calendarData?.type === 'not-daily' ? (
-                  <View style={styles.calendarEmpty}>
-                    <MaterialCommunityIcons name="calendar-remove-outline" size={28} color={colors.outlineVariant} />
-                    <Text style={styles.calendarEmptyText}>
-                      {language === 'id'
-                        ? 'Tampilan kalender tersedia saat filter harian (mode bulan/siklus).'
-                        : 'Calendar view is available with daily filter (month/cycle mode).'}
+                    })}
+                  </View>
+                  <View style={styles.calendarLegend}>
+                    <Text style={styles.calendarLegendLabel}>
+                      {language === 'id' ? 'Lebih gelap = pengeluaran lebih besar' : 'Darker = higher spending'}
                     </Text>
                   </View>
-                ) : calendarData?.type === 'calendar' ? (
-                  <View style={styles.calendarContainer}>
-                    <Text style={styles.calendarMonthLabel}>{calendarData.calMonthLabel}</Text>
-                    <View style={styles.calendarWeekHeader}>
-                      {(language === 'id'
-                        ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
-                        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                      ).map((wd) => (
-                        <Text key={wd} style={styles.calendarWeekday}>{wd}</Text>
-                      ))}
-                    </View>
-                    <View style={styles.calendarGrid}>
-                      {calendarData.cells.map((cell, idx) => {
-                        if (cell === null) {
-                          return <View key={`empty-${idx}`} style={styles.calendarCellEmpty} />;
-                        }
-                        const data = calendarData.expenseMap.get(cell);
-                        const dayNum = Number(cell.slice(-2));
-                        const hasData = !!data;
-                        const intensity = hasData ? Math.min(1, data.expense / calendarData.maxExpense) : 0;
-                        const selectedDate = selectedTrendIndex !== null && trendPoints[selectedTrendIndex]
-                          ? String(trendPoints[selectedTrendIndex].period ?? trendPoints[selectedTrendIndex].date ?? '')
-                          : null;
-                        const isSelected = cell === selectedDate;
-                        const bgColor = hasData && data.expense > 0
-                          ? alpha(colors.danger, 0.12 + intensity * 0.7)
-                          : alpha(colors.shellCardMuted, 0.5);
-                        const dotColor = hasData && data.net >= 0 ? colors.secondary : colors.danger;
-
-                        return (
-                          <Pressable
-                            key={cell}
-                            onPress={() => {
-                              if (!hasData) return;
-                              const trendIdx = trendPoints.findIndex((p) =>
-                                String(p.period ?? p.date ?? '') === cell
-                              );
-                              setSelectedTrendIndex(trendIdx >= 0 ? trendIdx : null);
-                            }}
-                            style={[
-                              styles.calendarCell,
-                              { backgroundColor: bgColor },
-                              isSelected && styles.calendarCellSelected,
-                            ]}>
-                            <Text style={[styles.calendarDayNum, isSelected && { color: colors.onPrimary, fontWeight: '900' }]}>
-                              {dayNum}
-                            </Text>
-                            {hasData && data.expense > 0 ? (
-                              <Text style={styles.calendarCellAmount} numberOfLines={1}>
-                                {formatCompactCurrency(data.expense, locale)}
-                              </Text>
-                            ) : null}
-                            {hasData ? (
-                              <View style={[styles.calendarDot, { backgroundColor: isSelected ? colors.onPrimary : dotColor }]} />
-                            ) : null}
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    <View style={styles.calendarLegend}>
-                      <Text style={styles.calendarLegendLabel}>
-                        {language === 'id' ? 'Lebih gelap = pengeluaran lebih besar' : 'Darker = higher spending'}
-                      </Text>
-                    </View>
-                  </View>
-                ) : (
-                  <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
-                )
-              ) : null}
+                </View>
+              ) : (
+                <Text style={styles.emptyInline}>{t('reports.noTrendData')}</Text>
+              )}
             </Animated.View>
 
             <Animated.View style={[styles.insightCard, sectionRevealStyles[4]]}>
@@ -2681,40 +2546,6 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       fontSize: 11,
       fontWeight: '700',
     },
-    segmentedControl: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      flexShrink: 0,
-      backgroundColor: colors.shellCardMuted,
-      borderRadius: 18,
-      padding: 4,
-    },
-    segmentButton: {
-      minWidth: compact ? 62 : 72,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 14,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      gap: 6,
-    },
-    segmentButtonActive: {
-      backgroundColor: colors.primary,
-      shadowColor: alpha(colors.primary, 0.28),
-      shadowOpacity: 1,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
-    },
-    segmentLabel: {
-      fontSize: 10,
-      fontWeight: '800',
-      color: colors.shellTextMuted,
-    },
-    segmentLabelActive: {
-      color: colors.onPrimary,
-    },
     trendSummaryRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -2766,139 +2597,6 @@ const createStyles = (colors: AppColorTheme, compact: boolean, topInset: number,
       color: colors.shellTextSecondary,
       fontSize: 11,
       fontWeight: '600',
-    },
-    trendChartScroll: {
-      minWidth: '100%',
-    },
-    swipeHint: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 6,
-      marginTop: 8,
-    },
-    swipeHintText: {
-      color: colors.shellTextMuted,
-      fontSize: 10,
-      fontWeight: '600',
-    },
-    trendChart: {
-      height: compact ? 200 : 230,
-      minWidth: '100%',
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-      justifyContent: 'space-between',
-      gap: compact ? 3 : 4,
-      paddingTop: 8,
-    },
-    trendItem: {
-      flex: 1,
-      minWidth: 28,
-      height: '100%',
-      alignItems: 'center',
-      justifyContent: 'flex-end',
-      gap: 4,
-      borderRadius: 8,
-      paddingTop: 4,
-    },
-    trendItemSelected: {
-      backgroundColor: alpha(colors.primary, isDark ? 0.1 : 0.06),
-    },
-    trendBarGroup: {
-      width: '100%',
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-      justifyContent: 'center',
-      gap: 2,
-    },
-    trendBar: {
-      flex: 1,
-      minHeight: 6,
-      borderTopLeftRadius: 6,
-      borderTopRightRadius: 6,
-    },
-    trendNetDot: {
-      width: 5,
-      height: 5,
-      borderRadius: 3,
-    },
-    trendLabel: {
-      color: colors.shellTextMuted,
-      fontSize: 9,
-      fontWeight: '700',
-      letterSpacing: 0.5,
-    },
-    trendTable: {
-      gap: 14,
-    },
-    trendRow: {
-      gap: 8,
-      paddingBottom: 14,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.shellBorder,
-    },
-    trendRowHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    trendRowLabel: {
-      color: colors.shellTextPrimary,
-      fontSize: 13,
-      fontWeight: '800',
-    },
-    trendRowPeriod: {
-      color: colors.shellTextMuted,
-      fontSize: 11,
-      fontWeight: '600',
-    },
-    trendRowBars: {
-      gap: 6,
-    },
-    trendRowBarLine: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    trendRowBarLabel: {
-      width: 36,
-      color: colors.shellTextMuted,
-      fontSize: 10,
-      fontWeight: '700',
-    },
-    trendRowTrack: {
-      flex: 1,
-      height: 8,
-      borderRadius: 999,
-      backgroundColor: colors.shellCardMuted,
-      overflow: 'hidden',
-    },
-    trendRowFillIncome: {
-      height: '100%',
-      borderRadius: 999,
-      backgroundColor: colors.primary,
-    },
-    trendRowFillExpense: {
-      height: '100%',
-      borderRadius: 999,
-      backgroundColor: colors.danger,
-    },
-    trendRowBarValue: {
-      width: 60,
-      textAlign: 'right',
-      color: colors.shellTextSecondary,
-      fontSize: 10,
-      fontWeight: '700',
-    },
-    trendRowFooter: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    trendRowNet: {
-      fontSize: 11,
-      fontWeight: '800',
     },
     calendarContainer: {
       gap: 10,
