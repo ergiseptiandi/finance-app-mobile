@@ -42,3 +42,6 @@ app-example
 /ios
 /android
 .kiro
+
+opencode.json
+finance-app-mobile.code-workspace
